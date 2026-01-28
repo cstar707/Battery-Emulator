@@ -35,7 +35,9 @@ bool led_init(void) {
 }
 
 void led_exe(void) {
-  led->exe();
+  if (led) {
+    led->exe();
+  }
 }
 
 void LED::exe(void) {

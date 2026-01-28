@@ -31,7 +31,7 @@
 #include "src/inverter/INVERTERS.h"
 
 #if !defined(HW_LILYGO) && !defined(HW_LILYGO2CAN) && !defined(HW_STARK) && !defined(HW_3LB) && !defined(HW_BECOM) && \
-    !defined(HW_DEVKIT)
+    !defined(HW_DEVKIT) && !defined(HW_WAVESHARE7B)
 #error You must select a target hardware!
 #endif
 
@@ -69,7 +69,15 @@ void register_transmitter(Transmitter* transmitter) {
 void init_serial() {
   // Init Serial monitor
   Serial.begin(115200);
-#if (HW_LILYGO2CAN || HW_BECOM)
+#if defined(HW_WAVESHARE7B)
+  // With ARDUINO_USB_CDC_ON_BOOT=0, Serial uses UART0 (GPIO43/44)
+  // which connects to the CH343 USB-to-UART chip
+  // Wait up to 500ms for serial connection
+  for (int i = 0; i < 50; i++) {
+    if (Serial) break;
+    delay(10);
+  }
+#elif (HW_LILYGO2CAN || HW_BECOM)
   // Wait up to 100ms for Serial to be available. On the ESP32S3 Serial is
   // provided by the USB controller, so will only work if the board is connected
   // to a computer.
@@ -85,6 +93,10 @@ void init_serial() {
 
 void connectivity_loop(void*) {
   esp_task_wdt_add(NULL);  // Register this task with WDT
+  
+  // Init display FIRST before WiFi (on same core as update_display for thread safety)
+  init_display();
+
   // Init wifi
   init_WiFi();
 
@@ -93,8 +105,6 @@ void connectivity_loop(void*) {
   if (mdns_enabled) {
     init_mDNS();
   }
-
-  init_display();
 
   while (true) {
     START_TIME_MEASUREMENT(wifi);
@@ -585,9 +595,29 @@ void mqtt_loop(void*) {
 
 // Initialization
 void setup() {
+  // Initialize HAL first (needed for pin configs)
   init_hal();
 
+  // NOTE: Display init moved to connectivity_loop to ensure same-core execution
+  // LVGL is not thread-safe
+
+  // Serial output
+  Serial.begin(115200);
+  // Wait for USB to be ready
+  for (int i = 0; i < 100; i++) {
+    if (Serial) break;
+    delay(10);
+  }
+  Serial.println("\n*** BOOT START ***");
+  Serial.flush();
+
   init_serial();
+
+#if defined(HW_WAVESHARE7B)
+  // Print early boot message via UART (CH343 chip)
+  Serial.println("=== WAVESHARE 7B BOOT ===");
+  Serial.flush();
+#endif
 
   // We print this after setting up serial, so that is also printed if configured to do so
   DEBUG_PRINTF("Battery emulator %s build " __DATE__ " " __TIME__ "\n", version_number);

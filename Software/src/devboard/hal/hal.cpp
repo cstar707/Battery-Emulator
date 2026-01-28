@@ -23,6 +23,9 @@ void init_hal() {
 #elif defined(HW_DEVKIT)
 #include "hw_devkit.h"
   esp32hal = new DevKitHal();
+#elif defined(HW_WAVESHARE7B)
+#include "hw_waveshare7b.h"
+  esp32hal = new Waveshare7BHal();
 #else
 #error "No HW defined."
 #endif

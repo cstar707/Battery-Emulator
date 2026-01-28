@@ -11,6 +11,10 @@
 
 #include <esp_private/periph_ctrl.h>
 
+#ifdef HW_WAVESHARE7B
+#include "driver/i2c_master.h"
+#endif
+
 #include <algorithm>
 #include <map>
 
@@ -73,6 +77,16 @@ bool native_can_initialized = false;
 uint16_t user_selected_CAN_ID_cutoff_filter = 0;  //Messages below this ID will not be logged in webserver
 
 bool init_CAN() {
+
+#ifdef HW_WAVESHARE7B
+  // Waveshare 7B: CH422G IO expander controls CAN/USB mode on GPIO19/20
+  // EXIO5 HIGH = CAN mode, EXIO5 LOW = USB mode
+  // NOTE: Display code handles IO expander init - don't create duplicate I2C bus here
+  // NOTE: With USB CDC enabled for debugging, GPIO19/20 are used for USB, not CAN
+  // Native CAN on GPIO19/20 is disabled while USB debugging is active
+  // TODO: Add option to switch between USB and CAN modes
+  DEBUG_PRINTF("Waveshare 7B: Native CAN disabled (GPIO19/20 used for USB debug)\n");
+#endif
 
   if (user_selected_can_addon_crystal_frequency_mhz > 0) {
     QUARTZ_FREQUENCY = user_selected_can_addon_crystal_frequency_mhz * 1000000UL;
