@@ -32,7 +32,7 @@
 #include "src/inverter/INVERTERS.h"
 
 #if !defined(HW_LILYGO) && !defined(HW_LILYGO2CAN) && !defined(HW_STARK) && !defined(HW_3LB) && !defined(HW_BECOM) && \
-    !defined(HW_DEVKIT)
+    !defined(HW_DEVKIT) && !defined(HW_TCAN485)
 #error You must select a target hardware!
 #endif
 

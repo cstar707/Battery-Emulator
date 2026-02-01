@@ -97,6 +97,7 @@ void init_stored_settings() {
   user_selected_inverter_deye_workaround = settings.getBool("DEYEBYD", false);
   user_selected_can_addon_crystal_frequency_mhz = settings.getUInt("CANFREQ", 8);
   user_selected_canfd_addon_crystal_frequency_mhz = settings.getUInt("CANFDFREQ", 40);
+  user_selected_can_read_only_mode = settings.getBool("CANREADONLY", false);
   user_selected_LEAF_interlock_mandatory = settings.getBool("INTERLOCKREQ", false);
   user_selected_use_estimated_SOC = settings.getBool("SOCESTIMATED", false);
   user_selected_tesla_digital_HVIL = settings.getBool("DIGITALHVIL", false);

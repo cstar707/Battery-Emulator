@@ -4,6 +4,7 @@
 #include "../../devboard/utils/types.h"
 
 extern bool use_canfd_as_can;
+extern bool user_selected_can_read_only_mode;
 extern uint8_t user_selected_can_addon_crystal_frequency_mhz;
 extern uint8_t user_selected_canfd_addon_crystal_frequency_mhz;
 extern uint16_t user_selected_CAN_ID_cutoff_filter;
