@@ -26,6 +26,9 @@ void init_hal() {
 #elif defined(HW_WAVESHARE7B)
 #include "hw_waveshare7b.h"
   esp32hal = new Waveshare7BHal();
+#elif defined(HW_TCAN485)
+#include "hw_tcan485.h"
+  esp32hal = new TCan485Hal();
 #else
 #error "No HW defined."
 #endif

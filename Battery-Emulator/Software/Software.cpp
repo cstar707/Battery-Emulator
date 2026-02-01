@@ -31,7 +31,7 @@
 #include "src/inverter/INVERTERS.h"
 
 #if !defined(HW_LILYGO) && !defined(HW_LILYGO2CAN) && !defined(HW_STARK) && !defined(HW_3LB) && !defined(HW_BECOM) && \
-    !defined(HW_DEVKIT) && !defined(HW_WAVESHARE7B)
+    !defined(HW_DEVKIT) && !defined(HW_WAVESHARE7B) && !defined(HW_TCAN485)
 #error You must select a target hardware!
 #endif
 
@@ -616,6 +616,9 @@ void setup() {
 #if defined(HW_WAVESHARE7B)
   // Print early boot message via UART (CH343 chip)
   Serial.println("=== WAVESHARE 7B BOOT ===");
+  Serial.flush();
+#elif defined(HW_TCAN485)
+  Serial.println("=== T-CAN485 BOOT ===");
   Serial.flush();
 #endif
 
