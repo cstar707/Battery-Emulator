@@ -1,5 +1,20 @@
 # LilyGo T-CAN485 Wiring Documentation
 
+## Board Pin Header Layout (2×6)
+
+Physical arrangement of the IO/power header on the board. Square pad = Pin 1 (orientation marker).
+
+| Row | Left Pin | Right Pin |
+|-----|----------|-----------|
+| 1   | GND      | IO25      |
+| 2   | IO32     | IO33      |
+| 3   | IO5      | IO12      |
+| 4   | IO34     | IO35      |
+| 5   | IO18     | VDD       |
+| 6   | GND      | VDD       |
+
+*Two LEDs above the header indicate polarity (- / +).*
+
 ## Wire Color Reference
 
 | GPIO | Wire Color | Function (Dala's Config) |
