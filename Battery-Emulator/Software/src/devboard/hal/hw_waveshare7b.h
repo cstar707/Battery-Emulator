@@ -46,6 +46,10 @@ MCP2515 CAN Add-on (shares SPI with SD card):
 IO Expander (CH422G at I2C addr 0x24):
   EXIO1:TP_RST, EXIO2:DISP (backlight), EXIO4:SD_CS
   EXIO5:USB_SEL/CAN_SEL, EXIO6:LCD_VDD_EN
+  EXIO0, EXIO7: unused (could drive via IO_EXTENSION_Output if needed)
+
+Free GPIOs for integration (only 2 left - see docs/waveshare7b-pins.md):
+  GPIO43, GPIO44 -> contactors / relays (wire to sensor/PH2.0 breakout if present)
 */
 
 class Waveshare7BHal : public Esp32Hal {
@@ -98,10 +102,11 @@ class Waveshare7BHal : public Esp32Hal {
   // No onboard LED on this board - NC
   virtual gpio_num_t LED_PIN() { return GPIO_NUM_NC; }
 
-  // Contactor pins - not directly available on this board
-  // User would need to wire these to available GPIOs via external header
-  virtual gpio_num_t POSITIVE_CONTACTOR_PIN() { return GPIO_NUM_NC; }
-  virtual gpio_num_t NEGATIVE_CONTACTOR_PIN() { return GPIO_NUM_NC; }
+  // Contactor pins - only GPIO43 and GPIO44 are free on this board
+  // Wire to sensor/PH2.0 breakout; use relay board or optocoupler, not direct coil drive
+  // See docs/waveshare7b-pins.md for full pin reference
+  virtual gpio_num_t POSITIVE_CONTACTOR_PIN() { return GPIO_NUM_43; }
+  virtual gpio_num_t NEGATIVE_CONTACTOR_PIN() { return GPIO_NUM_44; }
   virtual gpio_num_t PRECHARGE_PIN() { return GPIO_NUM_NC; }
   virtual gpio_num_t BMS_POWER() { return GPIO_NUM_NC; }
 

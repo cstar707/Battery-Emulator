@@ -32,7 +32,7 @@ void update_display() {}
 #define SCREEN_HEIGHT 600
 
 // UI Version - increment with each UI change
-#define UI_VERSION "2.2.0"
+#define UI_VERSION "2.2.2"
 
 // GT911 Touch pins
 #define TOUCH_INT 4
@@ -82,6 +82,7 @@ static lv_obj_t* lbl_wifi_status;
 static lv_obj_t* lbl_wifi_power;
 static lv_obj_t* brightness_slider;
 static lv_obj_t* lbl_brightness;
+static lv_obj_t* lbl_backup_battery;
 static bool wifi_ap_enabled = false;  // Track AP state
 static uint8_t brightness_level = 100;  // 0-100%
 static uint8_t wifi_tx_power = 1;  // Index into power levels (default 8.5dBm)
@@ -259,6 +260,16 @@ static lv_obj_t* create_stat_card(lv_obj_t* parent, const char* title, int x, in
 
 // Flag to freeze display during WiFi operations
 static volatile bool display_frozen = false;
+
+// Read backup battery voltage from IO expander ADC
+// Returns voltage in millivolts
+// Board divider scales battery (3.7V nominal) down; raw 0.69V display -> need ~11x scale
+static uint32_t read_backup_battery_mv() {
+  uint16_t adc_raw = IO_EXTENSION_Adc_Input();
+  // ADC 12-bit (0-4095), 3.3V ref; divider so V_batt ≈ (adc/4095)*3.3*11
+  uint32_t mv = ((uint32_t)adc_raw * 3300 * 11) / 4095;
+  return mv;
+}
 
 // WiFi TX power levels (dBm values and display names)
 static const wifi_power_t wifi_power_values[] = {
@@ -893,7 +904,7 @@ static void create_ui() {
   
   // ===== SETTINGS PANEL (overlay, hidden by default) =====
   settings_panel = lv_obj_create(lv_scr_act());
-  lv_obj_set_size(settings_panel, 400, 200);
+  lv_obj_set_size(settings_panel, 400, 230);
   lv_obj_center(settings_panel);
   lv_obj_set_style_bg_color(settings_panel, lv_color_hex(0x161b22), 0);
   lv_obj_set_style_border_color(settings_panel, lv_color_hex(0x30363d), 0);
@@ -947,14 +958,27 @@ static void create_ui() {
   lv_obj_set_style_text_color(lbl_brightness, lv_color_hex(0x58a6ff), 0);
   lv_obj_set_pos(lbl_brightness, 330, 87);
   
+  // Backup Battery section
+  lv_obj_t* lbl_batt_title = lv_label_create(settings_panel);
+  lv_label_set_text(lbl_batt_title, "Backup Battery");
+  lv_obj_set_style_text_font(lbl_batt_title, &lv_font_montserrat_16, 0);
+  lv_obj_set_style_text_color(lbl_batt_title, lv_color_hex(0xc9d1d9), 0);
+  lv_obj_set_pos(lbl_batt_title, 20, 120);
+  
+  lbl_backup_battery = lv_label_create(settings_panel);
+  lv_label_set_text(lbl_backup_battery, "-- V");
+  lv_obj_set_style_text_font(lbl_backup_battery, &lv_font_montserrat_16, 0);
+  lv_obj_set_style_text_color(lbl_backup_battery, lv_color_hex(0x7ee787), 0);
+  lv_obj_set_pos(lbl_backup_battery, 180, 120);
+  
   // Version info - brighter text
   lv_obj_t* version_info = lv_label_create(settings_panel);
   static char ver_text[96];
-  snprintf(ver_text, sizeof(ver_text), "Firmware: Battery Emulator v9.3.5\nUI Version: %s\nBoard: Waveshare ESP32-S3-7B", UI_VERSION);
+  snprintf(ver_text, sizeof(ver_text), "Firmware: Battery Emulator\nUI Version: %s\nBoard: Waveshare ESP32-S3-7B", UI_VERSION);
   lv_label_set_text(version_info, ver_text);
-  lv_obj_set_style_text_font(version_info, &lv_font_montserrat_14, 0);
-  lv_obj_set_style_text_color(version_info, lv_color_hex(0xc9d1d9), 0);  // Brighter
-  lv_obj_set_pos(version_info, 20, 120);
+  lv_obj_set_style_text_font(version_info, &lv_font_montserrat_12, 0);
+  lv_obj_set_style_text_color(version_info, lv_color_hex(0x8b949e), 0);
+  lv_obj_set_pos(version_info, 20, 155);
   
   // ===== REBOOT CONFIRMATION PANEL =====
   reboot_confirm_panel = lv_obj_create(lv_scr_act());
@@ -1524,7 +1548,38 @@ void update_display() {
       lv_obj_set_style_text_color(lbl_can_status, lv_color_hex(0xffa657), 0);  // Yellow
     } else {
       lv_obj_set_style_text_color(lbl_can_status, lv_color_hex(0x8b949e), 0);  // Gray
-      lv_obj_set_style_text_color(lbl_can_status, lv_color_hex(0x8b949e), 0);
+    }
+    
+    // Mirror contactor/precharge state to IO expander (EXIO0, EXIO7) for relays/LEDs
+    // EXIO0 = main contactors engaged, EXIO7 = precharge active or completed
+    {
+      uint8_t ex0 = datalayer.system.status.contactors_engaged ? 1 : 0;
+      uint8_t ex7 = (datalayer.system.status.precharge_status == AUTO_PRECHARGE_PRECHARGING ||
+                     datalayer.system.status.precharge_status == AUTO_PRECHARGE_COMPLETED ||
+                     datalayer.system.status.contactors_engaged) ? 1 : 0;
+      IO_EXTENSION_Output(IO_EXTENSION_IO_0, ex0);
+      IO_EXTENSION_Output(IO_EXTENSION_IO_7, ex7);
+    }
+    
+    // Update backup battery voltage (screen's built-in battery)
+    if (lbl_backup_battery) {
+      uint32_t batt_mv = read_backup_battery_mv();
+      static char batt_text[24];
+      snprintf(batt_text, sizeof(batt_text), "%.2f V", batt_mv / 1000.0f);
+      lv_label_set_text(lbl_backup_battery, batt_text);
+      
+      // Color based on voltage (3.7V nominal, 4.2V full, 3.0V low)
+      uint32_t batt_color;
+      if (batt_mv >= 3900) {
+        batt_color = 0x7ee787;  // Green - good/full
+      } else if (batt_mv >= 3500) {
+        batt_color = 0xffa657;  // Orange - medium
+      } else if (batt_mv > 0) {
+        batt_color = 0xff7b72;  // Red - low
+      } else {
+        batt_color = 0x8b949e;  // Gray - not connected
+      }
+      lv_obj_set_style_text_color(lbl_backup_battery, lv_color_hex(batt_color), 0);
     }
     
     // Update min/max tracking (reusing voltage, temp_max, temp_min, cell_min_v, cell_max_v from above)
