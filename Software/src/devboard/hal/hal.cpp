@@ -23,6 +23,9 @@ void init_hal() {
 #elif defined(HW_DEVKIT)
 #include "hw_devkit.h"
   esp32hal = new DevKitHal();
+#elif defined(HW_TCAN485)
+#include "hw_tcan485.h"
+  esp32hal = new TCan485Hal();
 #else
 #error "No HW defined."
 #endif

@@ -864,6 +864,10 @@ String raw_settings_processor(const String& var, BatteryEmulatorSettingsStore& s
     return String(settings.getUInt("CTANOM", 100));
   }
 
+  if (var == "CANREADONLY") {
+    return settings.getBool("CANREADONLY") ? "checked" : "";
+  }
+
   return String();
 }
 
@@ -902,7 +906,7 @@ const char* getCANInterfaceName(CAN_Interface interface) {
 #define GPIOOPT1_SETTING ""
 #endif
 
-#ifdef HW_LILYGO
+#if defined(HW_LILYGO) || defined(HW_TCAN485)
 #define GPIOOPT2_SETTING \
   R"rawliteral(
     <label for="GPIOOPT2">BMS Power pin:</label>
@@ -914,7 +918,7 @@ const char* getCANInterfaceName(CAN_Interface interface) {
 #define GPIOOPT2_SETTING ""
 #endif
 
-#ifdef HW_LILYGO
+#if defined(HW_LILYGO) || defined(HW_TCAN485)
 #define GPIOOPT3_SETTING \
   R"rawliteral(
     <label for="GPIOOPT3">SMA enable pin:</label>
@@ -1516,6 +1520,10 @@ const char* getCANInterfaceName(CAN_Interface interface) {
         <label>Use CanFD as classic CAN: </label>
         <input type='checkbox' name='CANFDASCAN' value='on' %CANFDASCAN% 
         title="When enabled, CAN-FD channel will operate as normal 500kbps CAN" />
+
+        <label>Read-only CAN (monitor only, no TX): </label>
+        <input type='checkbox' name='CANREADONLY' value='on' %CANREADONLY% 
+        title="When enabled, BE only receives CAN; no messages are sent. Use to monitor BMS/pack while the car runs without bus conflicts." />
 
         <label>CAN addon crystal (Mhz): </label>
         <input type='number' name='CANFREQ' value="%CANFREQ%" 
