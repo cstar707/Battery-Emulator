@@ -2,11 +2,11 @@
 
 ## Board Pin Header Layout (2×6)
 
-Physical arrangement of the IO/power header on the board. Square pad = Pin 1 (orientation marker).
+Physical arrangement of the IO/power header on the board. Square pad = IO25 (Pin 1 / orientation marker).
 
 | Row | Left Pin | Right Pin |
 |-----|----------|-----------|
-| 1   | GND      | IO25      |
+| 1   | IO25     | GND       |
 | 2   | IO32     | IO33      |
 | 3   | IO5      | IO12      |
 | 4   | IO34     | IO35      |
