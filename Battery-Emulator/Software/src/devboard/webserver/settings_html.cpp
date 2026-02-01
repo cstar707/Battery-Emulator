@@ -860,7 +860,7 @@ const char* getCANInterfaceName(CAN_Interface interface) {
 #define GPIOOPT1_SETTING ""
 #endif
 
-#ifdef HW_LILYGO
+#if defined(HW_LILYGO) || defined(HW_TCAN485)
 #define GPIOOPT2_SETTING \
   R"rawliteral(
     <label for="GPIOOPT2">BMS Power pin:</label>
@@ -872,7 +872,7 @@ const char* getCANInterfaceName(CAN_Interface interface) {
 #define GPIOOPT2_SETTING ""
 #endif
 
-#ifdef HW_LILYGO
+#if defined(HW_LILYGO) || defined(HW_TCAN485)
 #define GPIOOPT3_SETTING \
   R"rawliteral(
     <label for="GPIOOPT3">SMA enable pin:</label>
