@@ -8,4 +8,4 @@ This project is now focused on using Battery-Emulator as the core integration la
 ## Next Steps
 - Review Battery-Emulator supported inverter list and Tesla pack support
 - Identify required hardware (board, CAN interface, contactor control)
-- Map Sol-Ark 12k integration requirements to Battery-Emulator capabilities
+- Map Solis 11.4kW HV inverter integration requirements to Battery-Emulator capabilities
