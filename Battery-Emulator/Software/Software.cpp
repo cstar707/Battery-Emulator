@@ -31,7 +31,7 @@
 #include "src/inverter/INVERTERS.h"
 
 #if !defined(HW_LILYGO) && !defined(HW_LILYGO2CAN) && !defined(HW_STARK) && !defined(HW_3LB) && !defined(HW_BECOM) && \
-    !defined(HW_DEVKIT) && !defined(HW_WAVESHARE7B)
+    !defined(HW_DEVKIT) && !defined(HW_WAVESHARE7B) && !defined(HW_WAVESHARE_P4_7B)
 #error You must select a target hardware!
 #endif
 
@@ -69,9 +69,8 @@ void register_transmitter(Transmitter* transmitter) {
 void init_serial() {
   // Init Serial monitor
   Serial.begin(115200);
-#if defined(HW_WAVESHARE7B)
-  // With ARDUINO_USB_CDC_ON_BOOT=0, Serial uses UART0 (GPIO43/44)
-  // which connects to the CH343 USB-to-UART chip
+#if defined(HW_WAVESHARE7B) || defined(HW_WAVESHARE_P4_7B)
+  // Waveshare 7B: Serial via CH343 USB-UART. P4 7B: Serial via USB-UART.
   // Wait up to 500ms for serial connection
   for (int i = 0; i < 50; i++) {
     if (Serial) break;
@@ -616,6 +615,9 @@ void setup() {
 #if defined(HW_WAVESHARE7B)
   // Print early boot message via UART (CH343 chip)
   Serial.println("=== WAVESHARE 7B BOOT ===");
+  Serial.flush();
+#elif defined(HW_WAVESHARE_P4_7B)
+  Serial.println("=== WAVESHARE P4 7B BOOT ===");
   Serial.flush();
 #endif
 

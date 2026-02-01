@@ -2,6 +2,8 @@
 
 Pin usage for the Battery Emulator on this board: what is already used and what you can use for contactors and other integration.
 
+**Integration guide:** For MCP2515 add-on CAN, RS485/Modbus inverter wiring, and contactor/precharge GPIO details, see [integration-guide-mcp2515-rs485-contactors.md](integration-guide-mcp2515-rs485-contactors.md).
+
 ---
 
 ## Already used by the board (do not use)
@@ -83,6 +85,13 @@ So you can wire EXIO0 to a “main contactors closed” relay/LED and EXIO7 to a
 ## If you need more than two outputs
 
 - **More than EXIO0 + EXIO7:** Add an external I2C GPIO expander (e.g. PCA9555) on the same I2C bus (GPIO 8/9).
+
+---
+
+## MCP2515 add-on and RS485/Modbus
+
+- **MCP2515 (second CAN):** SPI on GPIO 11/12/13, **CS = GPIO 6**. Set **CANFREQ** in Settings to 8 or 16 to match the module crystal. See [integration-guide-mcp2515-rs485-contactors.md](integration-guide-mcp2515-rs485-contactors.md).
+- **RS485 (Modbus inverter):** TX = GPIO 15, RX = GPIO 16. No DE/RE pin in HAL. See integration guide for BYD Modbus, Kostal RS485, and wiring.
 
 ---
 

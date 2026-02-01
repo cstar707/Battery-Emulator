@@ -1693,6 +1693,23 @@ void update_display() {
   // }
 }
 
+#elif defined(HW_WAVESHARE_P4_7B)
+
+// Waveshare ESP32-P4-WIFI6-Touch-LCD-7B: MIPI DSI display stub
+// Same 1024×600 resolution and GT911 touch as 7B, but MIPI DSI (not RGB).
+// Full LVGL + MIPI DSI driver to be added (ESP-IDF examples available).
+
+#include "../hal/hal.h"
+#include "../utils/logging.h"
+
+void init_display() {
+  DEBUG_PRINTF("Waveshare P4 7B: MIPI DSI display not yet implemented (stub)\n");
+}
+
+void update_display() {
+  // No display until MIPI DSI + LVGL driver is added
+}
+
 #else
 
 // Default display driver for other hardware (unchanged)
