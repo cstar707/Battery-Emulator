@@ -4,6 +4,8 @@
 
 Physical arrangement of the IO/power header. **View: bottom of board (solder side)**. Square pad = IO25 (Pin 1 / orientation marker).
 
+![LilyGo T-CAN485 pin header - bottom view](docs/images/lilygo-pin-header-bottom.png)
+
 | Row | Left Pin | Right Pin |
 |-----|----------|-----------|
 | 1   | IO25     | GND       |
