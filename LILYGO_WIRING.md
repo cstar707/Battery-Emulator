@@ -7,6 +7,8 @@
 | GND  | Black      | Ground                   |
 | IO5  | Yellow     | MCP2515 MOSI (SDI)       |
 | IO12 | Green      | MCP2515 SCK (Clock)      |
+| IO32 | Yellow     | Positive Contactor       |
+| IO33 | Green      | Negative Contactor       |
 | IO18 | Red        | MCP2515 CS (Chip Select) |
 | IO25 | Purple     | Precharge Relay          |
 | IO34 | Grey       | MCP2515 MISO (SDO)       |
@@ -29,8 +31,8 @@
 | Function            | LilyGo GPIO | Wire Color |
 |---------------------|-------------|------------|
 | Precharge Relay     | IO25        | Purple     |
-| Positive Contactor  | IO32        | TBD        |
-| Negative Contactor  | IO33        | TBD        |
+| Positive Contactor  | IO32        | Yellow     |
+| Negative Contactor  | IO33        | Green      |
 
 ## Notes
 
