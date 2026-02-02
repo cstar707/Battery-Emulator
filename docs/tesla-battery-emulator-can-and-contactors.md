@@ -42,6 +42,10 @@ So over CAN you can:
 
 What you do **not** get over CAN is the raw isoSPI traffic between cell boards and the master BMS. The BMS **aggregates** that and sends pack-level data on CAN (e.g. 0x132, 0x212, 0x332, 0x401). So: **original BMS ↔ vehicle (or BE) = CAN for both information and control.**
 
+### 1.4 X098 connector (penthouse)
+
+X098 is the **pack-side** connector on the penthouse harness (vehicle harness to pack). **CAN bus:** cavity **6** = CAN high (black, 0.13 mm²), cavity **7** = CAN low (green, 0.13 mm²) → X935M; 500 kbps. Full pinout, wire colors, and destinations: **[tesla-x098-connector-pinout.md](tesla-x098-connector-pinout.md)**.
+
 ---
 
 ## 2. CAN Messages: What BE Sends (TX)
@@ -206,7 +210,71 @@ Full detail, signal layout, and internet sources: **[tesla-3y-dc-charge-contacto
 
 ---
 
-## 7. References
+## 7. Bridge / split-bus design (pack in car)
+
+When the pack is still in the car and you insert a **bridge** (two CAN channels: pack side and gateway side), you can control what the pack sees and what the car sees. This section covers **breaking HVIL** so only BE can allow contactors, **what the other gateway signals are used for**, and **never sending or forwarding a pyro fuse blow command**.
+
+### 7.1 Break HVIL and keep it BE-only
+
+- **Goal:** So the **car cannot open (or close) the contactors** — only BE controls when contactors are allowed.
+- **How:** **Break the HVIL path** from the car to the pack. The BMS closes contactors only when it sees HVIL closed. If HVIL is broken on the car side, the car can’t satisfy HVIL. On the **pack side**, close HVIL only from **BE** (e.g. BE drives a relay or jumper that completes the HVIL loop to the pack when BE wants contactors allowed). So:
+  - Car side: HVIL open (or not connected to pack).
+  - Pack side: HVIL closed only when BE closes it → BMS sees “HVIL OK” only when BE allows → **only BE controls contactor allow**; the car cannot open contactors by pulling HVIL.
+- **Note:** HVIL on Model 3/Y is not on X098 in the pinout we have; it runs through the vehicle harness (e.g. multipin/X0 to drive unit). You need to identify the HVIL wires in the harness that goes to the pack and break them on the **car side** of the bridge, and drive the pack-side HVIL from BE only.
+
+### 7.2 Other signals from the gateway — what they’re used for
+
+We don’t have Tesla’s schematic signal names for each X098 cavity. From connector destinations and typical EV harnesses, the **other** (non-CAN) signals from X098 are likely used for:
+
+| Likely use | X098 cavity / destination | Notes |
+|------------|---------------------------|--------|
+| **12 V power** | 8 → X050B (YE 0.75 mm²) | Pack or gateway 12 V feed. |
+| **Ground** | 9 → G032 (BK 0.75) | Pack/vehicle ground. |
+| **Gateway signals** | 12 → X051; 3, 18 → X908M | Wake, presence, or other logic to/from gateway. |
+| **Other signals** | 1 → X952M; 10, 11, 13 → X936M; 15, 16 → X050A | Unknown without schematic; could be wake, HVIL sense, or other. |
+| **HVIL** | Not identified on X098 | HVIL usually in harness to drive unit / multipin; break and drive from BE as in §7.1. |
+| **Pyro trigger** | Unknown — could be hardwire or CAN | See §7.3; must never reach pack from car. |
+
+**Recommendation:** When building the bridge, **pass through** only what you need for the car to “see” the pack (e.g. 12 V, ground, and any wake/presence the gateway expects). For any wire that could be **pyro trigger** or **HVIL from car**, **do not connect** car side to pack side — break it and drive pack side from BE only (HVIL) or leave open (pyro). Trace Tesla’s schematic for your build to identify which cavity/wire is pyro and HVIL before final wiring.
+
+### 7.3 Do not send or forward pyro fuse blow command
+
+- **Pyro fuse:** Tesla packs have a **pyrotechnic disconnect** (pyro fuse) that **permanently** opens the HV path when fired (crash or severe fault). It is **one-time** and **irreversible**.
+- **BE today:** BE only **receives** pyro-related **status** from the pack (e.g. 0x20A, 0x212: `pyroFuseBlown`, `pyroFuseFailedToBlow`, `passivePyroDeploy`, `HVP_gpioPassivePyroDepl`, etc.). BE **does not send** any CAN message that commands the pack to blow the pyro.
+- **Bridge rules:**
+  1. **Never forward** from car → pack any CAN message that could command a pyro blow (if such an ID exists in Tesla’s network, it must be **blocked** on the bridge when forwarding to the pack).
+  2. **Never send** from BE (or the bridge) any CAN frame that could trigger the pyro. BE’s TX list (0x082, 0x118, 0x221, 0x232, 0x333, etc.) does not include a “blow pyro” command in the open/community docs; keep it that way and do not add one.
+  3. **Hardwire:** If the pyro squib is triggered by a **hardwired** signal from the car (e.g. crash/airbag module), that wire must **not** be connected from car to pack across the bridge — **break it** on the car side so the car can never fire the pack’s pyro. Only the pack’s own BMS/fault logic could then fire it (e.g. internal fault); we do not modify that.
+- **Summary:** Ensure the car cannot blow the pyro (block CAN and break hardwire if present), and BE/bridge never send a pyro blow command.
+
+### 7.4 How the crash signal is sent
+
+The **crash signal** (the trigger that can lead to pyro fuse fire or contactor open) is sent **to** the pack from the vehicle. From the codebase and typical automotive practice:
+
+- **Pack reports crash detected:** The pack (HVP) **sends** on CAN **0x212** (BMS_status) a bit **HVP_gpioCrashSignal** (byte 1, bit 3). That is a **status** bit: “HVP has detected a crash signal on its GPIO.” So the HVP has a **hardware input** (GPIO) that is driven by the vehicle when a crash is detected.
+- **Conclusion:** The crash signal **to** the pack is almost certainly **hardwired** from the **Restraint Control Module (RCM)** / airbag / crash module to the pack (HVP). The RCM drives that line when a collision is detected; the HVP reads it as a GPIO and then reports **HVP_gpioCrashSignal** on 0x212 and may open contactors or fire the pyro. It is **not** sent as a CAN command from car to pack in the open/community docs we have; the trigger path is **hardwire**.
+- **For the bridge:** To prevent the car from ever triggering the pack’s pyro or crash logic, **break the crash hardwire** between the car (RCM/crash module) and the pack. Do not connect that wire across the bridge. The pack will then never see a crash signal from the car; only the pack’s own internal fault logic could still fire the pyro (e.g. severe internal fault), which we do not modify.
+
+### 7.5 Crash signal: which pin, 12V or GND, and can we safely cut the wire?
+
+- **Which pin:** On the **pack/harness connector pinout** you provided, the crash signal is **Pin 13: DI: CRASH SIGNAL** (Digital Input). Same connector: Vehicle CAN = Pins 15 (CANH), 16 (CANL); Charge Port CAN = Pins 7 (CANH), 6 (CANL); Pin 12 = DI: PCS LOCKOUT; Pin 11 = DO: CHARGE PORT LATCH EN; Pin 10 = DI: CHARGE PORT FAULT; Pin 18 = VIN: CONTACTOR POWER 12V; Pin 9 = GND: BAT; Pin 8 = VIN: BAT 12V; Pins 1/3 = AO/AI: REAR INVERTER. This may be the harness that mates with X098 or a related pack connector. (Previously we had not identified the crash pin in our X098 cavity table.) For X098 cavity correspondence, see Tesla's Electrical Reference (e.g. a dedicated RCM‑to‑pack or pyro harness; Tesla service notes describe the pyro disconnect as having its own connector). To know for sure you must use **Tesla’s Electrical Reference** for your Model/YOP (e.g. HV Battery & HVIL section) and trace the crash/pyro signal from RCM to pack.
+
+- **12V or GND:** The pinout labels Pin 13 as **DI: CRASH SIGNAL** (Digital Input) but does **not** state whether it is active‑high (e.g. 12 V = crash) or active‑low (e.g. GND = crash). You need the schematic or measurement to confirm. Terminate the pack side to the “no crash” level accordingly (see below).
+
+- **Can we safely just cut the wire?** **Not recommended** to only cut and leave the **pack side** of the wire **floating**:
+  - If the HVP expects “no crash” = **low** (e.g. pull‑down), floating might be read as undefined or, on some inputs, as **high** → possible **false crash** detection.
+  - If the HVP expects “no crash” = **high** (e.g. pull‑up), floating might be read as **low** → again possible misinterpretation.
+  - So cutting without terminating the pack side can **cause a false crash** (or fault) and is not safe.
+
+- **Safer approach:**
+  1. **Identify** the crash wire from Tesla’s schematic (connector and cavity).
+  2. **Break** the circuit so the **car side** (RCM) is **disconnected** from the pack — car can never drive the line.
+  3. **Terminate the pack side** to the **“no crash”** state: if the input is active‑high (12 V = crash), tie the pack‑side wire to **GND** (via resistor if the schematic shows one); if active‑low (GND = crash), tie to **12 V** or the pull‑up shown in the schematic. That way the pack always sees “no crash” and never triggers from the car.
+  4. Do **not** connect the car side of that wire across the bridge to the pack.
+
+---
+
+## 8. References
 
 ### Codebase
 
@@ -224,6 +292,6 @@ Full detail, signal layout, and internet sources: **[tesla-3y-dc-charge-contacto
 
 ---
 
-## 8. Related docs
+## 9. Related docs
 
 - **[tesla-3y-dc-charge-contactor-can-research.md](tesla-3y-dc-charge-contactor-can-research.md)** — Detailed 0x232 BMS_contactorRequest research, signal layout, implementation outline, and internet sources for DC fast charge contactor control.
