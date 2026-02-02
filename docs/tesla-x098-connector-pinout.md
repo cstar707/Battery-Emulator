@@ -125,12 +125,12 @@ An alternate pinout for the pack/harness connector (same or related to X098) lab
 | 10 | DI: CHARGE PORT FAULT | Digital input |
 | 11 | DO: CHARGE PORT LATCH EN | Digital output |
 | 12 | DI: PCS LOCKOUT | Digital input |
-| **13** | **DI: CRASH SIGNAL** | **Digital input — crash signal from RCM; break and terminate pack side to “no crash” when using a bridge.** |
+| **13** | **DI: CRASH SIGNAL** | **Digital input — crash signal from RCM. BE does not connect; for a bridge, break car side so RCM can't reach pack.** |
 | 15 | CANH: VEHICLE CAN | Vehicle CAN high |
 | 16 | CANL: VEHICLE CAN | Vehicle CAN low |
 | 18 | VIN: CONTACTOR POWER 12V | Contactor power 12 V |
 
-- **Crash signal:** **Pin 13** is **DI: CRASH SIGNAL**. It is a **digital input** to the pack (HVP); the pinout does not state whether it is active-high (e.g. 12 V = crash) or active-low (e.g. GND = crash). Do not simply cut and leave the pack side floating — break the wire so the car (RCM) is disconnected, and terminate the pack side to the “no crash” level (GND or 12 V per schematic). See [tesla-battery-emulator-can-and-contactors.md §7.5](tesla-battery-emulator-can-and-contactors.md).
+- **Crash signal:** **Pin 13** is **DI: CRASH SIGNAL**. The official BE wiki does not mention Pin 13 (only Pins 1, 3, 8, 9, 15, 16, 18), so in the standard BE setup Pin 13 is left unconnected. **BE does not connect to Pin 13** — the required connections for BE to operate are only Pin 1–3 (resistor), 8, 9, 15, 16. Pin 13 is a digital input to the pack (HVP); the pinout does not state whether it is active-high or active-low. For a bridge: break the crash wire on the car side so the RCM can't reach the pack; do not connect that wire across the bridge. See [tesla-battery-emulator-can-and-contactors.md §7.5](tesla-battery-emulator-can-and-contactors.md).
 - **Vehicle CAN:** Pins 15 (CANH) and 16 (CANL) — this is the powertrain CAN (same as X098 cavities 6 and 7 in the other view; pin numbering may differ by connector face).
 - **12V and GND:** Pin 8 = BAT 12V, Pin 18 = CONTACTOR POWER 12V, Pin 9 = GND.
 
