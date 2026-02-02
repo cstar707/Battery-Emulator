@@ -6,9 +6,9 @@ This document summarizes what we learned about using Battery Emulator (BE) with 
 
 ---
 
-## 1. X098 — what we really need to connect
+## 1. X098 — what we really need to connect (for BE to operate)
 
-- **Not just CAN.** The pack needs **12 V**, **GND**, **CAN**, and the **Pin 1–3 resistor** (60 Ω RWD / 120 Ω AWD) to power up and allow contactors.
+- **Not just CAN.** The pack needs **12 V**, **GND**, **CAN**, and the **Pin 1–3 resistor** (60 Ω RWD / 120 Ω AWD) to power up and allow contactors. **Only these pins are connected to BE:** Pin 1 & 3 (resistor), 8 & 18 (+12 V), 9 (GND), 15 & 16 (Vehicle CAN). No other X098 pins (e.g. Pin 13 crash signal) are required for BE to operate.
 - **HVIL** is **not** on X098; it’s on the **HV connectors** (jumpers on unused HV connectors, pyro fuse). So “satisfy HVIL at X098” is wrong — HVIL is satisfied in the penthouse/HV side.
 - **If we only unplug X098** (leave HV and rest of car intact): we still connect to the pack’s X098 — 12 V (Pin 8, 18), GND (Pin 9), CAN (Pin 15, 16) to BE, and 60/120 Ω between Pin 1 and 3.
 
@@ -24,8 +24,9 @@ This document summarizes what we learned about using Battery Emulator (BE) with 
 
 ## 3. Crash signal (Pin 13)
 
-- **Pin 13 = DI: CRASH SIGNAL** (digital input to pack from RCM). Crash trigger is **hardwired** from RCM to pack; pack reports **HVP_gpioCrashSignal** on CAN 0x212.
-- **Do not simply cut** the wire — leave pack side floating can cause false crash. **Break** car side and **terminate pack side** to “no crash” level (GND or 12 V per schematic).
+- **BE does not connect to Pin 13.** The official BE wiki only lists Pins 1, 3, 8, 9, 15, 16, 18 — Pin 13 is **left unconnected** in the standard BE setup. The wiki does not say to terminate it.
+- **Pin 13 = DI: CRASH SIGNAL** (digital input to pack from RCM). Crash trigger is hardwired from RCM to pack; pack reports **HVP_gpioCrashSignal** on CAN 0x212.
+- **When Pin 13 matters (harness / bridge only):** (1) **Pack in car, bridge:** Break the crash wire on the car side so the RCM can't reach the pack; do not connect that wire across the bridge. (2) **X098 fully unplugged from car** (only BE connected): Pin 13 is left unconnected per BE. In both cases this is **harness/wiring**, not something BE connects to.
 - For bridge: never forward or send pyro blow command; break crash hardwire so car can’t fire pack’s pyro.
 
 ---

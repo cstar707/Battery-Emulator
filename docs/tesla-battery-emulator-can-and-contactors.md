@@ -257,20 +257,18 @@ The **crash signal** (the trigger that can lead to pyro fuse fire or contactor o
 
 ### 7.5 Crash signal: which pin, 12V or GND, and can we safely cut the wire?
 
+- **Official BE wiki:** The [Battery: Tesla Model S 3 X Y](https://github.com/dalathegreat/Battery-Emulator/wiki/Battery:-Tesla-Model-S-3-X-Y) wiki only lists required X098 connections: Pins 1, 3, 8, 9, 15, 16, 18. It does **not** mention Pin 13 or the crash signal; in the standard BE setup Pin 13 is therefore **left unconnected** (not wired to BE). The text below is an **additional recommendation** for bridge/harness builds or when Pin 13 would otherwise float.
+
 - **Which pin:** On the **pack/harness connector pinout** you provided, the crash signal is **Pin 13: DI: CRASH SIGNAL** (Digital Input). Same connector: Vehicle CAN = Pins 15 (CANH), 16 (CANL); Charge Port CAN = Pins 7 (CANH), 6 (CANL); Pin 12 = DI: PCS LOCKOUT; Pin 11 = DO: CHARGE PORT LATCH EN; Pin 10 = DI: CHARGE PORT FAULT; Pin 18 = VIN: CONTACTOR POWER 12V; Pin 9 = GND: BAT; Pin 8 = VIN: BAT 12V; Pins 1/3 = AO/AI: REAR INVERTER. This may be the harness that mates with X098 or a related pack connector. (Previously we had not identified the crash pin in our X098 cavity table.) For X098 cavity correspondence, see Tesla's Electrical Reference (e.g. a dedicated RCM‑to‑pack or pyro harness; Tesla service notes describe the pyro disconnect as having its own connector). To know for sure you must use **Tesla’s Electrical Reference** for your Model/YOP (e.g. HV Battery & HVIL section) and trace the crash/pyro signal from RCM to pack.
 
-- **12V or GND:** The pinout labels Pin 13 as **DI: CRASH SIGNAL** (Digital Input) but does **not** state whether it is active‑high (e.g. 12 V = crash) or active‑low (e.g. GND = crash). You need the schematic or measurement to confirm. Terminate the pack side to the “no crash” level accordingly (see below).
+- **12V or GND:** The pinout labels Pin 13 as **DI: CRASH SIGNAL** (Digital Input) but does **not** state whether it is active‑high (e.g. 12 V = crash) or active‑low (e.g. GND = crash). You need the schematic or measurement to confirm. We do not recommend terminating the pack side; the correct level is unknown without the schematic or measurement.
 
 - **Can we safely just cut the wire?** **Not recommended** to only cut and leave the **pack side** of the wire **floating**:
   - If the HVP expects “no crash” = **low** (e.g. pull‑down), floating might be read as undefined or, on some inputs, as **high** → possible **false crash** detection.
   - If the HVP expects “no crash” = **high** (e.g. pull‑up), floating might be read as **low** → again possible misinterpretation.
-  - So cutting without terminating the pack side can **cause a false crash** (or fault) and is not safe.
+  - Leaving the pack side floating can **cause a false crash** (or fault) and is not safe.
 
-- **Safer approach:**
-  1. **Identify** the crash wire from Tesla’s schematic (connector and cavity).
-  2. **Break** the circuit so the **car side** (RCM) is **disconnected** from the pack — car can never drive the line.
-  3. **Terminate the pack side** to the **“no crash”** state: if the input is active‑high (12 V = crash), tie the pack‑side wire to **GND** (via resistor if the schematic shows one); if active‑low (GND = crash), tie to **12 V** or the pull‑up shown in the schematic. That way the pack always sees “no crash” and never triggers from the car.
-  4. Do **not** connect the car side of that wire across the bridge to the pack.
+- **Bridge wiring:** **Break** the crash wire so the **car side** (RCM) is **disconnected** from the pack — the car can never drive the line. Do **not** connect that wire across the bridge to the pack. The pack side of Pin 13 is left as per BE (unconnected).
 
 ---
 
