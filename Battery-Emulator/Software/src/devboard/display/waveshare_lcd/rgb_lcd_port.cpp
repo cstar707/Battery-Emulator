@@ -12,7 +12,7 @@
  ******************************************************************************/
 
 #include "rgb_lcd_port.h"
-
+#include <cstring>
 
 const char *TAG = "rgb_lcd_port";
 
@@ -172,6 +172,20 @@ void wavesahre_rgb_lcd_display(uint8_t *Image)
 void waveshare_get_frame_buffer(void **buf1, void **buf2)
 {
     ESP_ERROR_CHECK(esp_lcd_rgb_panel_get_frame_buffer(panel_handle, 2, buf1, buf2));
+}
+
+/**
+ * @brief Fill all RGB panel framebuffers with black (0).
+ * Prevents white or garbage at edges/corners before LVGL has drawn.
+ */
+void waveshare_rgb_lcd_clear_framebuffers_black()
+{
+    void *fb1 = NULL;
+    void *fb2 = NULL;
+    ESP_ERROR_CHECK(esp_lcd_rgb_panel_get_frame_buffer(panel_handle, 2, &fb1, &fb2));
+    size_t fb_bytes = EXAMPLE_LCD_H_RES * EXAMPLE_LCD_V_RES * 2;  // RGB565 = 2 bytes per pixel
+    if (fb1) memset(fb1, 0, fb_bytes);
+    if (fb2) memset(fb2, 0, fb_bytes);
 }
 /**
  * @brief Turn on the RGB LCD screen backlight.

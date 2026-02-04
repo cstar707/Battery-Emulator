@@ -74,8 +74,16 @@ static lv_obj_t* btn_wifi_ap;
 static lv_obj_t* lbl_btn_wifi;
 static lv_obj_t* btn_settings;
 static lv_obj_t* btn_reboot;
+static lv_obj_t* btn_contactors;
+static lv_obj_t* lbl_contactors_btn;  // label on Contactors button (for greyed-out state)
+static lv_obj_t* settings_backdrop;
 static lv_obj_t* settings_panel;
+static lv_obj_t* reboot_backdrop;
 static lv_obj_t* reboot_confirm_panel;
+static lv_obj_t* contactor_backdrop;
+static lv_obj_t* contactor_confirm_panel;
+static lv_obj_t* wifi_backdrop;
+static lv_obj_t* wifi_confirm_backdrop;
 static lv_obj_t* wifi_panel;
 static lv_obj_t* wifi_confirm_panel;
 static lv_obj_t* lbl_wifi_status;
@@ -84,7 +92,7 @@ static lv_obj_t* brightness_slider;
 static lv_obj_t* lbl_brightness;
 static lv_obj_t* lbl_backup_battery;
 static bool wifi_ap_enabled = false;  // Track AP state
-static uint8_t brightness_level = 100;  // 0-100%
+static uint8_t brightness_level = 70;  // 0-100% (default 70% to reduce edge glow / backlight bleed)
 static uint8_t wifi_tx_power = 1;  // Index into power levels (default 8.5dBm)
 
 // Auto-dim feature
@@ -294,16 +302,14 @@ static const char* wifi_power_names[] = {
 
 // Open WiFi settings panel
 static void btn_wifi_ap_cb(lv_event_t* e) {
-  if (wifi_panel) {
-    lv_obj_clear_flag(wifi_panel, LV_OBJ_FLAG_HIDDEN);
-  }
+  if (wifi_backdrop) lv_obj_clear_flag(wifi_backdrop, LV_OBJ_FLAG_HIDDEN);
+  if (wifi_panel) lv_obj_clear_flag(wifi_panel, LV_OBJ_FLAG_HIDDEN);
 }
 
 // Close WiFi settings panel
 static void btn_wifi_close_cb(lv_event_t* e) {
-  if (wifi_panel) {
-    lv_obj_add_flag(wifi_panel, LV_OBJ_FLAG_HIDDEN);
-  }
+  if (wifi_backdrop) lv_obj_add_flag(wifi_backdrop, LV_OBJ_FLAG_HIDDEN);
+  if (wifi_panel) lv_obj_add_flag(wifi_panel, LV_OBJ_FLAG_HIDDEN);
 }
 
 // Update WiFi status display
@@ -330,24 +336,22 @@ static void update_wifi_status_display() {
 
 // Show AP enable confirmation
 static void btn_wifi_enable_cb(lv_event_t* e) {
-  if (!wifi_ap_enabled && wifi_confirm_panel) {
-    lv_obj_clear_flag(wifi_confirm_panel, LV_OBJ_FLAG_HIDDEN);
+  if (!wifi_ap_enabled) {
+    if (wifi_confirm_backdrop) lv_obj_clear_flag(wifi_confirm_backdrop, LV_OBJ_FLAG_HIDDEN);
+    if (wifi_confirm_panel) lv_obj_clear_flag(wifi_confirm_panel, LV_OBJ_FLAG_HIDDEN);
   }
 }
 
 // Cancel AP enable
 static void btn_wifi_confirm_cancel_cb(lv_event_t* e) {
-  if (wifi_confirm_panel) {
-    lv_obj_add_flag(wifi_confirm_panel, LV_OBJ_FLAG_HIDDEN);
-  }
+  if (wifi_confirm_backdrop) lv_obj_add_flag(wifi_confirm_backdrop, LV_OBJ_FLAG_HIDDEN);
+  if (wifi_confirm_panel) lv_obj_add_flag(wifi_confirm_panel, LV_OBJ_FLAG_HIDDEN);
 }
 
 // Actually enable AP (after confirmation)
 static void btn_wifi_confirm_enable_cb(lv_event_t* e) {
-  // Hide confirmation
-  if (wifi_confirm_panel) {
-    lv_obj_add_flag(wifi_confirm_panel, LV_OBJ_FLAG_HIDDEN);
-  }
+  if (wifi_confirm_backdrop) lv_obj_add_flag(wifi_confirm_backdrop, LV_OBJ_FLAG_HIDDEN);
+  if (wifi_confirm_panel) lv_obj_add_flag(wifi_confirm_panel, LV_OBJ_FLAG_HIDDEN);
   
   // Freeze display updates
   display_frozen = true;
@@ -438,35 +442,59 @@ static void brightness_slider_cb(lv_event_t* e) {
   DEBUG_PRINTF("Brightness: %d%% (PWM: %d)\n", brightness_level, pwm_val);
 }
 
+// Click-outside (backdrop) callback: close the panel and hide backdrop
+static void modal_backdrop_click_cb(lv_event_t* e) {
+  lv_obj_t* backdrop = lv_event_get_target(e);
+  lv_obj_t* panel = (lv_obj_t*)lv_obj_get_user_data(backdrop);
+  if (backdrop) lv_obj_add_flag(backdrop, LV_OBJ_FLAG_HIDDEN);
+  if (panel) lv_obj_add_flag(panel, LV_OBJ_FLAG_HIDDEN);
+}
+
+// Create a full-screen semi-transparent backdrop; user_data will be set to the panel later
+static lv_obj_t* create_modal_backdrop() {
+  lv_obj_t* b = lv_obj_create(lv_scr_act());
+  lv_obj_set_size(b, SCREEN_WIDTH, SCREEN_HEIGHT);
+  lv_obj_set_pos(b, 0, 0);
+  lv_obj_set_style_bg_color(b, lv_color_hex(0x000000), 0);
+  lv_obj_set_style_bg_opa(b, LV_OPA_50, 0);
+  lv_obj_set_style_border_width(b, 0, 0);
+  lv_obj_set_style_radius(b, 0, 0);
+  lv_obj_set_style_pad_all(b, 0, 0);
+  lv_obj_clear_flag(b, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_add_flag(b, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(b, LV_OBJ_FLAG_CLICKABLE);
+  return b;
+}
+
 // Close settings panel callback
 static void btn_close_settings_cb(lv_event_t* e) {
-  if (settings_panel) {
-    lv_obj_add_flag(settings_panel, LV_OBJ_FLAG_HIDDEN);
-  }
+  if (settings_panel) lv_obj_add_flag(settings_panel, LV_OBJ_FLAG_HIDDEN);
+  if (settings_backdrop) lv_obj_add_flag(settings_backdrop, LV_OBJ_FLAG_HIDDEN);
 }
 
 // Settings button callback
 static void btn_settings_cb(lv_event_t* e) {
   if (settings_panel) {
-    // Toggle visibility
     if (lv_obj_has_flag(settings_panel, LV_OBJ_FLAG_HIDDEN)) {
+      if (settings_backdrop) lv_obj_clear_flag(settings_backdrop, LV_OBJ_FLAG_HIDDEN);
       lv_obj_clear_flag(settings_panel, LV_OBJ_FLAG_HIDDEN);
     } else {
       lv_obj_add_flag(settings_panel, LV_OBJ_FLAG_HIDDEN);
+      if (settings_backdrop) lv_obj_add_flag(settings_backdrop, LV_OBJ_FLAG_HIDDEN);
     }
   }
 }
 
 // Reboot button callback
-// Show reboot confirmation panel
 static void btn_reboot_cb(lv_event_t* e) {
-  if (reboot_confirm_panel) {
-    lv_obj_clear_flag(reboot_confirm_panel, LV_OBJ_FLAG_HIDDEN);
-  }
+  if (reboot_backdrop) lv_obj_clear_flag(reboot_backdrop, LV_OBJ_FLAG_HIDDEN);
+  if (reboot_confirm_panel) lv_obj_clear_flag(reboot_confirm_panel, LV_OBJ_FLAG_HIDDEN);
 }
 
 // Actually reboot
 static void btn_reboot_confirm_cb(lv_event_t* e) {
+  if (reboot_backdrop) lv_obj_add_flag(reboot_backdrop, LV_OBJ_FLAG_HIDDEN);
+  if (reboot_confirm_panel) lv_obj_add_flag(reboot_confirm_panel, LV_OBJ_FLAG_HIDDEN);
   DEBUG_PRINTF("Rebooting...\n");
   delay(100);
   ESP.restart();
@@ -474,9 +502,35 @@ static void btn_reboot_confirm_cb(lv_event_t* e) {
 
 // Cancel reboot
 static void btn_reboot_cancel_cb(lv_event_t* e) {
-  if (reboot_confirm_panel) {
-    lv_obj_add_flag(reboot_confirm_panel, LV_OBJ_FLAG_HIDDEN);
-  }
+  if (reboot_confirm_panel) lv_obj_add_flag(reboot_confirm_panel, LV_OBJ_FLAG_HIDDEN);
+  if (reboot_backdrop) lv_obj_add_flag(reboot_backdrop, LV_OBJ_FLAG_HIDDEN);
+}
+
+// Contactors button: show confirm panel (Open/Close contactors) only when allowed
+static void btn_contactors_cb(lv_event_t* e) {
+  if (!battery || !battery->supports_contactor_close()) return;  // Greyed out = no action
+  if (contactor_backdrop) lv_obj_clear_flag(contactor_backdrop, LV_OBJ_FLAG_HIDDEN);
+  if (contactor_confirm_panel) lv_obj_clear_flag(contactor_confirm_panel, LV_OBJ_FLAG_HIDDEN);
+}
+
+// Contactor confirm: Open
+static void btn_contactor_open_cb(lv_event_t* e) {
+  if (battery) battery->request_open_contactors();
+  if (contactor_backdrop) lv_obj_add_flag(contactor_backdrop, LV_OBJ_FLAG_HIDDEN);
+  if (contactor_confirm_panel) lv_obj_add_flag(contactor_confirm_panel, LV_OBJ_FLAG_HIDDEN);
+}
+
+// Contactor confirm: Close
+static void btn_contactor_close_cb(lv_event_t* e) {
+  if (battery) battery->request_close_contactors();
+  if (contactor_backdrop) lv_obj_add_flag(contactor_backdrop, LV_OBJ_FLAG_HIDDEN);
+  if (contactor_confirm_panel) lv_obj_add_flag(contactor_confirm_panel, LV_OBJ_FLAG_HIDDEN);
+}
+
+// Contactor confirm: Cancel (or click outside)
+static void btn_contactor_cancel_cb(lv_event_t* e) {
+  if (contactor_backdrop) lv_obj_add_flag(contactor_backdrop, LV_OBJ_FLAG_HIDDEN);
+  if (contactor_confirm_panel) lv_obj_add_flag(contactor_confirm_panel, LV_OBJ_FLAG_HIDDEN);
 }
 
 // Add event to log
@@ -874,23 +928,9 @@ static void create_ui() {
   lv_obj_set_style_text_font(lbl_btn_wifi, &lv_font_montserrat_14, 0);
   lv_obj_center(lbl_btn_wifi);
   
-  // Settings Button
-  btn_settings = lv_btn_create(lv_scr_act());
-  lv_obj_set_pos(btn_settings, btn_x + btn_w + 10, row5_y);
-  lv_obj_set_size(btn_settings, btn_w, btn_h);
-  lv_obj_set_style_bg_color(btn_settings, lv_color_hex(0x1f6feb), 0);  // Blue
-  lv_obj_set_style_bg_color(btn_settings, lv_color_hex(0x388bfd), LV_STATE_PRESSED);
-  lv_obj_set_style_radius(btn_settings, 8, 0);
-  lv_obj_add_event_cb(btn_settings, btn_settings_cb, LV_EVENT_CLICKED, NULL);
-  
-  lv_obj_t* lbl_settings = lv_label_create(btn_settings);
-  lv_label_set_text(lbl_settings, "Settings");
-  lv_obj_set_style_text_font(lbl_settings, &lv_font_montserrat_14, 0);
-  lv_obj_center(lbl_settings);
-  
-  // Reboot Button
+  // Reboot Button (top right of button block)
   btn_reboot = lv_btn_create(lv_scr_act());
-  lv_obj_set_pos(btn_reboot, btn_x, row5_y + btn_h + 10);
+  lv_obj_set_pos(btn_reboot, btn_x + btn_w + 10, row5_y);
   lv_obj_set_size(btn_reboot, btn_w, btn_h);
   lv_obj_set_style_bg_color(btn_reboot, lv_color_hex(0xda3633), 0);  // Red
   lv_obj_set_style_bg_color(btn_reboot, lv_color_hex(0xf85149), LV_STATE_PRESSED);
@@ -902,8 +942,43 @@ static void create_ui() {
   lv_obj_set_style_text_font(lbl_reboot, &lv_font_montserrat_14, 0);
   lv_obj_center(lbl_reboot);
   
+  // Contactors Button (bottom left) - greyed out when not available, green when allowed
+  btn_contactors = lv_btn_create(lv_scr_act());
+  lv_obj_set_pos(btn_contactors, btn_x, row5_y + btn_h + 10);
+  lv_obj_set_size(btn_contactors, btn_w, btn_h);
+  lv_obj_set_style_bg_color(btn_contactors, lv_color_hex(0x238636), 0);  // Green when enabled
+  lv_obj_set_style_bg_color(btn_contactors, lv_color_hex(0x2ea043), LV_STATE_PRESSED);
+  lv_obj_set_style_radius(btn_contactors, 8, 0);
+  lv_obj_set_style_bg_color(btn_contactors, lv_color_hex(0x484f58), LV_STATE_DISABLED);  // Grey when not available
+  lv_obj_set_style_text_color(btn_contactors, lv_color_hex(0x8b949e), LV_STATE_DISABLED);
+  lv_obj_add_event_cb(btn_contactors, btn_contactors_cb, LV_EVENT_CLICKED, NULL);
+  lbl_contactors_btn = lv_label_create(btn_contactors);
+  lv_label_set_text(lbl_contactors_btn, "Contactors");
+  lv_obj_set_style_text_font(lbl_contactors_btn, &lv_font_montserrat_12, 0);
+  lv_obj_center(lbl_contactors_btn);
+  lv_obj_set_style_text_color(lbl_contactors_btn, lv_color_hex(0x8b949e), LV_STATE_DISABLED);  // Grey label when disabled
+  lv_obj_add_state(btn_contactors, LV_STATE_DISABLED);  // Start greyed out until battery supports contactors
+  lv_obj_add_state(lbl_contactors_btn, LV_STATE_DISABLED);
+  
+  // Settings Button (last spot: bottom right corner)
+  btn_settings = lv_btn_create(lv_scr_act());
+  lv_obj_set_pos(btn_settings, btn_x + btn_w + 10, row5_y + btn_h + 10);
+  lv_obj_set_size(btn_settings, btn_w, btn_h);
+  lv_obj_set_style_bg_color(btn_settings, lv_color_hex(0x1f6feb), 0);  // Blue
+  lv_obj_set_style_bg_color(btn_settings, lv_color_hex(0x388bfd), LV_STATE_PRESSED);
+  lv_obj_set_style_radius(btn_settings, 8, 0);
+  lv_obj_add_event_cb(btn_settings, btn_settings_cb, LV_EVENT_CLICKED, NULL);
+  
+  lv_obj_t* lbl_settings = lv_label_create(btn_settings);
+  lv_label_set_text(lbl_settings, "Settings");
+  lv_obj_set_style_text_font(lbl_settings, &lv_font_montserrat_14, 0);
+  lv_obj_center(lbl_settings);
+  
   // ===== SETTINGS PANEL (overlay, hidden by default) =====
+  settings_backdrop = create_modal_backdrop();
+  lv_obj_add_event_cb(settings_backdrop, modal_backdrop_click_cb, LV_EVENT_CLICKED, NULL);
   settings_panel = lv_obj_create(lv_scr_act());
+  lv_obj_set_user_data(settings_backdrop, settings_panel);
   lv_obj_set_size(settings_panel, 400, 230);
   lv_obj_center(settings_panel);
   lv_obj_set_style_bg_color(settings_panel, lv_color_hex(0x161b22), 0);
@@ -945,7 +1020,7 @@ static void create_ui() {
   lv_obj_set_size(brightness_slider, 300, 20);
   lv_obj_set_pos(brightness_slider, 20, 90);
   lv_slider_set_range(brightness_slider, 10, 100);  // Min 10% to keep visible
-  lv_slider_set_value(brightness_slider, 100, LV_ANIM_OFF);
+  lv_slider_set_value(brightness_slider, brightness_level, LV_ANIM_OFF);
   lv_obj_set_style_bg_color(brightness_slider, lv_color_hex(0x21262d), LV_PART_MAIN);
   lv_obj_set_style_bg_color(brightness_slider, lv_color_hex(0x1f6feb), LV_PART_INDICATOR);
   lv_obj_set_style_bg_color(brightness_slider, lv_color_hex(0xc9d1d9), LV_PART_KNOB);
@@ -953,7 +1028,9 @@ static void create_ui() {
   
   // Brightness value label
   lbl_brightness = lv_label_create(settings_panel);
-  lv_label_set_text(lbl_brightness, "100%");
+  char buf[16];
+  snprintf(buf, sizeof(buf), "%d%%", brightness_level);
+  lv_label_set_text(lbl_brightness, buf);
   lv_obj_set_style_text_font(lbl_brightness, &lv_font_montserrat_16, 0);
   lv_obj_set_style_text_color(lbl_brightness, lv_color_hex(0x58a6ff), 0);
   lv_obj_set_pos(lbl_brightness, 330, 87);
@@ -981,7 +1058,10 @@ static void create_ui() {
   lv_obj_set_pos(version_info, 20, 155);
   
   // ===== REBOOT CONFIRMATION PANEL =====
+  reboot_backdrop = create_modal_backdrop();
+  lv_obj_add_event_cb(reboot_backdrop, modal_backdrop_click_cb, LV_EVENT_CLICKED, NULL);
   reboot_confirm_panel = lv_obj_create(lv_scr_act());
+  lv_obj_set_user_data(reboot_backdrop, reboot_confirm_panel);
   lv_obj_set_size(reboot_confirm_panel, 300, 150);
   lv_obj_center(reboot_confirm_panel);
   lv_obj_set_style_bg_color(reboot_confirm_panel, lv_color_hex(0x161b22), 0);
@@ -1027,8 +1107,70 @@ static void create_ui() {
   lv_obj_set_style_text_font(lbl_confirm, &lv_font_montserrat_14, 0);
   lv_obj_center(lbl_confirm);
   
+  // ===== CONTACTOR CONFIRMATION PANEL =====
+  contactor_backdrop = create_modal_backdrop();
+  lv_obj_add_event_cb(contactor_backdrop, modal_backdrop_click_cb, LV_EVENT_CLICKED, NULL);
+  contactor_confirm_panel = lv_obj_create(lv_scr_act());
+  lv_obj_set_user_data(contactor_backdrop, contactor_confirm_panel);
+  lv_obj_set_size(contactor_confirm_panel, 320, 160);
+  lv_obj_center(contactor_confirm_panel);
+  lv_obj_set_style_bg_color(contactor_confirm_panel, lv_color_hex(0x161b22), 0);
+  lv_obj_set_style_border_color(contactor_confirm_panel, lv_color_hex(0x238636), 0);
+  lv_obj_set_style_border_width(contactor_confirm_panel, 2, 0);
+  lv_obj_set_style_radius(contactor_confirm_panel, 12, 0);
+  lv_obj_add_flag(contactor_confirm_panel, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_clear_flag(contactor_confirm_panel, LV_OBJ_FLAG_SCROLLABLE);
+  
+  lv_obj_t* contactor_title = lv_label_create(contactor_confirm_panel);
+  lv_label_set_text(contactor_title, "HV Contactors");
+  lv_obj_set_style_text_font(contactor_title, &lv_font_montserrat_20, 0);
+  lv_obj_set_style_text_color(contactor_title, lv_color_hex(0x7ee787), 0);
+  lv_obj_align(contactor_title, LV_ALIGN_TOP_MID, 0, 10);
+  
+  lv_obj_t* contactor_msg = lv_label_create(contactor_confirm_panel);
+  lv_label_set_text(contactor_msg, "Open or close contactors?");
+  lv_obj_set_style_text_font(contactor_msg, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_color(contactor_msg, lv_color_hex(0x8b949e), 0);
+  lv_obj_align(contactor_msg, LV_ALIGN_TOP_MID, 0, 45);
+  
+  lv_obj_t* btn_contactor_cancel = lv_btn_create(contactor_confirm_panel);
+  lv_obj_set_size(btn_contactor_cancel, 85, 38);
+  lv_obj_set_pos(btn_contactor_cancel, 20, 95);
+  lv_obj_set_style_bg_color(btn_contactor_cancel, lv_color_hex(0x21262d), 0);
+  lv_obj_set_style_radius(btn_contactor_cancel, 8, 0);
+  lv_obj_add_event_cb(btn_contactor_cancel, btn_contactor_cancel_cb, LV_EVENT_CLICKED, NULL);
+  lv_obj_t* lbl_cont_cancel = lv_label_create(btn_contactor_cancel);
+  lv_label_set_text(lbl_cont_cancel, "Cancel");
+  lv_obj_set_style_text_font(lbl_cont_cancel, &lv_font_montserrat_14, 0);
+  lv_obj_center(lbl_cont_cancel);
+  
+  lv_obj_t* btn_contactor_open = lv_btn_create(contactor_confirm_panel);
+  lv_obj_set_size(btn_contactor_open, 85, 38);
+  lv_obj_set_pos(btn_contactor_open, 115, 95);
+  lv_obj_set_style_bg_color(btn_contactor_open, lv_color_hex(0xda3633), 0);
+  lv_obj_set_style_radius(btn_contactor_open, 8, 0);
+  lv_obj_add_event_cb(btn_contactor_open, btn_contactor_open_cb, LV_EVENT_CLICKED, NULL);
+  lv_obj_t* lbl_cont_open = lv_label_create(btn_contactor_open);
+  lv_label_set_text(lbl_cont_open, "Open");
+  lv_obj_set_style_text_font(lbl_cont_open, &lv_font_montserrat_14, 0);
+  lv_obj_center(lbl_cont_open);
+  
+  lv_obj_t* btn_contactor_close = lv_btn_create(contactor_confirm_panel);
+  lv_obj_set_size(btn_contactor_close, 85, 38);
+  lv_obj_set_pos(btn_contactor_close, 210, 95);
+  lv_obj_set_style_bg_color(btn_contactor_close, lv_color_hex(0x238636), 0);
+  lv_obj_set_style_radius(btn_contactor_close, 8, 0);
+  lv_obj_add_event_cb(btn_contactor_close, btn_contactor_close_cb, LV_EVENT_CLICKED, NULL);
+  lv_obj_t* lbl_cont_close = lv_label_create(btn_contactor_close);
+  lv_label_set_text(lbl_cont_close, "Close");
+  lv_obj_set_style_text_font(lbl_cont_close, &lv_font_montserrat_14, 0);
+  lv_obj_center(lbl_cont_close);
+  
   // ===== WIFI SETTINGS PANEL =====
+  wifi_backdrop = create_modal_backdrop();
+  lv_obj_add_event_cb(wifi_backdrop, modal_backdrop_click_cb, LV_EVENT_CLICKED, NULL);
   wifi_panel = lv_obj_create(lv_scr_act());
+  lv_obj_set_user_data(wifi_backdrop, wifi_panel);
   lv_obj_set_size(wifi_panel, 400, 240);
   lv_obj_center(wifi_panel);
   lv_obj_set_style_bg_color(wifi_panel, lv_color_hex(0x161b22), 0);
@@ -1139,7 +1281,10 @@ static void create_ui() {
   lv_obj_set_pos(lbl_note, 20, 190);
   
   // ===== WIFI CONFIRM PANEL =====
+  wifi_confirm_backdrop = create_modal_backdrop();
+  lv_obj_add_event_cb(wifi_confirm_backdrop, modal_backdrop_click_cb, LV_EVENT_CLICKED, NULL);
   wifi_confirm_panel = lv_obj_create(lv_scr_act());
+  lv_obj_set_user_data(wifi_confirm_backdrop, wifi_confirm_panel);
   lv_obj_set_size(wifi_confirm_panel, 320, 160);
   lv_obj_center(wifi_confirm_panel);
   lv_obj_set_style_bg_color(wifi_confirm_panel, lv_color_hex(0x161b22), 0);
@@ -1328,11 +1473,18 @@ void init_display() {
     return;
   }
   DEBUG_PRINTF("LCD panel initialized\n");
+  // Clear framebuffers to black so edges/corners are not white before LVGL draws
+  waveshare_rgb_lcd_clear_framebuffers_black();
+  DEBUG_PRINTF("Framebuffers cleared to black\n");
   
-  // Turn on backlight (no PWM - PWM can cause visible flicker)
+  // Turn on backlight then set default brightness via PWM (reduces edge glow / washout)
   wavesahre_rgb_lcd_bl_on();
-  // Skip PWM control - just use digital on/off for backlight
-  DEBUG_PRINTF("Backlight enabled (no PWM)\n");
+  // Apply default brightness: same formula as slider (higher PWM = dimmer)
+  uint8_t pwm_val = 97 - ((brightness_level - 10) * 87) / 90;
+  if (pwm_val < 10) pwm_val = 10;
+  if (pwm_val > 97) pwm_val = 97;
+  IO_EXTENSION_Pwm_Output(pwm_val);
+  DEBUG_PRINTF("Backlight enabled at %d%% (PWM %d)\n", brightness_level, pwm_val);
   
   // Enable CAN mode (EXIO5=HIGH routes GPIO19/20 to CAN transceiver instead of USB)
   // Must be done before LVGL starts to avoid display issues
@@ -1497,7 +1649,16 @@ void update_display() {
       lv_label_set_text(lbl_contactor, "OPEN");
       lv_obj_set_style_text_color(lbl_contactor, lv_color_hex(0xff7b72), 0);
     }
-    
+    // Contactors button: greyed out when not available, normal green when allowed
+    if (btn_contactors) {
+      if (battery && battery->supports_contactor_close()) {
+        lv_obj_clear_state(btn_contactors, LV_STATE_DISABLED);
+        if (lbl_contactors_btn) lv_obj_clear_state(lbl_contactors_btn, LV_STATE_DISABLED);
+      } else {
+        lv_obj_add_state(btn_contactors, LV_STATE_DISABLED);
+        if (lbl_contactors_btn) lv_obj_add_state(lbl_contactors_btn, LV_STATE_DISABLED);
+      }
+    }
     // Update WiFi/Network status
     if (wifi_ap_enabled) {
       // Show AP info when AP is enabled

@@ -126,4 +126,10 @@ void wavesahre_rgb_lcd_display(uint8_t *Image);
  */
 void waveshare_get_frame_buffer(void **buf1, void **buf2);
 
+/**
+ * @brief Fill all panel framebuffers with black (0).
+ * Call after panel init to avoid white/garbage at edges before LVGL draws.
+ */
+void waveshare_rgb_lcd_clear_framebuffers_black();
+
 #endif // _RGB_LCD_H_
