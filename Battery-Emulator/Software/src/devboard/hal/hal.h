@@ -27,6 +27,9 @@ class Esp32Hal {
 
   virtual void set_default_configuration_values() {}
 
+  // Maximum valid GPIO number for this board (e.g. ESP32: 39, ESP32-S3: 48). Used to reject invalid pins.
+  virtual int max_gpio() { return 39; }
+
   template <typename... Pins>
   bool alloc_pins(const char* name, Pins... pins) {
     std::vector<gpio_num_t> requested_pins = {static_cast<gpio_num_t>(pins)...};
@@ -36,6 +39,12 @@ class Esp32Hal {
         set_event(EVENT_GPIO_NOT_DEFINED, (int)pin);
         allocator_name = name;
         DEBUG_PRINTF("%s attempted to allocate pin %d that wasn't defined for the selected HW.\n", name, (int)pin);
+        return false;
+      }
+      if ((int)pin > max_gpio()) {
+        set_event(EVENT_GPIO_NOT_DEFINED, (int)pin);
+        allocator_name = name;
+        DEBUG_PRINTF("%s attempted to allocate invalid pin %d (max %d for this board).\n", name, (int)pin, max_gpio());
         return false;
       }
 

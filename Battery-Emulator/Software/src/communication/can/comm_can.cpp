@@ -15,6 +15,7 @@
 #include "driver/i2c_master.h"
 #endif
 
+#include <SPI.h>
 #include <algorithm>
 #include <map>
 
@@ -158,6 +159,12 @@ bool init_CAN() {
     auto mosi_pin = esp32hal->MCP2515_MOSI();
     auto rst_pin = esp32hal->MCP2515_RST();
 
+    // MCP2515 INT must be a valid GPIO (library does pinMode/INPUT_PULLUP and attachInterrupt)
+    if (int_pin == GPIO_NUM_NC || (int)int_pin < 0 || (int)int_pin > esp32hal->max_gpio()) {
+      logging.println("MCP2515: INT pin not defined or out of range for this board, cannot init.");
+      set_event(EVENT_CANMCP2515_INIT_FAILURE, 1);
+      return false;
+    }
     if (!esp32hal->alloc_pins("CAN", cs_pin, int_pin, sck_pin, miso_pin, mosi_pin)) {
       return false;
     }
@@ -175,22 +182,90 @@ bool init_CAN() {
       delay(100);
     }
 
-    can2515 = new ACAN2515(cs_pin, SPI2515, int_pin);
-
     SPI2515.begin(sck_pin, miso_pin, mosi_pin);
+    delay(150);  // Let MCP2515 power/oscillator settle before first SPI access
+
+    // Serial diagnostic: raw SPI probe to see why init might fail
+    pinMode(cs_pin, OUTPUT);
+    digitalWrite(cs_pin, HIGH);
+    SPI2515.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
+    digitalWrite(cs_pin, LOW);
+    SPI2515.transfer(0xC0);  // MCP2515 software reset
+    digitalWrite(cs_pin, HIGH);
+    SPI2515.endTransaction();
+    delay(2);
+    SPI2515.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
+    digitalWrite(cs_pin, LOW);
+    SPI2515.transfer(0x03);   // READ command
+    SPI2515.transfer(0x0E);   // CANSTAT register (after reset ~0x80 = config mode)
+    uint8_t canstat = SPI2515.transfer(0xFF);
+    digitalWrite(cs_pin, HIGH);
+    SPI2515.endTransaction();
+    logging.print("MCP2515 probe: CANSTAT=0x");
+    logging.println(canstat, HEX);
+    if (canstat == 0xFF) {
+      logging.println("MCP2515: 0xFF = MISO floating/wrong (check SO wire, or swap SI/SO).");
+    } else if (canstat == 0x00) {
+      logging.println("MCP2515: 0x00 = no response (check CS, SCK, power, or pin order).");
+    } else {
+      logging.println("MCP2515: Chip responded on SPI; if init fails, check crystal or INT.");
+    }
+
+    can2515 = new ACAN2515(cs_pin, SPI2515, int_pin);
 
     // CAN bit rate 250 or 500 kb/s
     auto bitRate = (int)addonIt->second.speed * 1000UL;
 
     settings2515 = new ACAN2515Settings(QUARTZ_FREQUENCY, bitRate);
     settings2515->mRequestedMode = ACAN2515Settings::NormalMode;
-    const uint16_t errorCode2515 = can2515->begin(*settings2515, [] { can2515->isr(); });
+    uint16_t errorCode2515 = can2515->begin(*settings2515, [] { can2515->isr(); });
+    // Retry once if chip not detected (helps with slow power-up or marginal wiring)
+    if (errorCode2515 != 0 && (errorCode2515 & ACAN2515::kNoMCP2515)) {
+      logging.println("MCP2515: first init failed, retrying in 200 ms...");
+      delay(200);
+      can2515->end();
+      errorCode2515 = can2515->begin(*settings2515, [] { can2515->isr(); });
+    }
     if (errorCode2515 == 0) {
       logging.println("Can ok");
     } else {
       logging.print("Error Can: 0x");
       logging.println(errorCode2515, HEX);
+      // Decode MCP2515 init errors for troubleshooting
+      if (errorCode2515 & ACAN2515::kNoMCP2515) {
+        logging.println("MCP2515: Chip not detected. Check: wiring (SCK/MOSI/MISO/CS/INT), 3.3V/GND, crystal (CANFREQ=8 or 16 in Settings).");
+      }
+      if (errorCode2515 & ACAN2515::kINTPinIsNotAnInterrupt) {
+        logging.println("MCP2515: INT pin cannot be used as interrupt on this board.");
+      }
+      if (errorCode2515 & ACAN2515::kRequestedModeTimeOut) {
+        logging.println("MCP2515: Timeout entering normal mode. Check power and crystal.");
+      }
+      if (errorCode2515 & ACAN2515::kTooFarFromDesiredBitRate) {
+        logging.println("MCP2515: Bit rate too far from desired; try different CANFREQ (8 or 16 MHz).");
+      }
+      logging.print("MCP2515 pins: CS=");
+      logging.print((int)cs_pin);
+      logging.print(" INT=");
+      logging.print((int)int_pin);
+      logging.print(" SCK=");
+      logging.print((int)sck_pin);
+      logging.print(" MISO=");
+      logging.print((int)miso_pin);
+      logging.print(" MOSI=");
+      logging.print((int)mosi_pin);
+      logging.print(" crystal=");
+      logging.print(QUARTZ_FREQUENCY / 1000000UL);
+      logging.println(" MHz");
       set_event(EVENT_CANMCP2515_INIT_FAILURE, (uint8_t)errorCode2515);
+      // Clean up so main loop never uses failed chip (avoids crash/hang in receive or transmit)
+      can2515->end();
+      delete can2515;
+      can2515 = nullptr;
+      if (settings2515) {
+        delete settings2515;
+        settings2515 = nullptr;
+      }
       return false;
     }
   }
@@ -280,6 +355,9 @@ void transmit_can_frame_to_interface(const CAN_frame* tx_frame, CAN_Interface in
       }
     } break;
     case CAN_ADDON_MCP2515: {
+      if (!can2515) {
+        return;  // MCP2515 init failed; avoid crash when inverter is set to MCP2515 add-on
+      }
       //Struct with ACAN2515 library format, needed to use the MCP2515 library for CAN2
       CANMessage MCP2515Frame;
       MCP2515Frame.id = tx_frame->ID;

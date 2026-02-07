@@ -35,6 +35,7 @@ if opi PSRAM is enabled.
 class LilyGo2CANHal : public Esp32Hal {
  public:
   const char* name() { return "LilyGo T_2CAN"; }
+  virtual int max_gpio() { return 48; }
 
   virtual void set_default_configuration_values() {
     BatteryEmulatorSettingsStore settings;

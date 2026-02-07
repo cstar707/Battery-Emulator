@@ -189,6 +189,14 @@ bool init_sdcard() {
   auto mosi_pin = esp32hal->SD_MOSI_PIN();
   auto sclk_pin = esp32hal->SD_SCLK_PIN();
 
+  // Reject invalid or NC pins so we never call pinMode/setPins with out-of-range GPIO (e.g. 78 on ESP32)
+  int max_gpio = esp32hal->max_gpio();
+  if ((int)miso_pin < 0 || (int)miso_pin > max_gpio || (int)mosi_pin < 0 || (int)mosi_pin > max_gpio ||
+      (int)sclk_pin < 0 || (int)sclk_pin > max_gpio) {
+    logging.println("SD Card: invalid pin (out of range 0..max_gpio), skip init.");
+    return false;
+  }
+
   if (!esp32hal->alloc_pins("SD Card", miso_pin, mosi_pin, sclk_pin)) {
     return false;
   }
