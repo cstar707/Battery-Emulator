@@ -252,5 +252,9 @@ void init_WiFi_AP() {
   WiFi.softAP(ssidAP.c_str(), passwordAP.c_str());
   IPAddress IP = WiFi.softAPIP();
 
+  Serial.print("AP up: ");
+  Serial.print(ssidAP.c_str());
+  Serial.print(" ");
+  Serial.println(IP.toString());
   DEBUG_PRINTF("Access Point created.\nIP address: %s\n", IP.toString().c_str());
 }

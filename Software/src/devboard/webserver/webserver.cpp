@@ -495,6 +495,9 @@ void init_webserver() {
               for (auto& boolSetting : boolSettingNames) {
                 auto p = request->getParam(boolSetting, true);
                 const bool default_value = (std::string(boolSetting) == std::string("WIFIAPENABLED"));
+                // Unchecked checkboxes are not sent in HTML; don't treat missing WIFIAPENABLED as "disable AP"
+                if (std::string(boolSetting) == std::string("WIFIAPENABLED") && p == nullptr)
+                  continue;
                 const bool value = p != nullptr && p->value() == "on";
                 if (settings.getBool(boolSetting, default_value) != value) {
                   settings.saveBool(boolSetting, value);

@@ -69,17 +69,16 @@ void register_transmitter(Transmitter* transmitter) {
 
 // Initialization functions
 void init_serial() {
-  // Init Serial monitor
   Serial.begin(115200);
 #if (HW_LILYGO2CAN || HW_BECOM)
-  // Wait up to 100ms for Serial to be available. On the ESP32S3 Serial is
-  // provided by the USB controller, so will only work if the board is connected
-  // to a computer.
   for (int i = 0; i < 10; i++) {
     if (Serial)
       break;
     delay(10);
   }
+  delay(800);
+  Serial.println("\nBattery Emulator - serial 115200");
+  Serial.flush();
 #else
   while (!Serial) {}
 #endif
@@ -87,7 +86,6 @@ void init_serial() {
 
 void connectivity_loop(void*) {
   esp_task_wdt_add(NULL);  // Register this task with WDT
-  // Init wifi
   init_WiFi();
 
   init_webserver();
@@ -595,7 +593,6 @@ void setup() {
 
   init_serial();
 
-  // We print this after setting up serial, so that is also printed if configured to do so
   DEBUG_PRINTF("Battery emulator %s build " __DATE__ " " __TIME__ "\n", version_number);
 
   init_events();
@@ -603,7 +600,7 @@ void setup() {
   init_stored_settings();
 
   if (wifi_enabled) {
-    xTaskCreatePinnedToCore((TaskFunction_t)&connectivity_loop, "connectivity_loop", 4096, NULL, TASK_CONNECTIVITY_PRIO,
+    xTaskCreatePinnedToCore((TaskFunction_t)&connectivity_loop, "connectivity_loop", 8192, NULL, TASK_CONNECTIVITY_PRIO,
                             &connectivity_loop_task, esp32hal->WIFICORE());
   }
 
