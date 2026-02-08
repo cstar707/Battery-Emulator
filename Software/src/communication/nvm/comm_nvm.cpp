@@ -160,7 +160,7 @@ void init_stored_settings() {
 
   datalayer.system.info.performance_measurement_active = settings.getBool("PERFPROFILE", false);
   datalayer.system.info.CAN_usb_logging_active = settings.getBool("CANLOGUSB", false);
-  datalayer.system.info.usb_logging_active = settings.getBool("USBENABLED", false);
+  datalayer.system.info.usb_logging_active = settings.getBool("USBENABLED", true);  // true on first boot for serial debug
   datalayer.system.info.web_logging_active = settings.getBool("WEBENABLED", false);
   datalayer.system.info.CAN_SD_logging_active = settings.getBool("CANLOGSD", false);
   datalayer.system.info.SD_logging_active = settings.getBool("SDLOGENABLED", false);

@@ -595,6 +595,10 @@ void setup() {
 
   init_serial();
 
+  // Unconditional boot message so serial always shows something (USB logging may be off by default)
+  Serial.println("Battery Emulator boot " __DATE__ " " __TIME__);
+  Serial.flush();
+
   // We print this after setting up serial, so that is also printed if configured to do so
   DEBUG_PRINTF("Battery emulator %s build " __DATE__ " " __TIME__ "\n", version_number);
 
