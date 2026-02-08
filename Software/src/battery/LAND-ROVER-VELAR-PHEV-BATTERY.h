@@ -37,11 +37,11 @@ class LandRoverVelarPhevBattery : public CanBattery {
   bool HVBattTractionFuseF = false;  //0=OK, 1=Not OK
   bool HVBattTractionFuseR = false;  //0=OK, 1=Not OK
 
-  //CAN messages needed by battery (LOG needed!)
+  // CAN keep-alive towards battery (BCCM_PMZ_A style, 50ms; same ID as Range Rover PHEV)
   CAN_frame VELAR_18B = {.FD = false,
                          .ext_ID = false,
                          .DLC = 8,
-                         .ID = 0x18B,  //CONTENT??? TODO
+                         .ID = 0x18B,
                          .data = {0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}};
 };
 

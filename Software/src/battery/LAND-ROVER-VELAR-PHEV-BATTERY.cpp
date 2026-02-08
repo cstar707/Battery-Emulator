@@ -264,11 +264,11 @@ void LandRoverVelarPhevBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
 }
 
 void LandRoverVelarPhevBattery::transmit_can(unsigned long currentMillis) {
-  // Send 50ms CAN Message
+  // Send 50ms keep-alive towards battery (simulate vehicle presence so BMS stays awake)
   if (currentMillis - previousMillis50ms >= INTERVAL_50_MS) {
     previousMillis50ms = currentMillis;
 
-    //transmit_can_frame(&VELAR_18B);
+    transmit_can_frame(&VELAR_18B);
   }
 }
 
