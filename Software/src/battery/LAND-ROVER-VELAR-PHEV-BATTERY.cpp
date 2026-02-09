@@ -270,6 +270,12 @@ void LandRoverVelarPhevBattery::transmit_can(unsigned long currentMillis) {
 
     transmit_can_frame(&VELAR_18B);
   }
+
+  // Send inverter HVIL status (0xA4, 20ms). When no real inverter/charger, emulator provides this digital HVIL message.
+  if (currentMillis - previousMillis20ms >= INTERVAL_20_MS) {
+    previousMillis20ms = currentMillis;
+    transmit_can_frame(&VELAR_0xA4_InverterHVIL);
+  }
 }
 
 void LandRoverVelarPhevBattery::setup(void) {  // Performs one time setup at startup

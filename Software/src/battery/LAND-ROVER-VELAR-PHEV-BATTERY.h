@@ -19,7 +19,8 @@ class LandRoverVelarPhevBattery : public CanBattery {
   static const int MIN_CELL_VOLTAGE_MV = 2700;  //Battery is put into emergency stop if one cell goes below this value
   static const int MAX_CELL_DEVIATION_MV = 150;
 
-  unsigned long previousMillis50ms = 0;  // will store last time a 50ms CAN Message was sent
+  unsigned long previousMillis50ms = 0;   // will store last time a 50ms CAN Message was sent
+  unsigned long previousMillis20ms = 0;    // will store last time a 20ms CAN Message was sent
 
   uint16_t HVBattStateofHealth = 1000;
   uint16_t HVBattSOCAverage = 5000;
@@ -43,6 +44,14 @@ class LandRoverVelarPhevBattery : public CanBattery {
                          .DLC = 8,
                          .ID = 0x18B,
                          .data = {0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}};
+
+  // Inverter HVIL status (0xA4, 20ms cyclic). EPIC normally sends this; emulator sends it when no inverter.
+  // InverterHVILStatus: 2 bits, Motorola, unsigned, 0–3. Value 2 = OK/initialised (per DBC init value).
+  CAN_frame VELAR_0xA4_InverterHVIL = {.FD = false,
+                                        .ext_ID = false,
+                                        .DLC = 8,
+                                        .ID = 0xA4,
+                                        .data = {0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}};
 };
 
 #endif
