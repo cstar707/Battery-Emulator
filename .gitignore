@@ -35,5 +35,9 @@ compile.bat
 # Ignore secret file
 USER_SECRETS.h
 
-# Offline copies of Tesla service manuals (downloaded via scripts/download-tesla-service-manual.sh)
+# Tesla service manual scripts and offline copies (local only, do not upload)
 docs/offline-manuals/
+docs/offline-service-manual.md
+scripts/download-tesla-service-manual.sh
+scripts/check-manual-download-progress.sh
+scripts/serve-tesla-service-manual.sh
