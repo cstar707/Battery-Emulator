@@ -42,12 +42,13 @@ class LandRoverVelarPhevBattery : public CanBattery {
   bool HVBattTractionFuseF = false;    // 0=OK, 1=Not OK
   bool HVBattTractionFuseR = false;    // 0=OK, 1=Not OK
 
-  // CAN keep-alive towards battery (BCCM_PMZ_A style, 50ms; same ID as Range Rover PHEV)
+  // BCCM_PMZ_A (0x18B) 50ms. Byte 0: bit 0 = alive, bit 1 = contactor request/demand (HVBattContactorDemandT).
+  // If contactors still don't close, check your DBC for exact byte/bit of HVBattContactorRequest or HVBattContactorDemandT.
   CAN_frame VELAR_18B = {.FD = false,
                          .ext_ID = false,
                          .DLC = 8,
                          .ID = 0x18B,
-                         .data = {0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}};
+                         .data = {0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}};  // 0x03 = alive + contactor demand
 
   // Inverter HVIL status (0xA4, 20ms cyclic). EPIC normally sends this; emulator sends it when no inverter.
   // Keeps HVIL error cleared so BMS/vehicle logic sees "inverter HVIL OK".
