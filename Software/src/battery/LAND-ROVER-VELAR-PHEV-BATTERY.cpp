@@ -112,7 +112,7 @@ void LandRoverVelarPhevBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
       //HVBattStatusGpCS
       //HVBattStatusGpCounter
       //HVBattOCMonitorStatus
-      //HVBattContactorStatus
+      HVBattContactorStatus = (rx_frame.data.u8[0] & 0x80) >> 7;  // byte 0 bit 7, same as Range Rover 0x080
       HVBattHVILStatus = (rx_frame.data.u8[1] & 0x80) >> 7;
       //HVBattWeldCheckStatus
       //HVBattStatusCAT7NowBPO
@@ -264,17 +264,34 @@ void LandRoverVelarPhevBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
 }
 
 void LandRoverVelarPhevBattery::transmit_can(unsigned long currentMillis) {
-  // Send 50ms keep-alive towards battery (simulate vehicle presence so BMS stays awake)
-  if (currentMillis - previousMillis50ms >= INTERVAL_50_MS) {
-    previousMillis50ms = currentMillis;
-
-    transmit_can_frame(&VELAR_18B);
+  // GWM_PMZ_A (0x008) 10ms – gateway presence, may be required for contactor close
+  if (currentMillis - previousMillis10ms >= INTERVAL_10_MS) {
+    previousMillis10ms = currentMillis;
+    transmit_can_frame(&VELAR_0x008_GWM);
   }
 
-  // Send inverter HVIL status (0xA4, 20ms). When no real inverter/charger, emulator provides this digital HVIL message.
+  // Inverter HVIL status (0xA4, 20ms). When no real inverter, emulator sends this so HVIL error stays cleared.
   if (currentMillis - previousMillis20ms >= INTERVAL_20_MS) {
     previousMillis20ms = currentMillis;
     transmit_can_frame(&VELAR_0xA4_InverterHVIL);
+  }
+
+  // BCCM keep-alive (0x18B) 50ms – simulate vehicle presence so BMS stays awake
+  if (currentMillis - previousMillis50ms >= INTERVAL_50_MS) {
+    previousMillis50ms = currentMillis;
+    transmit_can_frame(&VELAR_18B);
+  }
+
+  // GWM_PMZ_V_HYBRID (0x18d) 60ms – hybrid vehicle state, may be required for contactor close
+  if (currentMillis - previousMillis60ms >= INTERVAL_60_MS) {
+    previousMillis60ms = currentMillis;
+    transmit_can_frame(&VELAR_0x18d_GWM);
+  }
+
+  // BCCMB_PMZ_A (0x224) 90ms – second BCCM-style message, may be required for contactor close
+  if (currentMillis - previousMillis90ms >= 90) {
+    previousMillis90ms = currentMillis;
+    transmit_can_frame(&VELAR_0x224_BCCMB);
   }
 }
 
