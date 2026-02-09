@@ -264,9 +264,11 @@ void LandRoverVelarPhevBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
 }
 
 void LandRoverVelarPhevBattery::transmit_can(unsigned long currentMillis) {
-  // GWM_PMZ_A (0x008) 10ms – gateway presence, may be required for contactor close
+  // GWM_PMZ_A (0x008) 10ms – gateway presence, may be required for contactor close. Rolling counter in byte 7 (0–15).
   if (currentMillis - previousMillis10ms >= INTERVAL_10_MS) {
     previousMillis10ms = currentMillis;
+    VELAR_0x008_GWM.data.u8[7] = velar_counter_008 & 0x0F;
+    velar_counter_008++;
     transmit_can_frame(&VELAR_0x008_GWM);
   }
 
@@ -276,21 +278,25 @@ void LandRoverVelarPhevBattery::transmit_can(unsigned long currentMillis) {
     transmit_can_frame(&VELAR_0xA4_InverterHVIL);
   }
 
-  // BCCM keep-alive (0x18B) 50ms – simulate vehicle presence so BMS stays awake
+  // BCCM keep-alive (0x18B) 50ms – contactor demand + precharge. Byte 0 = 0x07 (trying bit2 in case BMS needs it).
   if (currentMillis - previousMillis50ms >= INTERVAL_50_MS) {
     previousMillis50ms = currentMillis;
     transmit_can_frame(&VELAR_18B);
   }
 
-  // GWM_PMZ_V_HYBRID (0x18d) 60ms – hybrid vehicle state, may be required for contactor close
+  // GWM_PMZ_V_HYBRID (0x18d) 60ms – hybrid vehicle state. Rolling counter in byte 7 (0–15).
   if (currentMillis - previousMillis60ms >= INTERVAL_60_MS) {
     previousMillis60ms = currentMillis;
+    VELAR_0x18d_GWM.data.u8[7] = velar_counter_18d & 0x0F;
+    velar_counter_18d++;
     transmit_can_frame(&VELAR_0x18d_GWM);
   }
 
-  // BCCMB_PMZ_A (0x224) 90ms – second BCCM-style message, may be required for contactor close
+  // BCCMB_PMZ_A (0x224) 90ms – second BCCM-style message. Rolling counter in byte 7 (0–15).
   if (currentMillis - previousMillis90ms >= 90) {
     previousMillis90ms = currentMillis;
+    VELAR_0x224_BCCMB.data.u8[7] = velar_counter_224 & 0x0F;
+    velar_counter_224++;
     transmit_can_frame(&VELAR_0x224_BCCMB);
   }
 }

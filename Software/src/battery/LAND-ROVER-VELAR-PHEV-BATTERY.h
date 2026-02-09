@@ -25,6 +25,11 @@ class LandRoverVelarPhevBattery : public CanBattery {
   unsigned long previousMillis60ms = 0;
   unsigned long previousMillis90ms = 0;
 
+  // Rolling counters for vehicle frames (BMS may expect changing values). Increment before each send.
+  uint8_t velar_counter_008 = 0;
+  uint8_t velar_counter_18d = 0;
+  uint8_t velar_counter_224 = 0;
+
   uint16_t HVBattStateofHealth = 1000;
   uint16_t HVBattSOCAverage = 5000;
   uint16_t HVBattVoltageExt = 370;
@@ -43,12 +48,12 @@ class LandRoverVelarPhevBattery : public CanBattery {
   bool HVBattTractionFuseF = false;    // 0=OK, 1=Not OK
   bool HVBattTractionFuseR = false;    // 0=OK, 1=Not OK
 
-  // BCCM_PMZ_A (0x18B) 50ms. Byte 0: bit0=alive, bit1=contactor demand. Byte 1: precharge request (try 0x01).
+  // BCCM_PMZ_A (0x18B) 50ms. Byte 0: bit0=alive, bit1=contactor demand; trying bit2=1 (0x07) in case BMS needs it. Byte 1: precharge request.
   CAN_frame VELAR_18B = {.FD = false,
                          .ext_ID = false,
                          .DLC = 8,
                          .ID = 0x18B,
-                         .data = {0x03, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}};  // alive+contactor + precharge request
+                         .data = {0x07, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}};  // 0x07 = alive+contactor+bit2; revert to 0x03 if no help
 
   // Inverter HVIL status (0xA4, 20ms cyclic). EPIC normally sends this; emulator sends it when no inverter.
   // Keeps HVIL error cleared so BMS/vehicle logic sees "inverter HVIL OK".

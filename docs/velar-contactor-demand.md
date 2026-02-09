@@ -7,9 +7,9 @@ The BMS will not close contactors until it sees **HVBattContactorRequest** / **H
 - **0x18B (BCCM_PMZ_A)** payload: **`03 01 00 00 00 00 00 00`**.
   - Byte 0 = 0x03: bit 0 = alive, bit 1 = contactor demand.
   - Byte 1 = 0x01: precharge request (BMS may need this before PrechargeAllowed / contactor close).
-- If your DBC uses a different **byte or bit** for the contactor demand, this guess may be wrong and you’ll need to set the correct one.
+- If your DBC uses a different **byte or bit** for the contactor demand, this guess may be wrong and you'll need to set the correct one.
 
-## If contactors still don’t close
+## If contactors still don't close
 
 1. **Find the signal in your DBC/diagnostic DB**
    - Search for **HVBattContactorDemandT** or **HVBattContactorRequest**.
@@ -55,4 +55,24 @@ If the diagnostic tool shows **HVBattContactorStatus: Closed** and PrechargeAllo
 3. **Wiring / service manual**  
    Check the Velar/PHEV wiring diagram for:
    - Any "contactor enable", "HV request", "BCCM to battery" or "GWM to BECM" contactor-related pins.
-   - Whether the pack’s contactor driver gets an enable from the vehicle side; if yes, that may need to be wired or simulated in a stationary setup.
+   - Whether the pack's contactor driver gets an enable from the vehicle side; if yes, that may need to be wired or simulated in a stationary setup.
+
+---
+
+## Log summary: still no contactor close
+
+With **0x18B = 03 01** (contactor demand + precharge) and vehicle frames 0x008, 0x18d, 0x224, 0xA4 being sent:
+
+- **0x8A** (BMS): byte 6 = `00` in the capture → **PrechargeAllowed = 0** (bit 4 of byte 6). So the BMS is not granting precharge on CAN.
+- **0x98** (BMS): byte 0 often has bit 7 set (e.g. `CF`, `82`) → **ContactorStatus** decoded as closed/commanded. So the BMS may be reporting "contactor commanded" or status, but physical contactors still do not close.
+
+**Firmware changes added to try:**
+
+1. **Rolling counters** – 0x008, 0x18d, and 0x224 now send a rolling counter in **byte 7** (0–15, then wrap). Some BMS/gateway logic expects a changing counter; static 0x00 can be rejected.
+2. **0x18B byte 0 = 0x07** – We now send **0x07** instead of 0x03 (bit 2 set in addition to alive + contactor demand). If the DBC has a third bit (e.g. "HV enable" or "drive ready") in that byte, the BMS might need it before setting PrechargeAllowed. If contactors still don't close or you see odd behaviour, revert byte 0 to **0x03** in `LAND-ROVER-VELAR-PHEV-BATTERY.h`.
+
+**If still no contactor close:**
+
+1. **PrechargeAllowed stays 0** – The BMS may require something else (another CAN ID, correct payload from real-vehicle capture, or a **contactor-enable / HV-request hardwire**). Check DBC for what sets PrechargeAllowed; consider a CAN capture from the real vehicle with key in Run/Ready.
+2. **Contactor-enable hardwire** – Many packs need a physical line from the vehicle to enable the contactor drivers. We only emulate CAN; that line may need to be pulled to 12 V (or simulated) for the contactors to actually close.
+3. **Refine vehicle frames** – If you have a capture from the real car with contactors closed, compare 0x008, 0x18d, 0x224 (and any other GWM/BCCM IDs) and replicate those payloads in the emulator.
