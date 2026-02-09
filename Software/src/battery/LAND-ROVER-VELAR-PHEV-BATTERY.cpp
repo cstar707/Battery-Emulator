@@ -79,7 +79,7 @@ void LandRoverVelarPhevBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
       //HVBattTotalCapacity
       //HVBattChgCurrentLimit
       //HVBattFastChgCounter
-      //HVBattPrechargeAllowed
+      HVBattPrechargeAllowed = (rx_frame.data.u8[6] & 0x10) >> 4;  // byte 6 bit 4, same as Range Rover 0x080
       //HVBattEndOfCharge
       //HVBattDerateWarning
       //HVBattCCCVChargeMode

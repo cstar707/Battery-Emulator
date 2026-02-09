@@ -36,19 +36,19 @@ class LandRoverVelarPhevBattery : public CanBattery {
   uint8_t voltage_group = 0;
   uint8_t module_id = 0;
   uint8_t base_index = 0;
-  bool HVBattHVILStatus = false;       // 0=OK, 1=Not OK (from BMS)
-  bool HVBattContactorStatus = false;  // 0=open, 1=closed (from BMS 0x98)
-  bool HVBattAuxiliaryFuse = false;    // 0=OK, 1=Not OK
+  bool HVBattHVILStatus = false;         // 0=OK, 1=Not OK (from BMS)
+  bool HVBattContactorStatus = false;    // 0=open, 1=closed (from BMS 0x98)
+  bool HVBattPrechargeAllowed = false;  // from BMS 0x08A byte6 bit4; BMS may only set after precharge request
+  bool HVBattAuxiliaryFuse = false;      // 0=OK, 1=Not OK
   bool HVBattTractionFuseF = false;    // 0=OK, 1=Not OK
   bool HVBattTractionFuseR = false;    // 0=OK, 1=Not OK
 
-  // BCCM_PMZ_A (0x18B) 50ms. Byte 0: bit 0 = alive, bit 1 = contactor request/demand (HVBattContactorDemandT).
-  // If contactors still don't close, check your DBC for exact byte/bit of HVBattContactorRequest or HVBattContactorDemandT.
+  // BCCM_PMZ_A (0x18B) 50ms. Byte 0: bit0=alive, bit1=contactor demand. Byte 1: precharge request (try 0x01).
   CAN_frame VELAR_18B = {.FD = false,
                          .ext_ID = false,
                          .DLC = 8,
                          .ID = 0x18B,
-                         .data = {0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}};  // 0x03 = alive + contactor demand
+                         .data = {0x03, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}};  // alive+contactor + precharge request
 
   // Inverter HVIL status (0xA4, 20ms cyclic). EPIC normally sends this; emulator sends it when no inverter.
   // Keeps HVIL error cleared so BMS/vehicle logic sees "inverter HVIL OK".

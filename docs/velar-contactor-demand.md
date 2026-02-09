@@ -4,9 +4,9 @@ The BMS will not close contactors until it sees **HVBattContactorRequest** / **H
 
 ## What we changed
 
-- **0x18B (BCCM_PMZ_A)** payload: byte 0 set from `0x01` to **`0x03`**.
-  - Bit 0 = 1: module alive (unchanged).
-  - Bit 1 = 1: contactor request/demand (added).
+- **0x18B (BCCM_PMZ_A)** payload: **`03 01 00 00 00 00 00 00`**.
+  - Byte 0 = 0x03: bit 0 = alive, bit 1 = contactor demand.
+  - Byte 1 = 0x01: precharge request (BMS may need this before PrechargeAllowed / contactor close).
 - If your DBC uses a different **byte or bit** for the contactor demand, this guess may be wrong and you’ll need to set the correct one.
 
 ## If contactors still don’t close
@@ -36,3 +36,23 @@ The BMS will not close contactors until it sees **HVBattContactorRequest** / **H
 | 0xA4  | Inverter HVIL  | 20 ms    | HVIL status                     |
 
 Once the BMS sees the correct contactor demand, **HVBattContactorDemandT** should show a value in your tool and contactors may close (if all other conditions are met).
+
+---
+
+## Tool shows "Contactor Closed" but contactors did not close physically
+
+If the diagnostic tool shows **HVBattContactorStatus: Closed** and PrechargeAllowed: Yes, but the **physical contactors never close**, possible causes:
+
+1. **Signal is "commanded" not "actual"**  
+   The BMS may report "contactors closed" on CAN when it has *commanded* close, while the real state is from contactor feedback (e.g. auxiliary contacts). In the DBC, check whether the signal we decode (0x98 byte 0 bit 7) is "contactor commanded" vs "contactor feedback / actual state". If there is a separate "contactor feedback" or "auxiliary contact" signal, see whether that stays "open".
+
+2. **Contactor enable / HV request hardwire missing**  
+   Many OEM packs need both CAN and a **hardwired** signal from the vehicle to actually drive the contactor coils, e.g.:
+   - A "contactor enable" or "HV request" line from the vehicle to the pack that enables the BMS contactor driver outputs.
+   - 12V or a dedicated line that the vehicle only asserts when it wants HV.  
+   We only emulate CAN; we do not drive any contactor-enable pin on the pack. If the real vehicle drives such a line (e.g. from BCCM or GWM), that may need to be simulated (e.g. 12V or a relay) for the contactors to close.
+
+3. **Wiring / service manual**  
+   Check the Velar/PHEV wiring diagram for:
+   - Any "contactor enable", "HV request", "BCCM to battery" or "GWM to BECM" contactor-related pins.
+   - Whether the pack’s contactor driver gets an enable from the vehicle side; if yes, that may need to be wired or simulated in a stationary setup.
