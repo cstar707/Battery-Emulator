@@ -3,6 +3,9 @@
 
 #include "CanBattery.h"
 
+// Set to 0 to stop sending ID 0x008 (avoids conflict / Stuff Error if vehicle also sends 0x8; may allow contactors). Set to 1 to send 0x008 again.
+#define VELAR_SEND_FRAME_0x008 0
+
 class LandRoverVelarPhevBattery : public CanBattery {
  public:
   virtual void setup(void);

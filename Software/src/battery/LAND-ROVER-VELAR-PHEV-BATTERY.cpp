@@ -264,13 +264,15 @@ void LandRoverVelarPhevBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
 }
 
 void LandRoverVelarPhevBattery::transmit_can(unsigned long currentMillis) {
-  // GWM_PMZ_A (0x008) 10ms – gateway presence, may be required for contactor close. Rolling counter in byte 7 (0–15).
+#if VELAR_SEND_FRAME_0x008
+  // GWM_PMZ_A (0x008) 10ms – gateway presence. Disabled by default (VELAR_SEND_FRAME_0x008 0) to avoid Stuff Error / conflict with vehicle 0x8.
   if (currentMillis - previousMillis10ms >= INTERVAL_10_MS) {
     previousMillis10ms = currentMillis;
     VELAR_0x008_GWM.data.u8[7] = velar_counter_008 & 0x0F;
     velar_counter_008++;
     transmit_can_frame(&VELAR_0x008_GWM);
   }
+#endif
 
   // Inverter HVIL status (0xA4, 20ms). When no real inverter, emulator sends this so HVIL error stays cleared.
   if (currentMillis - previousMillis20ms >= INTERVAL_20_MS) {
