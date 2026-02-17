@@ -35,6 +35,9 @@ compile.bat
 # Ignore secret file
 USER_SECRETS.h
 
+# T-Connect/LILYGO wiring doc (local only, do not push to GitHub)
+docs/hardware-t-connect-lilygo-wiring.md
+
 # Tesla service manual scripts and offline copies (local only, do not upload)
 docs/offline-manuals/
 docs/offline-service-manual.md
