@@ -1,22 +1,36 @@
-# PlatformIO build artifacts
-.pio/
-.pioenvs/
-.piolibdeps/
+# Ignore any .vscode folder
+*.vscode/
 
-# IDE
-.vscode/
-.idea/
-*.code-workspace
+# Ignore any files in any build folder
+*build/
 
-# OS files
-.DS_Store
-Thumbs.db
+# Ignore any generated test files from running locally
+test/CMakeCache.txt
+test/CMakeFiles/
+test/CTestTestfile.cmake
+test/Makefile
+test/cmake_install.cmake
+test/gtest/
+test/tests[1]_include.cmake
 
-# Logs
-*.log
+# Ignore .exe (unit tests)
+*.exe
+**/.DS_Store
 
-# Python
-__pycache__/
-*.py[cod]
-.env
-venv/
+#ignore platformio
+.pioenvs
+.piolibdeps
+.clang_complete
+.gcc-flags.json
+.pio
+logs
+
+# Ignore upload command (removes the need to re-compile after Verify when running Download, in e.g. VS Code)
+upload.bat
+compile.bat
+
+# Ignore binary files
+*.bin
+
+# Ignore secret file
+USER_SECRETS.h
