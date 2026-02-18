@@ -14,7 +14,7 @@ import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.request import Request, urlopen
+from urllib.request import Request as UrllibRequest, urlopen
 from urllib.error import URLError
 from base64 import b64encode
 
@@ -226,7 +226,7 @@ def _fetch_solark_data_sync() -> tuple[dict, str | None]:
         return {}, None
     port = get_solark1_http_port()
     url = f"http://{host}:{port}/solark_data"
-    req = Request(url)
+    req = UrllibRequest(url)
     if SOLARK_HTTP_USER and SOLARK_HTTP_PASSWORD:
         creds = b64encode(f"{SOLARK_HTTP_USER}:{SOLARK_HTTP_PASSWORD}".encode()).decode()
         req.add_header("Authorization", f"Basic {creds}")
