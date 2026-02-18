@@ -1,10 +1,10 @@
 name: 🔋 Compile Common Images
 
 on:
-  # The workflow is run when a commit is pushed or for a
-  # Pull Request.
-  - push
-  - pull_request
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
 
 # This is the list of jobs that will be run concurrently.
 jobs:
