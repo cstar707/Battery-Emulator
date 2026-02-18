@@ -11,11 +11,17 @@ Battery* battery3 = nullptr;
 
 std::vector<BatteryType> supported_battery_types() {
   std::vector<BatteryType> types;
-
+#ifdef LILYGO_330_MINIMAL_BATTERIES
+  types.push_back(BatteryType::None);
+  types.push_back(BatteryType::BydAtto3);
+  types.push_back(BatteryType::TeslaModel3Y);
+  types.push_back(BatteryType::TeslaModelSX);
+  types.push_back(BatteryType::TestFake);
+#else
   for (int i = 0; i < (int)BatteryType::Highest; i++) {
     types.push_back((BatteryType)i);
   }
-
+#endif
   return types;
 }
 
@@ -44,6 +50,16 @@ const char* name_for_battery_type(BatteryType type) {
   switch (type) {
     case BatteryType::None:
       return "None";
+#ifdef LILYGO_330_MINIMAL_BATTERIES
+    case BatteryType::BydAtto3:
+      return BydAttoBattery::Name;
+    case BatteryType::TeslaModel3Y:
+      return TeslaModel3YBattery::Name;
+    case BatteryType::TeslaModelSX:
+      return TeslaModelSXBattery::Name;
+    case BatteryType::TestFake:
+      return TestFakeBattery::Name;
+#else
     case BatteryType::BmwI3:
       return BmwI3Battery::Name;
     case BatteryType::BmwIX:
@@ -140,6 +156,9 @@ const char* name_for_battery_type(BatteryType type) {
       return VolvoSpaBattery::Name;
     case BatteryType::VolvoSpaHybrid:
       return VolvoSpaHybridBattery::Name;
+    case BatteryType::Ruixu:
+      return RuixuBattery::Name;
+#endif
     default:
       return nullptr;
   }
@@ -157,6 +176,16 @@ Battery* create_battery(BatteryType type) {
   switch (type) {
     case BatteryType::None:
       return nullptr;
+#ifdef LILYGO_330_MINIMAL_BATTERIES
+    case BatteryType::BydAtto3:
+      return new BydAttoBattery();
+    case BatteryType::TeslaModel3Y:
+      return new TeslaModel3YBattery(user_selected_battery_chemistry);
+    case BatteryType::TeslaModelSX:
+      return new TeslaModelSXBattery();
+    case BatteryType::TestFake:
+      return new TestFakeBattery();
+#else
     case BatteryType::BmwI3:
       return new BmwI3Battery();
     case BatteryType::BmwIX:
@@ -253,6 +282,9 @@ Battery* create_battery(BatteryType type) {
       return new VolvoSpaBattery();
     case BatteryType::VolvoSpaHybrid:
       return new VolvoSpaHybridBattery();
+    case BatteryType::Ruixu:
+      return new RuixuBattery();
+#endif
     default:
       return nullptr;
   }
@@ -272,6 +304,11 @@ void setup_battery() {
 
   if (user_selected_second_battery && !battery2) {
     switch (user_selected_battery_type) {
+#ifdef LILYGO_330_MINIMAL_BATTERIES
+      case BatteryType::TestFake:
+        battery2 = new TestFakeBattery(&datalayer.battery2, can_config.battery_double);
+        break;
+#else
       case BatteryType::NissanLeaf:
         battery2 = new NissanLeafBattery(&datalayer.battery2, nullptr, can_config.battery_double);
         break;
@@ -305,6 +342,7 @@ void setup_battery() {
       case BatteryType::TestFake:
         battery2 = new TestFakeBattery(&datalayer.battery2, can_config.battery_double);
         break;
+#endif
       default:
         DEBUG_PRINTF("User tried enabling double battery on non-supported integration!\n");
         break;
@@ -317,12 +355,14 @@ void setup_battery() {
 
   if (user_selected_triple_battery && !battery3) {
     switch (user_selected_battery_type) {
+#ifndef LILYGO_330_MINIMAL_BATTERIES
       case BatteryType::NissanLeaf:
         battery3 = new NissanLeafBattery(&datalayer.battery3, nullptr, can_config.battery_triple);
         break;
       case BatteryType::RelionBattery:
         battery3 = new RelionBattery(&datalayer.battery3, can_config.battery_triple);
         break;
+#endif
       default:
         DEBUG_PRINTF("User tried enabling triple battery on non-supported integration!\n");
         break;

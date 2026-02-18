@@ -54,6 +54,7 @@ enum class BatteryType {
   ThinkCity = 47,
   TeslaLegacy = 48,
   GrowattHvArk = 49,
+  Ruixu = 50,
   Highest
 };
 

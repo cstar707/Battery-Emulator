@@ -1,0 +1,119 @@
+{% extends "base.html" %}
+{% block title %}Control{% endblock %}
+{% block content %}
+  {% if flash_saved %}
+  <div class="card flash flash-ok" role="alert">Setting saved. State may take a few seconds to update.</div>
+  {% endif %}
+  {% if flash_error %}
+  <div class="card flash flash-err" role="alert">Error: {% if flash_error == 'write_failed' %}Modbus write failed (check inverter connection).{% elif flash_error == 'preset_failed' %}Preset failed (check inverter connection).{% elif flash_error == 'timeout' %}Inverter did not respond in time.{% elif flash_error == 'server_error' %}Server error. Try again.{% elif flash_error == 'invalid_bit' %}Invalid setting.{% else %}{{ flash_error }}{% endif %}</div>
+  {% endif %}
+  <p class="muted" style="margin-bottom: 1rem;">All inverter controls and buttons are on this page. Use the sections below to change mode, export, charging, and storage/hybrid bits.</p>
+  <div class="card">
+    <h2>Self-Use &amp; Feed-In Priority</h2>
+    <p class="muted">Quick buttons for the two main operating modes.</p>
+    <div style="display:flex; flex-wrap:wrap; gap:1.5rem; align-items:center;">
+      <div>
+        <strong>Self-Use Mode</strong> <span class="muted">— solar for load then battery</span>
+        <span style="margin-left:0.5rem;">{% if storage_bits.self_use %}<span class="status-ok">On</span>{% else %}<span class="muted">Off</span>{% endif %}</span>
+        <div style="margin-top:0.5rem;">
+          <form class="inline" method="post" action="/control">
+            <input type="hidden" name="register" value="storage"><input type="hidden" name="bit_index" value="0">
+            <input type="hidden" name="on" value="{{ 'false' if storage_bits.self_use else 'true' }}">
+            <button type="submit" class="btn" style="{% if storage_bits.self_use %}background:var(--muted);{% else %}background:var(--green);{% endif %}">{{ 'Turn off Self-Use' if storage_bits.self_use else 'Enable Self-Use' }}</button>
+          </form>
+        </div>
+      </div>
+      <div>
+        <strong>Feed-In Priority</strong> <span class="muted">— prioritize export to grid</span>
+        <span style="margin-left:0.5rem;">{% if storage_bits.feed_in_priority %}<span class="status-ok">On</span>{% else %}<span class="muted">Off</span>{% endif %}</span>
+        <div style="margin-top:0.5rem;">
+          <form class="inline" method="post" action="/control">
+            <input type="hidden" name="register" value="storage"><input type="hidden" name="bit_index" value="6">
+            <input type="hidden" name="on" value="{{ 'false' if storage_bits.feed_in_priority else 'true' }}">
+            <button type="submit" class="btn" style="{% if storage_bits.feed_in_priority %}background:var(--muted);{% else %}background:var(--accent);{% endif %}">{{ 'Turn off Feed-In' if storage_bits.feed_in_priority else 'Enable Feed-In Priority' }}</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Export &amp; charging (load-based)</h2>
+    <p class="muted">Control whether solar is exported to grid or used for load/battery. &quot;Use all solar&quot; = self-use, no export (load-based).</p>
+    <div style="display:flex; flex-wrap:wrap; gap:1rem; align-items:center; margin-bottom:1rem;">
+      <form class="inline" method="post" action="/control">
+        <input type="hidden" name="preset" value="use_all_solar">
+        <button type="submit" class="btn" style="background:var(--green);">Use all solar (self-use, no export)</button>
+      </form>
+    </div>
+    <table style="width:100%; border-collapse: collapse;">
+      <tr><th class="muted" style="text-align:left;">Control</th><th class="muted">State</th><th>Action</th></tr>
+      <tr><td><strong>Allow export to grid</strong> <span class="muted">(43483) — off = load-based, no export</span></td><td>{% if hybrid_bits.allow_export %}✓ On{% else %}— Off{% endif %}</td>
+        <td><form class="inline" method="post" action="/control"><input type="hidden" name="register" value="hybrid"><input type="hidden" name="bit_index" value="3"><input type="hidden" name="on" value="{{ 'false' if hybrid_bits.allow_export else 'true' }}"><button type="submit">{{ 'Disable export' if hybrid_bits.allow_export else 'Enable export' }}</button></form></td></tr>
+      <tr><td><strong>Allow grid to charge battery</strong> <span class="muted">(43110)</span></td><td>{% if storage_bits.allow_grid_charge %}✓ On{% else %}— Off{% endif %}</td>
+        <td><form class="inline" method="post" action="/control"><input type="hidden" name="register" value="storage"><input type="hidden" name="bit_index" value="5"><input type="hidden" name="on" value="{{ 'false' if storage_bits.allow_grid_charge else 'true' }}"><button type="submit">{{ 'Disable grid charge' if storage_bits.allow_grid_charge else 'Enable grid charge' }}</button></form></td></tr>
+      <tr><td><strong>Self-use mode</strong> <span class="muted">(43110) — solar for load then battery</span></td><td>{% if storage_bits.self_use %}✓ On{% else %}— Off{% endif %}</td>
+        <td><form class="inline" method="post" action="/control"><input type="hidden" name="register" value="storage"><input type="hidden" name="bit_index" value="0"><input type="hidden" name="on" value="{{ 'false' if storage_bits.self_use else 'true' }}"><button type="submit">{{ 'Turn off' if storage_bits.self_use else 'Turn on' }}</button></form></td></tr>
+      <tr><td><strong>Grid peak-shaving</strong> <span class="muted">(43483) — limit grid draw</span></td><td>{% if hybrid_bits.grid_peakshaving %}✓ On{% else %}— Off{% endif %}</td>
+        <td><form class="inline" method="post" action="/control"><input type="hidden" name="register" value="hybrid"><input type="hidden" name="bit_index" value="7"><input type="hidden" name="on" value="{{ 'false' if hybrid_bits.grid_peakshaving else 'true' }}"><button type="submit">{{ 'Turn off' if hybrid_bits.grid_peakshaving else 'Turn on' }}</button></form></td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Solis storage mode (register 43110)</h2>
+    <p class="muted">Toggle one bit at a time. Read → modify bit → write back so other modes are preserved.</p>
+    <table style="width:100%; border-collapse: collapse;">
+      <tr><th class="muted" style="text-align:left;">Mode</th><th class="muted">On</th><th>Action</th></tr>
+      <tr><td>Self-Use</td><td>{% if storage_bits.self_use %}✓{% else %}—{% endif %}</td>
+        <td><form class="inline" method="post" action="/control"><input type="hidden" name="register" value="storage"><input type="hidden" name="bit_index" value="0"><input type="hidden" name="on" value="{{ 'false' if storage_bits.self_use else 'true' }}"><button type="submit">{{ 'Turn off' if storage_bits.self_use else 'Turn on' }}</button></form></td></tr>
+      <tr><td>Time Of Use (TOU)</td><td>{% if storage_bits.time_of_use %}✓{% else %}—{% endif %}</td>
+        <td><form class="inline" method="post" action="/control"><input type="hidden" name="register" value="storage"><input type="hidden" name="bit_index" value="1"><input type="hidden" name="on" value="{{ 'false' if storage_bits.time_of_use else 'true' }}"><button type="submit">{{ 'Turn off' if storage_bits.time_of_use else 'Turn on' }}</button></form></td></tr>
+      <tr><td>OFF-Grid</td><td>{% if storage_bits.off_grid %}✓{% else %}—{% endif %}</td>
+        <td><form class="inline" method="post" action="/control"><input type="hidden" name="register" value="storage"><input type="hidden" name="bit_index" value="2"><input type="hidden" name="on" value="{{ 'false' if storage_bits.off_grid else 'true' }}"><button type="submit">{{ 'Turn off' if storage_bits.off_grid else 'Turn on' }}</button></form></td></tr>
+      <tr><td>Battery Wakeup</td><td>{% if storage_bits.battery_wakeup %}✓{% else %}—{% endif %}</td>
+        <td><form class="inline" method="post" action="/control"><input type="hidden" name="register" value="storage"><input type="hidden" name="bit_index" value="3"><input type="hidden" name="on" value="{{ 'false' if storage_bits.battery_wakeup else 'true' }}"><button type="submit">{{ 'Turn off' if storage_bits.battery_wakeup else 'Turn on' }}</button></form></td></tr>
+      <tr><td>Reserve Battery (Backup)</td><td>{% if storage_bits.reserve_battery %}✓{% else %}—{% endif %}</td>
+        <td><form class="inline" method="post" action="/control"><input type="hidden" name="register" value="storage"><input type="hidden" name="bit_index" value="4"><input type="hidden" name="on" value="{{ 'false' if storage_bits.reserve_battery else 'true' }}"><button type="submit">{{ 'Turn off' if storage_bits.reserve_battery else 'Turn on' }}</button></form></td></tr>
+      <tr><td>Allow Grid To Charge</td><td>{% if storage_bits.allow_grid_charge %}✓{% else %}—{% endif %}</td>
+        <td><form class="inline" method="post" action="/control"><input type="hidden" name="register" value="storage"><input type="hidden" name="bit_index" value="5"><input type="hidden" name="on" value="{{ 'false' if storage_bits.allow_grid_charge else 'true' }}"><button type="submit">{{ 'Turn off' if storage_bits.allow_grid_charge else 'Turn on' }}</button></form></td></tr>
+      <tr><td>Feed In Priority</td><td>{% if storage_bits.feed_in_priority %}✓{% else %}—{% endif %}</td>
+        <td><form class="inline" method="post" action="/control"><input type="hidden" name="register" value="storage"><input type="hidden" name="bit_index" value="6"><input type="hidden" name="on" value="{{ 'false' if storage_bits.feed_in_priority else 'true' }}"><button type="submit">{{ 'Turn off' if storage_bits.feed_in_priority else 'Turn on' }}</button></form></td></tr>
+      <tr><td>Batt OVC</td><td>{% if storage_bits.batt_ovc %}✓{% else %}—{% endif %}</td>
+        <td><form class="inline" method="post" action="/control"><input type="hidden" name="register" value="storage"><input type="hidden" name="bit_index" value="7"><input type="hidden" name="on" value="{{ 'false' if storage_bits.batt_ovc else 'true' }}"><button type="submit">{{ 'Turn off' if storage_bits.batt_ovc else 'Turn on' }}</button></form></td></tr>
+      <tr><td>Forcecharge Peakshaving</td><td>{% if storage_bits.forcecharge_peakshaving %}✓{% else %}—{% endif %}</td>
+        <td><form class="inline" method="post" action="/control"><input type="hidden" name="register" value="storage"><input type="hidden" name="bit_index" value="8"><input type="hidden" name="on" value="{{ 'false' if storage_bits.forcecharge_peakshaving else 'true' }}"><button type="submit">{{ 'Turn off' if storage_bits.forcecharge_peakshaving else 'Turn on' }}</button></form></td></tr>
+      <tr><td>Battery current correction</td><td>{% if storage_bits.battery_current_correction %}✓{% else %}—{% endif %}</td>
+        <td><form class="inline" method="post" action="/control"><input type="hidden" name="register" value="storage"><input type="hidden" name="bit_index" value="9"><input type="hidden" name="on" value="{{ 'false' if storage_bits.battery_current_correction else 'true' }}"><button type="submit">{{ 'Turn off' if storage_bits.battery_current_correction else 'Turn on' }}</button></form></td></tr>
+      <tr><td>Battery healing</td><td>{% if storage_bits.battery_healing %}✓{% else %}—{% endif %}</td>
+        <td><form class="inline" method="post" action="/control"><input type="hidden" name="register" value="storage"><input type="hidden" name="bit_index" value="10"><input type="hidden" name="on" value="{{ 'false' if storage_bits.battery_healing else 'true' }}"><button type="submit">{{ 'Turn off' if storage_bits.battery_healing else 'Turn on' }}</button></form></td></tr>
+      <tr><td>Peak-shaving</td><td>{% if storage_bits.peak_shaving %}✓{% else %}—{% endif %}</td>
+        <td><form class="inline" method="post" action="/control"><input type="hidden" name="register" value="storage"><input type="hidden" name="bit_index" value="11"><input type="hidden" name="on" value="{{ 'false' if storage_bits.peak_shaving else 'true' }}"><button type="submit">{{ 'Turn off' if storage_bits.peak_shaving else 'Turn on' }}</button></form></td></tr>
+    </table>
+    <p class="muted" style="margin-top:1rem;">Raw value: {{ data.storage_control_raw | default(0) }}</p>
+  </div>
+
+  <div class="card">
+    <h2>Solis hybrid mode (register 43483)</h2>
+    <p class="muted">Export, peak-shaving, backup/AC coupling, etc. Toggle one bit at a time.</p>
+    <table style="width:100%; border-collapse: collapse;">
+      <tr><th class="muted" style="text-align:left;">Mode</th><th class="muted">On</th><th>Action</th></tr>
+      <tr><td>Dual backup</td><td>{% if hybrid_bits.dual_backup %}✓{% else %}—{% endif %}</td>
+        <td><form class="inline" method="post" action="/control"><input type="hidden" name="register" value="hybrid"><input type="hidden" name="bit_index" value="0"><input type="hidden" name="on" value="{{ 'false' if hybrid_bits.dual_backup else 'true' }}"><button type="submit">{{ 'Turn off' if hybrid_bits.dual_backup else 'Turn on' }}</button></form></td></tr>
+      <tr><td>AC coupling</td><td>{% if hybrid_bits.ac_coupling %}✓{% else %}—{% endif %}</td>
+        <td><form class="inline" method="post" action="/control"><input type="hidden" name="register" value="hybrid"><input type="hidden" name="bit_index" value="1"><input type="hidden" name="on" value="{{ 'false' if hybrid_bits.ac_coupling else 'true' }}"><button type="submit">{{ 'Turn off' if hybrid_bits.ac_coupling else 'Turn on' }}</button></form></td></tr>
+      <tr><td>Smart load forced</td><td>{% if hybrid_bits.smart_load_forced %}✓{% else %}—{% endif %}</td>
+        <td><form class="inline" method="post" action="/control"><input type="hidden" name="register" value="hybrid"><input type="hidden" name="bit_index" value="2"><input type="hidden" name="on" value="{{ 'false' if hybrid_bits.smart_load_forced else 'true' }}"><button type="submit">{{ 'Turn off' if hybrid_bits.smart_load_forced else 'Turn on' }}</button></form></td></tr>
+      <tr><td>Allow export to grid</td><td>{% if hybrid_bits.allow_export %}✓{% else %}—{% endif %}</td>
+        <td><form class="inline" method="post" action="/control"><input type="hidden" name="register" value="hybrid"><input type="hidden" name="bit_index" value="3"><input type="hidden" name="on" value="{{ 'false' if hybrid_bits.allow_export else 'true' }}"><button type="submit">{{ 'Turn off' if hybrid_bits.allow_export else 'Turn on' }}</button></form></td></tr>
+      <tr><td>Backup to load auto</td><td>{% if hybrid_bits.backup2load_auto %}✓{% else %}—{% endif %}</td>
+        <td><form class="inline" method="post" action="/control"><input type="hidden" name="register" value="hybrid"><input type="hidden" name="bit_index" value="4"><input type="hidden" name="on" value="{{ 'false' if hybrid_bits.backup2load_auto else 'true' }}"><button type="submit">{{ 'Turn off' if hybrid_bits.backup2load_auto else 'Turn on' }}</button></form></td></tr>
+      <tr><td>Backup to load manual</td><td>{% if hybrid_bits.backup2load_manual %}✓{% else %}—{% endif %}</td>
+        <td><form class="inline" method="post" action="/control"><input type="hidden" name="register" value="hybrid"><input type="hidden" name="bit_index" value="5"><input type="hidden" name="on" value="{{ 'false' if hybrid_bits.backup2load_manual else 'true' }}"><button type="submit">{{ 'Turn off' if hybrid_bits.backup2load_manual else 'Turn on' }}</button></form></td></tr>
+      <tr><td>Smart load off-grid stop</td><td>{% if hybrid_bits.smart_load_offgrid_stop %}✓{% else %}—{% endif %}</td>
+        <td><form class="inline" method="post" action="/control"><input type="hidden" name="register" value="hybrid"><input type="hidden" name="bit_index" value="6"><input type="hidden" name="on" value="{{ 'false' if hybrid_bits.smart_load_offgrid_stop else 'true' }}"><button type="submit">{{ 'Turn off' if hybrid_bits.smart_load_offgrid_stop else 'Turn on' }}</button></form></td></tr>
+      <tr><td>Grid peak-shaving</td><td>{% if hybrid_bits.grid_peakshaving %}✓{% else %}—{% endif %}</td>
+        <td><form class="inline" method="post" action="/control"><input type="hidden" name="register" value="hybrid"><input type="hidden" name="bit_index" value="7"><input type="hidden" name="on" value="{{ 'false' if hybrid_bits.grid_peakshaving else 'true' }}"><button type="submit">{{ 'Turn off' if hybrid_bits.grid_peakshaving else 'Turn on' }}</button></form></td></tr>
+    </table>
+    <p class="muted" style="margin-top:1rem;">Raw value: {{ data.hybrid_control_raw | default(0) }}</p>
+  </div>
+{% endblock %}

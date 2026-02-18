@@ -97,6 +97,11 @@ class Esp32Hal {
   virtual gpio_num_t RS485_RX_PIN() { return GPIO_NUM_NC; }
   virtual gpio_num_t RS485_SE_PIN() { return GPIO_NUM_NC; }
 
+  /** Optional second RS485 for Solark Modbus (read-only client). NC = disabled. */
+  virtual gpio_num_t SOLARK_RS485_TX_PIN() { return GPIO_NUM_NC; }
+  virtual gpio_num_t SOLARK_RS485_RX_PIN() { return GPIO_NUM_NC; }
+  virtual gpio_num_t SOLARK_RS485_DE_PIN() { return GPIO_NUM_NC; }
+
   virtual gpio_num_t CAN_TX_PIN() { return GPIO_NUM_NC; }
   virtual gpio_num_t CAN_RX_PIN() { return GPIO_NUM_NC; }
   virtual gpio_num_t CAN_SE_PIN() { return GPIO_NUM_NC; }

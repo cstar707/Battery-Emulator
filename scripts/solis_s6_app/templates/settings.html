@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+  {% if request.query_params.get('saved') == '1' %}
+  <div class="flash flash-ok">Settings saved. Polling will use the new IP/port/Modbus ID on the next cycle.</div>
+  {% endif %}
+  {% if request.query_params.get('error') %}
+  <div class="flash flash-err">Save failed: {{ request.query_params.get('error') }}. Check port and Modbus ID are numbers.</div>
+  {% endif %}
+
+  <div class="card">
+    <h2>Inverter connection — configure IP, port, and Modbus ID</h2>
+    <p class="muted">Change the values in the input boxes below and click Save. Env vars override these. Saved to <code>settings.json</code> in the app directory.</p>
+    <form method="post" action="/settings">
+      <h3 style="margin-top: 0; margin-bottom: 0.75rem; font-size: 1rem; color: var(--muted);">Solis (Solis S6)</h3>
+      <div class="settings-row">
+        <label for="solis_host">Solis IP address</label>
+        <input type="text" id="solis_host" name="solis_host" value="{{ solis_host }}" placeholder="10.10.53.16" />
+      </div>
+      <div class="settings-row">
+        <label for="solis_port">Solis port</label>
+        <input type="number" id="solis_port" name="solis_port" value="{{ solis_port }}" min="1" max="65535" />
+      </div>
+      <div class="settings-row">
+        <label for="solis_modbus_unit">Solis Modbus ID</label>
+        <input type="number" id="solis_modbus_unit" name="solis_modbus_unit" value="{{ solis_modbus_unit }}" min="1" max="247" />
+      </div>
+
+      <h3 style="margin-top: 1.25rem; margin-bottom: 0.75rem; font-size: 1rem; color: var(--muted);">Solark (same board, two units)</h3>
+      <div class="settings-row">
+        <label for="solark1_host">Solark board IP</label>
+        <input type="text" id="solark1_host" name="solark1_host" value="{{ solark1_host }}" placeholder="e.g. 10.10.53.32" />
+      </div>
+      <div class="settings-row">
+        <label for="solark1_port">Solark port</label>
+        <input type="number" id="solark1_port" name="solark1_port" value="{{ solark1_port }}" min="1" max="65535" />
+      </div>
+      <div class="settings-row">
+        <label for="solark1_modbus_unit">Solark1 Modbus ID</label>
+        <input type="number" id="solark1_modbus_unit" name="solark1_modbus_unit" value="{{ solark1_modbus_unit }}" min="1" max="247" title="Primary inverter on board" />
+      </div>
+      <div class="settings-row">
+        <label for="solark2_modbus_unit">Solark2 Modbus ID</label>
+        <input type="number" id="solark2_modbus_unit" name="solark2_modbus_unit" value="{{ solark2_modbus_unit }}" min="1" max="247" title="Second inverter on same board" />
+      </div>
+    <p class="muted" style="margin-top: 0.75rem;">The app talks to <strong>Solis</strong> via Modbus. <strong>Solark</strong> data is read two ways: HTTP (<code>GET /solark_data</code> on the board IP above) and/or MQTT (topic <code>solar/solark</code> on the same broker as Solis). If HTTP fails (e.g. board not reachable), data from MQTT will still appear.</p>
+
+      <h3 style="margin-top: 1.25rem; margin-bottom: 0.75rem; font-size: 1rem; color: var(--muted);">Automation</h3>
+      <div class="settings-row">
+        <label for="solark_soc_automation_enabled" style="display: flex; align-items: center; gap: 0.5rem;">
+          <input type="checkbox" id="solark_soc_automation_enabled" name="solark_soc_automation_enabled" value="on" {% if solark_soc_automation_enabled %}checked{% endif %} />
+          When Solark SOC ≥ 98%, switch Solis to self-use (and back to feed-in below 95%)
+        </label>
+      </div>
+
+      <div style="margin-top: 1.25rem;">
+        <button type="submit">Save settings</button>
+      </div>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Inverter labels (reference)</h2>
+    <table style="width:100%; border-collapse: collapse;">
+      <tr><td class="muted">{{ label_solis1 }}</td><td>Solis S6 — Modbus at {{ solis_host }}:{{ solis_port }}, unit {{ solis_modbus_unit }}</td></tr>
+      <tr><td class="muted">{{ label_solark1 }}</td><td>New board (Battery-Emulator + Solark RS485), Modbus ID {{ solark1_modbus_unit }}</td></tr>
+      <tr><td class="muted">{{ label_solark2 }}</td><td>Same board as {{ label_solark1 }}, Modbus ID {{ solark2_modbus_unit }}</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Current config</h2>
+    <table style="width:100%; border-collapse: collapse;">
+      <tr><td class="muted">Solark board IP (HTTP)</td><td>{{ solark1_host or '(not set)' }}</td></tr>
+      <tr><td class="muted">Monitoring</td><td>{{ inverter_label }}</td></tr>
+      <tr><td class="muted">Solark SOC automation</td><td>{% if solark_soc_automation_enabled %}<span class="status-ok">On</span>{% else %}<span class="muted">Off</span>{% endif %}</td></tr>
+      <tr><td class="muted">MQTT</td><td>{% if mqtt_enabled %}<span class="status-ok">Publishing to {{ mqtt_host }}</span>{% else %}<span class="muted">Disabled</span>{% endif %}</td></tr>
+    </table>
+    <p class="muted">Override via env: SOLIS_INVERTER_HOST, SOLIS_INVERTER_PORT, SOLARK1_HOST, SOLIS_APP_PORT (default 3007). MQTT: MQTT_HOST, MQTT_USER, MQTT_PASSWORD.</p>
+  </div>
+{% endblock %}

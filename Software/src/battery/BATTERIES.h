@@ -12,6 +12,12 @@ extern Battery* battery3;
 
 void setup_shunt();
 
+#ifdef LILYGO_330_MINIMAL_BATTERIES
+// Minimal set for lilygo_330: Tesla, BYD Atto 3, TestFake only (saves ~400–600 KB flash).
+#include "BYD-ATTO-3-BATTERY.h"
+#include "TESLA-BATTERY.h"
+#include "TEST-FAKE-BATTERY.h"
+#else
 #include "BMW-I3-BATTERY.h"
 #include "BMW-IX-BATTERY.h"
 #include "BMW-PHEV-BATTERY.h"
@@ -60,6 +66,8 @@ void setup_shunt();
 #include "THINK-BATTERY.h"
 #include "VOLVO-SPA-BATTERY.h"
 #include "VOLVO-SPA-HYBRID-BATTERY.h"
+#include "RUIXU-BATTERY.h"
+#endif
 
 void setup_battery(void);
 Battery* create_battery(BatteryType type);

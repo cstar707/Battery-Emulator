@@ -1,0 +1,21 @@
+# 10.10.53.32 device: ESPHome (Solark RS485), not MQTT
+#
+# The device at 10.10.53.32 runs ESPHome and exposes entities to Home Assistant
+# via the ESPHome native API (no MQTT). Full ESPHome config: docs/esphome-10.10.53.32-solark.yaml
+#
+# Replacement firmware (build with FEATURE_SOLARK_ON_MAIN_RS485) defaults to matching
+# this device: hostname esphome-web-7a7e60 (if unset), HA device name "sunsynk", entity
+# names like "sunsynk Battery SOC". Enable "Customized MQTT topics" in Settings.
+#
+# After replacing with Battery-Emulator, remove the ESPHome device and use MQTT:
+#   state_topic: "solar/solark"
+#   value_template examples (match ESPHome units):
+#     Battery SOC %:     {{ value_json.battery_soc_pptt | float / 100 }}
+#     Battery voltage V: {{ value_json.battery_voltage_dV | float / 10 }}
+#     Battery current A: {{ value_json.battery_current_dA | float / 10 }}
+#     Battery power W:   {{ value_json.battery_power_W }}
+#     Grid power W:      {{ value_json.grid_power_W }}
+#     Load power W:      {{ value_json.load_power_W }}
+#     PV power W:        {{ value_json.pv_power_W }}
+#
+# Register map and scaling: see docs/solark-rs485-integration.md (table from ESPHome YAML).

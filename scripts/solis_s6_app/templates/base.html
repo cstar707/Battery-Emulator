@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Solis / Solark{% endblock %} | 10.10.53.92</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --card: #1a2332;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --green: #3fb950;
+      --orange: #d29922;
+      --red: #f85149;
+    }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 0; min-height: 100vh; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .nav { background: var(--card); padding: 0.75rem 1.5rem; display: flex; gap: 1.5rem; align-items: center; border-bottom: 1px solid #30363d; }
+    .nav a { color: var(--text); }
+    .nav a.active { color: var(--accent); font-weight: 600; }
+    .container { max-width: 960px; margin: 0 auto; padding: 1.5rem; }
+    .card { background: var(--card); border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem; border: 1px solid #30363d; }
+    .card h2 { margin: 0 0 0.75rem 0; font-size: 1.1rem; color: var(--muted); }
+    .status-ok { color: var(--green); }
+    .status-fail { color: var(--red); }
+    .muted { color: var(--muted); font-size: 0.9rem; }
+    .grid2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 1rem; }
+    .kpi { text-align: center; }
+    .kpi .val { font-size: 1.5rem; font-weight: 600; }
+    .kpi .unit { font-size: 0.85rem; color: var(--muted); }
+    form.inline { display: inline; }
+    button, .btn { background: var(--accent); color: #fff; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-size: 0.95rem; font-weight: 500; min-height: 2rem; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+    button:hover, .btn:hover { opacity: 0.95; filter: brightness(1.1); }
+    button.secondary { background: var(--muted); }
+    table button, table .btn { padding: 0.35rem 0.75rem; font-size: 0.9rem; }
+    .flash { margin-bottom: 0.75rem; }
+    .flash-ok { border-left: 4px solid var(--green); background: rgba(63, 185, 80, 0.1); }
+    .flash-err { border-left: 4px solid var(--red); background: rgba(248, 81, 73, 0.1); }
+    label { display: inline-block; margin-right: 0.5rem; }
+    input[type="checkbox"] { margin-right: 0.25rem; }
+    input[type="text"], input[type="number"], select {
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 0.5rem 0.6rem;
+      font-size: 1rem;
+      min-width: 8rem;
+    }
+    input[type="text"]:focus, input[type="number"]:focus, select:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.25);
+    }
+    .settings-row { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.75rem; flex-wrap: wrap; }
+    .settings-row label { min-width: 10rem; margin: 0; }
+    .settings-row input, .settings-row select { flex: 1; min-width: 10rem; max-width: 20rem; }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <nav class="nav">
+    <a href="/" class="{% if request.url.path == '/' %}active{% endif %}">Dashboard</a>
+    <a href="/sensors" class="{% if request.url.path == '/sensors' %}active{% endif %}">Sensors</a>
+    <a href="/control" class="{% if request.url.path == '/control' %}active{% endif %}" title="All inverter controls and buttons">Control (buttons)</a>
+    <a href="/settings" class="{% if request.url.path == '/settings' %}active{% endif %}">Settings</a>
+    <a href="/debug" class="{% if request.url.path == '/debug' %}active{% endif %}" title="Modbus debug stream">Debug</a>
+    <span class="muted" style="margin-left: auto;">{{ inverter_label }}</span>
+    <span class="muted" style="margin-left: 0.5rem;" title="UI version">v{{ app_version | default('?') }}</span>
+  </nav>
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

@@ -46,6 +46,8 @@ Start by watching this [quickstart guide](https://www.youtube.com/watch?v=sR3t7j
 5. (OPTIONAL, connect the board to your home Wifi)
 6. Connect your battery and inverter to the board and you are done! 🔋⚡
 
+**Credentials and server config:** WiFi, MQTT broker, and web passwords are set only in the board’s Settings (stored on the device). Do not commit real server addresses or passwords to the repo. See [docs/local-config-and-secrets.md](docs/local-config-and-secrets.md) for the policy and `.gitignore` rules.
+
 ## Dependencies 📖
 This code uses the following excellent libraries: 
 - [adafruit/Adafruit_NeoPixel](https://github.com/adafruit/Adafruit_NeoPixel) LGPL-3.0 license

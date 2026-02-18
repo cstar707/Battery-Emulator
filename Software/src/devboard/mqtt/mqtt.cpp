@@ -6,7 +6,9 @@
 #include <list>
 #include "../../battery/BATTERIES.h"
 #include "../../communication/contactorcontrol/comm_contactorcontrol.h"
+#include "../../communication/solark_rs485/solark_rs485.h"
 #include "../../datalayer/datalayer.h"
+#include "../../datalayer/datalayer_extended.h"
 #include "../../devboard/hal/hal.h"
 #include "../../devboard/safety/safety.h"
 #include "../../lib/bblanchon-ArduinoJson/ArduinoJson.h"
@@ -35,12 +37,19 @@ bool mqtt_manual_topic_object_name =
 // may break compatibility with previous versions of MQTT naming
 const char* mqtt_topic_name =
     "BE";  // Custom MQTT topic name. Previously, the name was automatically set to "battery-emulator_esp32-XXXXXX"
+#ifdef FEATURE_SOLARK_ON_MAIN_RS485
+/* When replacing 10.10.53.32 (ESPHome Solark logger), match that device: friendly_name "sunsynk", same HA device/entity naming. */
+const char* mqtt_object_id_prefix = "sunsynk_";
+const char* mqtt_device_name = "sunsynk";
+const char* ha_device_id = "sunsynk";
+#else
 const char* mqtt_object_id_prefix =
     "be_";  // Custom prefix for MQTT object ID. Previously, the prefix was automatically set to "esp32-XXXXXX_"
 const char* mqtt_device_name =
     "Battery Emulator";  // Custom device name in Home Assistant. Previously, the name was automatically set to "BatteryEmulator_esp32-XXXXXX"
 const char* ha_device_id =
     "battery-emulator";  // Custom device ID in Home Assistant. Previously, the ID was always "battery-emulator"
+#endif
 
 #define MQTT_QOS 0  // MQTT Quality of Service (0, 1, or 2) //TODO: Should this be configurable?
 
@@ -61,6 +70,37 @@ static bool publish_common_info(void);
 static bool publish_cell_voltages(void);
 static bool publish_cell_balancing(void);
 static bool publish_events(void);
+static bool publish_solark_rs485(void);
+
+/** Publish ESP board health (memory, CPU temp, uptime, load) to BE/board for overload monitoring. */
+static bool publish_board_info(void) {
+  static JsonDocument doc;
+  static String state_topic = topic_name + "/board";
+
+  doc.clear();
+  doc["free_heap"] = (uint32_t)ESP.getFreeHeap();
+  doc["min_free_heap"] = (uint32_t)ESP.getMinFreeHeap();
+  doc["heap_size"] = (uint32_t)ESP.getHeapSize();
+  doc["max_alloc_heap"] = (uint32_t)ESP.getMaxAllocHeap();
+  doc["cpu_temp_c"] = (float)datalayer.system.info.CPU_temperature;
+  doc["uptime_ms"] = (uint32_t)millis();
+
+  if (datalayer.system.info.performance_measurement_active) {
+    doc["core_task_10s_max_us"] = (int64_t)datalayer.system.status.core_task_10s_max_us;
+    doc["mqtt_task_10s_max_us"] = (int64_t)datalayer.system.status.mqtt_task_10s_max_us;
+    doc["wifi_task_10s_max_us"] = (int64_t)datalayer.system.status.wifi_task_10s_max_us;
+  }
+
+  size_t len = serializeJson(doc, mqtt_msg, sizeof(mqtt_msg));
+  if (len >= sizeof(mqtt_msg)) {
+    logging.println("Board MQTT msg truncated");
+  }
+  if (!mqtt_publish(state_topic.c_str(), mqtt_msg, false)) {
+    logging.println("Board MQTT msg could not be sent");
+    return false;
+  }
+  return true;
+}
 
 /** Publish global values and call callbacks for specific modules */
 static void publish_values(void) {
@@ -77,6 +117,10 @@ static void publish_values(void) {
     return;
   }
 
+  if (publish_board_info() == false) {
+    return;
+  }
+
   if (mqtt_transmit_all_cellvoltages) {
     if (publish_cell_voltages() == false) {
       return;
@@ -88,12 +132,19 @@ static void publish_values(void) {
       return;
     }
   }
+
+  if (solark_rs485_enabled()) {
+    if (publish_solark_rs485() == false) {
+      return;
+    }
+  }
 }
 
 static bool ha_common_info_published = false;
 static bool ha_cell_voltages_published = false;
 static bool ha_events_published = false;
 static bool ha_buttons_published = false;
+static bool ha_solark_published = false;
 struct SensorConfig {
   const char* object_id;
   const char* name;
@@ -533,6 +584,86 @@ bool publish_events() {
       doc.clear();
       //clear the vector
       order_events.clear();
+    }
+  }
+  return true;
+}
+
+/** Publish all Solark RS485 Modbus data to MQTT. Topic: solar/solark (same as today so sensors appear unchanged). */
+static bool publish_solark_rs485(void) {
+  const auto& s = datalayer_extended.solark_rs485;
+  static JsonDocument doc;
+  static const char* state_topic = "solar/solark";
+
+  doc.clear();
+  doc["available"] = s.available;
+  doc["last_read_millis"] = s.last_read_millis;
+  doc["battery_power_W"] = s.battery_power_W;
+  doc["battery_soc_pptt"] = s.battery_soc_pptt;
+  doc["battery_voltage_dV"] = s.battery_voltage_dV;
+  doc["battery_current_dA"] = s.battery_current_dA;
+  doc["grid_power_W"] = s.grid_power_W;
+  doc["load_power_W"] = s.load_power_W;
+  doc["pv_power_W"] = s.pv_power_W;
+
+  JsonArray raw = doc["raw_registers"].to<JsonArray>();
+  for (uint8_t i = 0; i < s.raw_register_count && i < sizeof(s.raw_registers) / sizeof(s.raw_registers[0]); i++) {
+    raw.add(s.raw_registers[i]);
+  }
+
+  size_t len = serializeJson(doc, mqtt_msg, sizeof(mqtt_msg));
+  if (len >= sizeof(mqtt_msg)) {
+    logging.println("Solark MQTT msg truncated");
+  }
+  if (!mqtt_publish(state_topic, mqtt_msg, false)) {
+    logging.println("Solark MQTT msg could not be sent");
+    return false;
+  }
+
+  /* Home Assistant autodiscovery for Solark sensors (same device as BE). Entity names use device_name so they match ESPHome "friendly_name X" (e.g. sunsynk Battery SOC). */
+  if (ha_autodiscovery_enabled && !ha_solark_published) {
+    struct SolarkSensorConfig {
+      const char* object_id;
+      const char* name_suffix;  /* device_name + " " + name_suffix = full entity name */
+      const char* value_template;
+      const char* unit;
+      const char* device_class;
+    };
+    static const SolarkSensorConfig solarkConfigs[] = {
+        {"solark_battery_power", "Battery Power", "{{ value_json.battery_power_W }}", "W", "power"},
+        {"solark_battery_soc", "Battery SOC", "{{ value_json.battery_soc_pptt | float / 100 }}", "%", "battery"},
+        {"solark_battery_voltage", "Battery Voltage", "{{ value_json.battery_voltage_dV | float / 10 }}", "V", "voltage"},
+        {"solark_battery_current", "Battery Current", "{{ value_json.battery_current_dA | float / 10 }}", "A", "current"},
+        {"solark_grid_power", "Grid Power", "{{ value_json.grid_power_W }}", "W", "power"},
+        {"solark_load_power", "Load Power", "{{ value_json.load_power_W }}", "W", "power"},
+        {"solark_pv_power", "PV Power", "{{ value_json.pv_power_W }}", "W", "power"},
+        {"solark_available", "RS485 Available", "{{ value_json.available }}", nullptr, nullptr},
+    };
+    bool ok = true;
+    for (const auto& c : solarkConfigs) {
+      doc.clear();
+      String sensorName = device_name + " " + c.name_suffix;
+      doc["name"] = sensorName.c_str();
+      doc["state_topic"] = state_topic;
+      doc["unique_id"] = topic_name + "_" + String(c.object_id);
+      doc["object_id"] = object_id_prefix + String(c.object_id);
+      doc["value_template"] = c.value_template;
+      if (c.unit != nullptr) {
+        doc["unit_of_measurement"] = c.unit;
+      }
+      if (c.device_class != nullptr) {
+        doc["device_class"] = c.device_class;
+        doc["state_class"] = "measurement";
+      }
+      set_common_discovery_attributes(doc);
+      serializeJson(doc, mqtt_msg, sizeof(mqtt_msg));
+      if (!mqtt_publish(("homeassistant/sensor/" + topic_name + "/" + String(c.object_id) + "/config").c_str(),
+                        mqtt_msg, true)) {
+        ok = false;
+      }
+    }
+    if (ok) {
+      ha_solark_published = true;
     }
   }
   return true;

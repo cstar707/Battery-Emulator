@@ -1,0 +1,22 @@
+# systemd unit for Solis S6 UI. Copy to /etc/systemd/system/ and:
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now solis-s6-ui
+# Edit WorkingDirectory and User as needed.
+[Unit]
+Description=Solis S6 / Solark UI (port 3007)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=YOUR_USER
+WorkingDirectory=/path/to/tesla-model-y-stationary-power-plant/scripts/solis_s6_app
+Environment=SOLIS_INVERTER_HOST=10.10.53.16
+Environment=SOLIS_INVERTER_PORT=502
+Environment=SOLIS_APP_PORT=3007
+ExecStart=/path/to/tesla-model-y-stationary-power-plant/scripts/solis_s6_app/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 3007
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,126 @@
+# ESPHome configuration for the 10.10.53.32 device (Solark/SunSynk inverter over RS485)
+# This is the actual device config that runs on the ESP32. Entities are exposed to
+# Home Assistant via ESPHome's native API (not MQTT). When replacing with Battery-Emulator,
+# use MQTT (solar/solark) and optionally HA discovery or manual MQTT sensors.
+#
+# Hardware: UART 9600 8N1, TX=GPIO17, RX=GPIO16, flow_control_pin=GPIO4 (DE).
+# Modbus: two controllers – primary_inverter address 0x01, slave_inverter address 0x02
+# (stacked inverter). Battery-Emulator currently reads single inverter at 0x01.
+#
+# Register map (holding registers) – used to align solark_rs485.cpp and MQTT payload:
+#   Battery:  182 temp (offset -1000, ×0.1 °C), 183 V (×0.01 V), 184 SOC (%),
+#             190 power (S_WORD W), 191 current (S_WORD ×0.01 A)
+#   Grid:     79 freq (×0.01 Hz), 150 V (×0.1), 160 I (×0.01 A), 169 power (S_WORD W),
+#             167/168 LD/L2, 172 CT power
+#   Load:     178 power (S_WORD W), 176 L1, 177 L2, 192 freq (×0.01 Hz)
+#   Inverter: 175 power (S_WORD W), 154 V (×0.1), 164 I (×0.01 A), 193 freq (×0.01 Hz)
+#   PV:       186 PV1 power (U_WORD W), 187 PV2 power; 109/110 PV1 V(×0.1)/I(×0.1), 111/112 PV2
+#   Status:   194 grid connected
+#
+# Full YAML from user (abbreviated sections at end):
+
+substitutions:
+  settings_skipped_updates: "30"
+  devicename: "esphome-web-7a7e60"
+  device_description: "Solark Inverter RS485 Logger"
+  friendly_name: "sunsynk"
+
+esphome:
+  name: $devicename
+  comment: '${device_description}'
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+
+web_server:
+  port: 80
+  auth:
+    username: !secret web_server_username
+    password: !secret web_server_password
+  version: 2
+  log: false
+  ota: false
+  include_internal: true
+  local: true
+
+logger:
+  level: INFO
+
+api:
+  encryption:
+    key: !secret api_encryption_key
+  services:
+    - service: get_system_status
+      then:
+        - logger.log: "System status requested via API"
+    - service: get_all_sensor_data
+      then:
+        - logger.log: "All sensor data requested via API"
+
+ota:
+  password: !secret ota_password_sunsynk
+  platform: esphome
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  ap:
+    ssid: '${devicename}'
+    password: !secret fallback_password
+  fast_connect: true
+  power_save_mode: none
+
+captive_portal:
+
+http_request:
+  timeout: 10s
+  useragent: "ESPHome/SolarK-Monitor"
+  verify_ssl: false
+
+time:
+  - platform: homeassistant
+    id: homeassistant_time
+  - platform: sntp
+    id: sntp_time
+    servers:
+      - 0.pool.ntp.org
+      - 1.pool.ntp.org
+
+uart:
+  id: mod_bus
+  tx_pin: GPIO17
+  rx_pin: GPIO16
+  baud_rate: 9600
+  stop_bits: 1
+
+modbus:
+  id: inverter_modbus
+  flow_control_pin: GPIO4
+
+modbus_controller:
+  - id: primary_inverter
+    address: 0x01
+    modbus_id: inverter_modbus
+    setup_priority: -10
+    update_interval: "20s"
+    command_throttle: "150ms"
+  - id: slave_inverter
+    address: 0x02
+    modbus_id: inverter_modbus
+    setup_priority: -20
+    update_interval: "20s"
+    command_throttle: "150ms"
+
+# [BINARY SENSORS: 194 grid connected, 280 gen/grid peak shaving bits]
+
+# [SENSORS – key register addresses and scaling]
+# Battery:  182 temp (offset -1000, ×0.1 °C), 183 V (×0.01 V), 184 SOC (%),
+#           190 power (S_WORD W), 191 current (S_WORD ×0.01 A)
+# Grid:     79 freq (×0.01 Hz), 169 power (S_WORD W), 150 V (×0.1), 160 I (×0.01 A), 172 CT
+# Load:     178 power (S_WORD W), 176 L1, 177 L2
+# Inverter: 175 power (S_WORD W), 154 V (×0.1), 164 I (×0.01 A), 193 freq (×0.01 Hz)
+# PV:       186 PV1, 187 PV2 (U_WORD W); 109/110 PV1 V/I, 111/112 PV2 V/I
+# Energy:   70/71 day bat ch/dis, 72/74 total; 76/77/78/81 grid; 84/85 load; 96/108 PV
+# ... (full sensor/switch/number/text_sensor/select sections in original user YAML)

@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Modbus debug{% endblock %}
+{% block content %}
+  <div class="card">
+    <h2>Modbus debug stream</h2>
+    <p class="muted">Live log from Solis Modbus (reads, writes, errors). Updates every 2s. Last 300 lines kept.</p>
+    <button type="button" class="btn secondary" id="btn-clear" style="margin-bottom: 0.75rem;">Clear</button>
+    <pre id="modbus-log" style="background: var(--bg); padding: 1rem; border-radius: 6px; overflow: auto; max-height: 60vh; font-size: 0.85rem; margin: 0; border: 1px solid #30363d;"></pre>
+  </div>
+  <script>
+  (function() {
+    var pre = document.getElementById('modbus-log');
+    function fetchLog() {
+      fetch('/api/debug/modbus').then(function(r) { return r.json(); }).then(function(res) {
+        var lines = (res.lines || []).map(function(l) {
+          var t = new Date(l.ts * 1000).toLocaleTimeString();
+          return '[' + t + '] [' + (l.level || '') + '] ' + (l.msg || '');
+        });
+        pre.textContent = lines.join('\n') || '(no Modbus activity yet)';
+        pre.scrollTop = pre.scrollHeight;
+      }).catch(function() { pre.textContent = '(failed to load)'; });
+    }
+    fetchLog();
+    setInterval(fetchLog, 2000);
+    document.getElementById('btn-clear').addEventListener('click', function() {
+      fetch('/api/debug/modbus/clear', { method: 'POST' }).then(function() { fetchLog(); });
+    });
+  })();
+  </script>
+  <p class="muted" style="margin-top: 0.5rem;">Tip: click a control button then watch this stream for write_holding / errors.</p>
+{% endblock %}

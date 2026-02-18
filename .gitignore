@@ -32,5 +32,19 @@ compile.bat
 # Ignore binary files
 *.bin
 
-# Ignore secret file
+# Ignore secret and local config – never commit credentials or server addresses
 USER_SECRETS.h
+.env
+.env.*
+!.env.example
+secrets.yaml
+scripts/solis_s6_app/settings.json
+__pycache__/
+*.pyc
+*.pyo
+secrets.yml
+*secrets*.yaml
+*secrets*.yml
+config.local.*
+local_config.*
+*.local

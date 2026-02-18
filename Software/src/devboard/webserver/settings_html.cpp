@@ -1029,6 +1029,13 @@ const char* getCANInterfaceName(CAN_Interface interface) {
       color: red;
     }
 
+    .mqtt-desc {
+      grid-column: span 2;
+      font-size: 0.9em;
+      color: #9ca3af;
+      margin: 0 0 4px 0;
+    }
+
     .mqtt-settings, .mqtt-topics {
       display: none;
       grid-column: span 2;
@@ -1056,7 +1063,7 @@ const char* getCANInterfaceName(CAN_Interface interface) {
     form[data-SHUNTTYPE="0"] .if-shunt { display: none; }
 
     form .if-cbms { display: none; }
-    form[data-battery="6"] .if-cbms, form[data-battery="11"] .if-cbms, form[data-battery="22"] .if-cbms, form[data-battery="23"] .if-cbms, form[data-battery="24"] .if-cbms, form[data-battery="31"] .if-cbms, form[data-battery="41"] .if-cbms, form[data-battery="48"] .if-cbms, form[data-battery="49"] .if-cbms {
+    form[data-battery="6"] .if-cbms, form[data-battery="11"] .if-cbms, form[data-battery="22"] .if-cbms, form[data-battery="23"] .if-cbms, form[data-battery="24"] .if-cbms, form[data-battery="31"] .if-cbms, form[data-battery="41"] .if-cbms, form[data-battery="48"] .if-cbms, form[data-battery="49"] .if-cbms, form[data-battery="50"] .if-cbms {
       display: contents;
     }
 
@@ -1572,6 +1579,7 @@ const char* getCANInterfaceName(CAN_Interface interface) {
         <div></div>
         </div>
 
+        <p class="mqtt-desc">One MQTT server is used for both Battery Emulator and Solark (status, cells, solar/solark, HA discovery).</p>
         <label>Enable MQTT: </label>
         <input type='checkbox' name='MQTTENABLED' value='on' %MQTTENABLED% />
 

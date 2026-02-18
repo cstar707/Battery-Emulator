@@ -15,6 +15,7 @@
 #include "src/communication/nvm/comm_nvm.h"
 #include "src/communication/precharge_control/precharge_control.h"
 #include "src/communication/rs485/comm_rs485.h"
+#include "src/communication/solark_rs485/solark_rs485.h"
 #include "src/datalayer/datalayer.h"
 #include "src/devboard/display/display.h"
 #include "src/devboard/mqtt/mqtt.h"
@@ -531,6 +532,8 @@ void core_loop(void*) {
         inverter->update_values();
       }
 
+      solark_rs485_poll();
+
       if (datalayer.system.info.performance_measurement_active) {
         END_TIME_MEASUREMENT_MAX(values, datalayer.system.status.time_values_us);
       }
@@ -624,6 +627,8 @@ void setup() {
   init_CAN();
 
   init_rs485();
+
+  solark_rs485_init();
 
   init_equipment_stop_button();
 

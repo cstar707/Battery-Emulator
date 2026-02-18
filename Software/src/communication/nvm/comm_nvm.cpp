@@ -184,7 +184,15 @@ void init_stored_settings() {
   mqtt_publish_interval_ms = settings.getUInt("MQTTPUBLISHMS", 5000);
   ha_autodiscovery_enabled = settings.getBool("HADISC", false);
   mqtt_transmit_all_cellvoltages = settings.getBool("MQTTCELLV", false);
-  custom_hostname = settings.getString("HOSTNAME").c_str();
+  {
+    String h = settings.getString("HOSTNAME");
+#ifdef FEATURE_SOLARK_ON_MAIN_RS485
+    if (h.length() == 0) {
+      h = "esphome-web-7a7e60";  /* Match 10.10.53.32 ESPHome devicename when replacing that device */
+    }
+#endif
+    custom_hostname = h.c_str();
+  }
 
   static_IP_enabled = settings.getBool("STATICIP", false);
   static_local_IP1 = settings.getUInt("LOCALIP1", 192);
@@ -201,7 +209,7 @@ void init_stored_settings() {
   static_subnet4 = settings.getUInt("SUBNET4", 0);
 
   mqtt_server = settings.getString("MQTTSERVER").c_str();
-  mqtt_port = settings.getUInt("MQTTPORT", 0);
+  mqtt_port = settings.getUInt("MQTTPORT", 1883);  /* 1883 = standard MQTT; 0 was invalid */
   mqtt_user = settings.getString("MQTTUSER").c_str();
   mqtt_password = settings.getString("MQTTPASSWORD").c_str();
 

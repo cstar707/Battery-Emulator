@@ -42,6 +42,8 @@ unsigned long ota_progress_millis = 0;
 #include "events_html.h"
 #include "index_html.h"
 #include "settings_html.h"
+#include "solark_html.h"
+#include "../../communication/solark_rs485/solark_rs485.h"
 
 MyTimer ota_timeout_timer = MyTimer(15000);
 bool ota_active = false;
@@ -373,6 +375,50 @@ void init_webserver() {
   // Route for going to event log web page
   def_route_with_auth("/events", server, HTTP_GET, [](AsyncWebServerRequest* request) {
     request->send(200, "text/html", index_html, events_processor);
+  });
+
+  // Route for Solark RS485 debug page (live data, like 10.10.53.32)
+  def_route_with_auth("/solark", server, HTTP_GET, [](AsyncWebServerRequest* request) {
+    request->send(200, "text/html", index_html, solark_processor);
+  });
+  def_route_with_auth("/solark_data", server, HTTP_GET, [](AsyncWebServerRequest* request) {
+    static char solark_json_buf[512];
+    int len = solark_data_json(solark_json_buf, sizeof(solark_json_buf));
+    if (len > 0) {
+      request->send(200, "application/json", solark_json_buf);
+    } else {
+      request->send(500, "text/plain", "JSON buffer too small");
+    }
+  });
+
+  // ESPHome-style GET /sensor/sunsynk_* for API parity (solar server can scrape same URLs as 10.10.53.32)
+  server.onNotFound([](AsyncWebServerRequest* request) {
+    if (request->method() != HTTP_GET) {
+      request->send(404);
+      return;
+    }
+    String url = request->url();
+    if (url.indexOf('?') >= 0) url = url.substring(0, url.indexOf('?'));
+    if (!url.startsWith("/sensor/sunsynk_")) {
+      request->send(404);
+      return;
+    }
+    if (webserver_auth && !request->authenticate(http_username.c_str(), http_password.c_str())) {
+      request->requestAuthentication();
+      return;
+    }
+    String sensor_id = url.substring(8);  // after "/sensor/"
+    String state;
+    if (!solark_sensor_state_by_id(sensor_id.c_str(), &state)) {
+      request->send(404);
+      return;
+    }
+    StaticJsonDocument<128> doc;
+    doc["id"] = "sensor/" + sensor_id;
+    doc["state"] = state;
+    String json;
+    serializeJson(doc, json);
+    request->send(200, "application/json", json);
   });
 
   // Route for clearing all events
@@ -1462,6 +1508,7 @@ String processor(const String& var) {
       content += "<button onclick='Log()'>Log</button> ";
     }
     content += "<button onclick='Cellmon()'>Cellmonitor</button> ";
+    content += "<button onclick='Solark()'>Solark debug</button> ";
     content += "<button onclick='Events()'>Events</button> ";
     content += "<button onclick='askReboot()'>Reboot Emulator</button>";
     if (webserver_auth)
@@ -1489,6 +1536,7 @@ String processor(const String& var) {
     content += "function CANlog() { window.location.href = '/canlog'; }";
     content += "function CANreplay() { window.location.href = '/canreplay'; }";
     content += "function Log() { window.location.href = '/log'; }";
+    content += "function Solark() { window.location.href = '/solark'; }";
     content += "function Events() { window.location.href = '/events'; }";
     if (webserver_auth) {
       content += "function logout() {";

@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block head %}
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+{% endblock %}
+{% block content %}
+  {% if flash_saved %}
+  <div class="card flash flash-ok" role="alert">Setting saved. State may take a few seconds to update.</div>
+  {% endif %}
+  {% if flash_automation %}
+  <div class="card flash flash-ok" role="alert">Automation turned {{ flash_automation }}.</div>
+  {% endif %}
+  {% if flash_error %}
+  <div class="card flash flash-err" role="alert">Error: {% if flash_error == 'write_failed' %}Modbus write failed (check inverter connection).{% elif flash_error == 'timeout' %}Inverter did not respond in time.{% elif flash_error == 'server_error' %}Server error. Try again.{% elif flash_error == 'invalid_bit' %}Invalid setting.{% else %}{{ flash_error }}{% endif %}</div>
+  {% endif %}
+  <div class="card">
+    <h2>Status</h2>
+    <p id="status-msg"><strong>Solis:</strong> {% if ok %}<span class="status-ok">Connected</span>{% else %}<span class="status-fail">Not connected — check Modbus</span>{% endif %}
+    <strong style="margin-left: 1rem;">Solark:</strong> {% if solark_ok %}<span class="status-ok">Connected</span>{% if solark_source %} <span class="muted">({{ solark_source }})</span>{% endif %}{% else %}<span class="muted">No data</span>{% if solark_last_error %} <span class="muted">— {{ solark_last_error }}</span>{% endif %}{% endif %}</p>
+    <p class="muted" style="margin: 0.5rem 0 0 0;">Last updated: <span id="last-updated">{{ last_updated | default('—') }}</span> <button type="button" class="btn" id="btn-refresh" style="margin-left:0.5rem; padding:0.25rem 0.5rem; font-size:0.85rem;">Refresh</button></p>
+  </div>
+
+  <div class="card" style="border-left: 4px solid var(--orange);">
+    <h2>Solark status {% if solark_source %}<span class="muted">({{ solark_source }})</span>{% else %}<span class="muted">(HTTP or MQTT)</span>{% endif %}</h2>
+    {% if not solark_ok and solark_last_error %}
+    <p class="muted" style="margin: 0 0 0.75rem 0;">Trying HTTP (board IP in Settings) and MQTT topic <code>solar/solark</code>. Last error: {{ solark_last_error }}</p>
+    {% endif %}
+    <div class="grid2">
+      <div class="kpi"><div class="val" id="kpi-solark_battery_soc_pct">{% if solark_data.battery_soc_pptt is defined %}{{ (solark_data.battery_soc_pptt / 100) | int }}%{% else %}—{% endif %}</div><div class="unit">SOC</div></div>
+      <div class="kpi"><div class="val" id="kpi-solark_battery_power_W">{{ solark_data.battery_power_W | default('—') }}</div><div class="unit">Battery W</div></div>
+      <div class="kpi"><div class="val" id="kpi-solark_grid_power_W">{{ solark_data.grid_power_W | default('—') }}</div><div class="unit">Grid W</div></div>
+      <div class="kpi"><div class="val" id="kpi-solark_pv_power_W">{{ solark_data.pv_power_W | default('—') }}</div><div class="unit">PV W</div></div>
+    </div>
+  </div>
+
+  <div class="card" style="border-left: 4px solid var(--accent);">
+    <h2>Controls &amp; buttons</h2>
+    <p class="muted" style="margin: 0 0 0.75rem 0;">Quick mode toggles here. For all inverter controls (export, charging, storage/hybrid bits), go to:</p>
+    <a href="/control" class="btn" style="display: inline-block; text-decoration: none;">Control page →</a>
+  </div>
+
+  <div class="card">
+    <h2>Solis mode</h2>
+    <p class="muted" style="margin: 0 0 0.75rem 0;"><strong>Current mode:</strong> <span id="current-mode" class="status-ok">{{ storage_mode_label | default('—') }}</span>{% if solark_ok and automation_enabled %} — At 98% Solark SOC, Solis switches to self-use{% if solark_auto_self_use %} <span class="muted">(auto self-use active)</span>{% endif %}{% endif %}</p>
+    <p style="margin: 0 0 0.75rem 0;"><strong>Solark SOC automation:</strong> {% if automation_enabled %}<span class="status-ok">On</span>{% else %}<span class="muted">Off</span>{% endif %}
+      <form method="post" action="/settings/automation" style="display:inline; margin-left:0.5rem;">
+        {% if automation_enabled %}
+        <input type="hidden" name="enabled" value="0" /><button type="submit" class="btn" style="padding:0.2rem 0.5rem; font-size:0.85rem;">Turn off</button>
+        {% else %}
+        <input type="hidden" name="enabled" value="1" /><button type="submit" class="btn" style="padding:0.2rem 0.5rem; font-size:0.85rem; background:var(--green);">Turn on</button>
+        {% endif %}
+      </form>
+    </p>
+    <div style="display:flex; flex-wrap:wrap; gap:1rem; align-items:center;">
+      <form class="inline" method="post" action="/">
+        <input type="hidden" name="register" value="storage"><input type="hidden" name="bit_index" value="0">
+        <input type="hidden" name="on" value="{{ 'false' if storage_bits.self_use else 'true' }}">
+        <button type="submit" class="btn" style="{% if storage_bits.self_use %}background:var(--green);{% else %}background:var(--muted);{% endif %}">{{ 'Self-Use On' if storage_bits.self_use else 'Enable Self-Use' }}</button>
+      </form>
+      <form class="inline" method="post" action="/">
+        <input type="hidden" name="register" value="storage"><input type="hidden" name="bit_index" value="6">
+        <input type="hidden" name="on" value="{{ 'false' if storage_bits.feed_in_priority else 'true' }}">
+        <button type="submit" class="btn" style="{% if storage_bits.feed_in_priority %}background:var(--accent);{% else %}background:var(--muted);{% endif %}">{{ 'Feed-In On' if storage_bits.feed_in_priority else 'Enable Feed-In' }}</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Power (W)</h2>
+    <div class="grid2">
+      <div class="kpi"><div class="val" id="kpi-grid_power_W">{{ data.grid_power_W | default(0) | int }}</div><div class="unit">Grid</div></div>
+      <div class="kpi"><div class="val" id="kpi-pv_power_W">{{ data.pv_power_W | default(0) | int }}</div><div class="unit">PV</div></div>
+      <div class="kpi"><div class="val" id="kpi-battery_power_W">{{ data.battery_power_W | default(0) | int }}</div><div class="unit">Battery</div></div>
+      <div class="kpi"><div class="val" id="kpi-load_power_W">{{ data.load_power_W | default(0) | int }}</div><div class="unit">Load</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Solis — Battery &amp; System</h2>
+    <div class="grid2">
+      <div class="kpi"><div class="val" id="kpi-battery_soc_pct">{{ data.battery_soc_pct | default(0) | int }}%</div><div class="unit">SOC</div></div>
+      <div class="kpi"><div class="val" id="kpi-battery_voltage_V">{{ "%.1f" | format(data.battery_voltage_V | default(0)) }}</div><div class="unit">Battery V</div></div>
+      <div class="kpi"><div class="val" id="kpi-battery_current_A">{{ "%.1f" | format(data.battery_current_A | default(0)) }}</div><div class="unit">Battery A</div></div>
+      <div class="kpi"><div class="val" id="kpi-grid_freq_Hz">{{ "%.2f" | format(data.grid_freq_Hz | default(0)) }}</div><div class="unit">Grid Hz</div></div>
+      <div class="kpi"><div class="val" id="kpi-inverter_temp_C">{{ "%.1f" | format(data.inverter_temp_C | default(0)) }}</div><div class="unit">Inverter °C</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Energy today (kWh)</h2>
+    <div class="grid2">
+      <div class="kpi"><div class="val" id="kpi-energy_today_pv_kWh">{{ "%.2f" | format(data.energy_today_pv_kWh | default(0)) }}</div><div class="unit">PV</div></div>
+      <div class="kpi"><div class="val" id="kpi-energy_today_load_kWh">{{ "%.2f" | format(data.energy_today_load_kWh | default(0)) }}</div><div class="unit">Load</div></div>
+      <div class="kpi"><div class="val" id="kpi-energy_today_bat_charge_kWh">{{ "%.2f" | format(data.energy_today_bat_charge_kWh | default(0)) }}</div><div class="unit">Bat charge</div></div>
+      <div class="kpi"><div class="val" id="kpi-energy_today_bat_discharge_kWh">{{ "%.2f" | format(data.energy_today_bat_discharge_kWh | default(0)) }}</div><div class="unit">Bat discharge</div></div>
+    </div>
+  </div>
+
+  <div id="dashboard-data" style="display:none;"></div>
+  <script>
+  (function() {
+    var INTERVAL_MS = 20000;  /* update every 20s to avoid jank */
+    function fmtNum(v, decimals) {
+      if (v == null || v === undefined) return '0';
+      if (decimals === 0) return String(Math.round(v));
+      return Number(v).toFixed(decimals);
+    }
+    function updateDashboard() {
+      fetch('/api/dashboard').then(function(r) { return r.json(); }).then(function(res) {
+        var d = res.data || {};
+        var solisOk = res.ok;
+        var solark = res.solark || {};
+        var solarkData = solark.data || {};
+        var solarkOk = solark.ok;
+        var solarkSource = solark.source || '';
+        var solarkErr = solark.last_error || '';
+        var statusEl = document.getElementById('status-msg');
+        var solisStr = solisOk ? '<span class="status-ok">Connected</span>' : '<span class="status-fail">Not connected</span>';
+        var solarkStr = solarkOk
+          ? '<span class="status-ok">Connected</span>' + (solarkSource ? ' <span class="muted">(' + solarkSource + ')</span>' : '')
+          : '<span class="muted">No data</span>' + (solarkErr ? ' <span class="muted">— ' + solarkErr + '</span>' : '');
+        var newStatus = '<strong>Solis:</strong> ' + solisStr + ' <strong style="margin-left: 1rem;">Solark:</strong> ' + solarkStr;
+        if (statusEl.innerHTML !== newStatus) statusEl.innerHTML = newStatus;
+        if (res.ts) {
+          var dt = new Date(res.ts * 1000);
+          var newTime = dt.toLocaleTimeString();
+          var timeEl = document.getElementById('last-updated');
+          if (timeEl.textContent !== newTime) timeEl.textContent = newTime;
+        }
+        var modeEl = document.getElementById('current-mode');
+        if (modeEl && d.storage_mode !== undefined && modeEl.textContent !== d.storage_mode) modeEl.textContent = d.storage_mode;
+        var kpis = [
+          ['grid_power_W', 0], ['pv_power_W', 0], ['battery_power_W', 0], ['load_power_W', 0],
+          ['battery_soc_pct', 0, '%'], ['battery_voltage_V', 1], ['battery_current_A', 1], ['grid_freq_Hz', 2], ['inverter_temp_C', 1],
+          ['energy_today_pv_kWh', 2], ['energy_today_load_kWh', 2], ['energy_today_bat_charge_kWh', 2], ['energy_today_bat_discharge_kWh', 2]
+        ];
+        kpis.forEach(function(k) {
+          var key = k[0], dec = k[1], suffix = k[2] || '';
+          var newVal = fmtNum(d[key], dec) + suffix;
+          var el = document.getElementById('kpi-' + key);
+          if (el && el.textContent !== newVal) el.textContent = newVal;
+        });
+        var solarkSoc = solarkData.battery_soc_pptt != null ? (Math.round(solarkData.battery_soc_pptt / 100) + '%') : '—';
+        var elSolarkSoc = document.getElementById('kpi-solark_battery_soc_pct');
+        if (elSolarkSoc && elSolarkSoc.textContent !== solarkSoc) elSolarkSoc.textContent = solarkSoc;
+        ['battery_power_W', 'grid_power_W', 'pv_power_W'].forEach(function(key) {
+          var el = document.getElementById('kpi-solark_' + key);
+          var v = solarkData[key];
+          var newVal = (v != null && v !== undefined) ? String(v) : '—';
+          if (el && el.textContent !== newVal) el.textContent = newVal;
+        });
+      }).catch(function() {});
+    }
+    updateDashboard();
+    document.getElementById('btn-refresh').addEventListener('click', function() { updateDashboard(); });
+    setInterval(updateDashboard, INTERVAL_MS);
+  })();
+  </script>
+{% endblock %}

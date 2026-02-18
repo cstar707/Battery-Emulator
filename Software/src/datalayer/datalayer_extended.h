@@ -922,6 +922,34 @@ struct DATALAYER_INFO_ZOE_PH2 {
   bool UserRequestNVROLReset = false;
 };
 
+/** Solark inverter data read over RS485 (Modbus RTU). Used for microgrid coordination and monitoring. */
+struct DATALAYER_SOLARK_RS485 {
+  /** Last successful read time (millis). 0 if never read. */
+  unsigned long last_read_millis = 0;
+  /** True when we have received at least one valid response from Solark. */
+  bool available = false;
+
+  /** Battery power W: positive = charging, negative = discharging. */
+  int32_t battery_power_W = 0;
+  /** Battery SOC from inverter (0–10000 = 0.00–100.00%). */
+  uint16_t battery_soc_pptt = 0;
+  /** Battery voltage dV (e.g. 3700 = 370.0 V). */
+  uint16_t battery_voltage_dV = 0;
+  /** Battery current dA (positive = charge). */
+  int16_t battery_current_dA = 0;
+
+  /** Grid power W (positive = import, negative = export). */
+  int32_t grid_power_W = 0;
+  /** Load power W (positive = consumption). */
+  int32_t load_power_W = 0;
+  /** PV power W. */
+  int32_t pv_power_W = 0;
+
+  /** Raw holding registers for debugging; size per Sol-Ark register map. */
+  uint16_t raw_registers[32] = {0};
+  uint8_t raw_register_count = 0;
+};
+
 class DataLayerExtended {
  public:
   DATALAYER_INFO_BOLTAMPERA boltampera;
@@ -943,6 +971,8 @@ class DataLayerExtended {
   DATALAYER_INFO_VOLVO_HYBRID VolvoHybrid;
   DATALAYER_INFO_ZOE zoe;
   DATALAYER_INFO_ZOE_PH2 zoePH2;
+  /** Solark inverter data read over RS485 (Modbus). */
+  DATALAYER_SOLARK_RS485 solark_rs485;
 };
 
 extern DataLayerExtended datalayer_extended;
