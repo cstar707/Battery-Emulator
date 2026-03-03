@@ -13,10 +13,11 @@ extern Battery* battery3;
 void setup_shunt();
 
 #ifdef LILYGO_330_MINIMAL_BATTERIES
-// Minimal set for lilygo_330: Tesla, BYD Atto 3, TestFake only (saves ~400–600 KB flash).
+// Minimal set for lilygo_330 + Solark: Tesla, BYD Atto 3, TestFake, Ruixu (saves flash for Solark code).
 #include "BYD-ATTO-3-BATTERY.h"
 #include "TESLA-BATTERY.h"
 #include "TEST-FAKE-BATTERY.h"
+#include "RUIXU-BATTERY.h"
 #else
 #include "BMW-I3-BATTERY.h"
 #include "BMW-IX-BATTERY.h"
@@ -26,6 +27,7 @@ void setup_shunt();
 #include "BYD-ATTO-3-BATTERY.h"
 #include "CELLPOWER-BMS.h"
 #include "CHADEMO-BATTERY.h"
+#include "CHADEMO-CT.h"
 #include "CHADEMO-SHUNTS.h"
 #include "CMFA-EV-BATTERY.h"
 #include "CMP-SMART-CAR-BATTERY.h"
@@ -34,6 +36,7 @@ void setup_shunt();
 #include "FORD-MACH-E-BATTERY.h"
 #include "FOXESS-BATTERY.h"
 #include "GEELY-GEOMETRY-C-BATTERY.h"
+#include "GEELY-SEA-BATTERY.h"
 #include "GROWATT-HV-ARK-BATTERY.h"
 #include "HYUNDAI-IONIQ-28-BATTERY.h"
 #include "IMIEV-CZERO-ION-BATTERY.h"

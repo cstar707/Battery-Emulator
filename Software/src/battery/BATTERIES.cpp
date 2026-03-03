@@ -17,6 +17,7 @@ std::vector<BatteryType> supported_battery_types() {
   types.push_back(BatteryType::TeslaModel3Y);
   types.push_back(BatteryType::TeslaModelSX);
   types.push_back(BatteryType::TestFake);
+  types.push_back(BatteryType::Ruixu);
 #else
   for (int i = 0; i < (int)BatteryType::Highest; i++) {
     types.push_back((BatteryType)i);
@@ -59,6 +60,8 @@ const char* name_for_battery_type(BatteryType type) {
       return TeslaModelSXBattery::Name;
     case BatteryType::TestFake:
       return TestFakeBattery::Name;
+    case BatteryType::Ruixu:
+      return RuixuBattery::Name;
 #else
     case BatteryType::BmwI3:
       return BmwI3Battery::Name;
@@ -152,6 +155,8 @@ const char* name_for_battery_type(BatteryType type) {
       return TestFakeBattery::Name;
     case BatteryType::ThinkCity:
       return ThinkBattery::Name;
+    case BatteryType::GeelySea:
+      return GeelySeaBattery::Name;
     case BatteryType::VolvoSpa:
       return VolvoSpaBattery::Name;
     case BatteryType::VolvoSpaHybrid:
@@ -180,11 +185,13 @@ Battery* create_battery(BatteryType type) {
     case BatteryType::BydAtto3:
       return new BydAttoBattery();
     case BatteryType::TeslaModel3Y:
-      return new TeslaModel3YBattery(user_selected_battery_chemistry);
+      return new TeslaModel3YBattery();
     case BatteryType::TeslaModelSX:
       return new TeslaModelSXBattery();
     case BatteryType::TestFake:
       return new TestFakeBattery();
+    case BatteryType::Ruixu:
+      return new RuixuBattery();
 #else
     case BatteryType::BmwI3:
       return new BmwI3Battery();
@@ -269,7 +276,7 @@ Battery* create_battery(BatteryType type) {
     case BatteryType::SimpBms:
       return new SimpBmsBattery();
     case BatteryType::TeslaModel3Y:
-      return new TeslaModel3YBattery(user_selected_battery_chemistry);
+      return new TeslaModel3YBattery();
     case BatteryType::TeslaModelSX:
       return new TeslaModelSXBattery();
     case BatteryType::TeslaLegacy:
@@ -278,6 +285,8 @@ Battery* create_battery(BatteryType type) {
       return new TestFakeBattery();
     case BatteryType::ThinkCity:
       return new ThinkBattery();
+    case BatteryType::GeelySea:
+      return new GeelySeaBattery();
     case BatteryType::VolvoSpa:
       return new VolvoSpaBattery();
     case BatteryType::VolvoSpaHybrid:
@@ -296,6 +305,11 @@ void setup_battery() {
     return;
   }
 
+  // Set the chemistry to the user selected value, the battery can override.
+  datalayer.battery.info.chemistry = user_selected_battery_chemistry;
+  datalayer.battery2.info.chemistry = user_selected_battery_chemistry;
+  datalayer.battery3.info.chemistry = user_selected_battery_chemistry;
+
   battery = create_battery(user_selected_battery_type);
 
   if (battery) {
@@ -309,6 +323,9 @@ void setup_battery() {
         battery2 = new TestFakeBattery(&datalayer.battery2, can_config.battery_double);
         break;
 #else
+      case BatteryType::BydAtto3:
+        battery2 = new BydAttoBattery(&datalayer.battery2, nullptr, can_config.battery_double);
+        break;
       case BatteryType::NissanLeaf:
         battery2 = new NissanLeafBattery(&datalayer.battery2, nullptr, can_config.battery_double);
         break;
@@ -318,6 +335,9 @@ void setup_battery() {
         break;
       case BatteryType::CmfaEv:
         battery2 = new CmfaEvBattery(&datalayer.battery2, nullptr, can_config.battery_double);
+        break;
+      case BatteryType::CmpSmartCar:
+        battery2 = new CmpSmartCarBattery(&datalayer.battery2, nullptr, can_config.battery_double);
         break;
       case BatteryType::KiaHyundai64:
         battery2 = new KiaHyundai64Battery(&datalayer.battery2, &datalayer_extended.KiaHyundai64_2,

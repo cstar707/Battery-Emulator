@@ -164,6 +164,17 @@ const char* name_for_gpioopt3(GPIOOPT3 option) {
   }
 }
 
+const char* name_for_gpioopt4(GPIOOPT4 option) {
+  switch (option) {
+    case GPIOOPT4::DEFAULT_SD_CARD:
+      return "uSD Card";
+    case GPIOOPT4::I2C_DISPLAY_SSD1306:
+      return "I2C Display (SSD1306)";
+    default:
+      return nullptr;
+  }
+}
+
 // Special unicode characters
 const char* TRUE_CHAR_CODE = "\u2713";   //&#10003";
 const char* FALSE_CHAR_CODE = "\u2715";  //&#10005";
@@ -215,6 +226,12 @@ String settings_processor(const String& var, BatteryEmulatorSettingsStore& setti
                             name_for_comm_interface);
   }
 
+  if (var == "CTATTEN") {
+    return options_for_enum_with_none(
+        (adc_attenuation_enum)settings.getUInt("CTATTEN", (int)adc_attenuation_enum::ADC_0db), name_for_adc_attenuation,
+        adc_attenuation_enum::ADC_0db);
+  }
+
   if (var == "EQSTOP") {
     return options_for_enum_with_none(
         (STOP_BUTTON_BEHAVIOR)settings.getUInt("EQSTOP", (int)STOP_BUTTON_BEHAVIOR::NOT_CONNECTED),
@@ -252,7 +269,7 @@ String settings_processor(const String& var, BatteryEmulatorSettingsStore& setti
   }
 
   if (var == "SUNGROW_MODEL") {
-    return options_from_map(settings.getUInt("INVBTYPE", 1), sungrow_models);  // Default: SBR096
+    return options_from_map(settings.getUInt("INVSUNTYPE", 1), sungrow_models);  // Default: SBR096
   }
 
 #ifdef HW_LILYGO2CAN
@@ -269,6 +286,11 @@ String settings_processor(const String& var, BatteryEmulatorSettingsStore& setti
   if (var == "GPIOOPT3") {
     return options_for_enum_with_none((GPIOOPT3)settings.getUInt("GPIOOPT3", (int)GPIOOPT3::DEFAULT_SMA_ENABLE_05),
                                       name_for_gpioopt3, GPIOOPT3::DEFAULT_SMA_ENABLE_05);
+  }
+
+  if (var == "GPIOOPT4") {
+    return options_for_enum_with_none((GPIOOPT4)settings.getUInt("GPIOOPT4", (int)GPIOOPT4::DEFAULT_SD_CARD),
+                                      name_for_gpioopt4, GPIOOPT4::DEFAULT_SD_CARD);
   }
 
   // All other values are wrapped by html_escape to avoid HTML injection.
@@ -515,6 +537,10 @@ String raw_settings_processor(const String& var, BatteryEmulatorSettingsStore& s
 
   if (var == "SDLOGENABLED") {
     return settings.getBool("SDLOGENABLED") ? "checked" : "";
+  }
+
+  if (var == "ESPNOWENABLED") {
+    return settings.getBool("ESPNOWENABLED") ? "checked" : "";
   }
 
   if (var == "MQTTENABLED") {
@@ -826,6 +852,18 @@ String raw_settings_processor(const String& var, BatteryEmulatorSettingsStore& s
     return settings.getBool("GTWRHD") ? "checked" : "";
   }
 
+  if (var == "CTOFFSET") {
+    return String(settings.getUInt("CTOFFSET", 0));
+  }
+
+  if (var == "CTVNOM") {
+    return String(settings.getUInt("CTVNOM", 40));
+  }
+
+  if (var == "CTANOM") {
+    return String(settings.getUInt("CTANOM", 100));
+  }
+
   return String();
 }
 
@@ -886,6 +924,18 @@ const char* getCANInterfaceName(CAN_Interface interface) {
   )rawliteral"
 #else
 #define GPIOOPT3_SETTING ""
+#endif
+
+#ifdef HW_LILYGO
+#define GPIOOPT4_SETTING \
+  R"rawliteral(
+    <label for="GPIOOPT4">uSD Slot:</label>
+    <select id="GPIOOPT4" name="GPIOOPT4">
+      %GPIOOPT4%
+    </select>
+  )rawliteral"
+#else
+#define GPIOOPT4_SETTING ""
 #endif
 
 #define SETTINGS_HTML_SCRIPTS \
@@ -1060,7 +1110,17 @@ const char* getCANInterfaceName(CAN_Interface interface) {
     form[data-battery="0"] .if-battery { display: none; }
     form[data-inverter="0"] .if-inverter { display: none; }    
     form[data-charger="0"] .if-charger { display: none; }
-    form[data-SHUNTTYPE="0"] .if-shunt { display: none; }
+    form[data-shunttype="0"] .if-shunt,
+    form[data-shunttype="3"] .if-shunt { 
+      display: none; 
+    }
+    form[data-shunttype="0"] .if-ctclamp,
+    form[data-shunttype="1"] .if-ctclamp,
+    form[data-shunttype="2"] .if-ctclamp { 
+      display: none; 
+    }
+    form[data-shunttype="3"] .if-ctclamp { display: contents;}
+    
 
     form .if-cbms { display: none; }
     form[data-battery="6"] .if-cbms, form[data-battery="11"] .if-cbms, form[data-battery="22"] .if-cbms, form[data-battery="23"] .if-cbms, form[data-battery="24"] .if-cbms, form[data-battery="31"] .if-cbms, form[data-battery="41"] .if-cbms, form[data-battery="48"] .if-cbms, form[data-battery="49"] .if-cbms, form[data-battery="50"] .if-cbms {
@@ -1363,7 +1423,7 @@ const char* getCANInterfaceName(CAN_Interface interface) {
         </div>
 
         <div class="if-byd">
-        <label>Deye offgrid specific fixes: </label>
+        <label>Deye avoid over/undercharge fix: </label>
         <input type='checkbox' name='DEYEBYD' value='on' %DEYEBYD% />
         </div>
 
@@ -1395,7 +1455,7 @@ const char* getCANInterfaceName(CAN_Interface interface) {
 
         <div class="if-sungrow">
         <label>Battery model: </label>
-        <select name='INVBTYPE'>%SUNGROW_MODEL%</select>
+        <select name='INVSUNTYPE'>%SUNGROW_MODEL%</select>
         </div>
         
         <div class="if-kostal if-solax">
@@ -1420,7 +1480,7 @@ const char* getCANInterfaceName(CAN_Interface interface) {
         </select>
         </div>
 
-        <label>Shunt: </label><select name='SHUNTTYPE'>
+        <label>Shunt: </label><select name='shunttype'>
         %SHUNTTYPE%
         </select>
 
@@ -1430,7 +1490,29 @@ const char* getCANInterfaceName(CAN_Interface interface) {
         </select>
         </div>
 
+        <div class="if-ctclamp">
+          <label>CT Clamp offset (mV): </label>
+          <input type='number' name='CTOFFSET' value="%CTOFFSET%" 
+          min="0" max="1000" step="1"
+          title="Voltage offset required to calibrate 0A reading. " />
+
+          <label>CT Clamp nominal voltage (dV): </label>
+          <input type='number' name='CTVNOM' value="%CTVNOM%" 
+          min="0" max="500" step="1"
+          title="Nominal voltage of the CT Clamp x10. Integer only." />
+
+          <label>CT Clamp nominal current (A): </label>
+          <input type='number' name='CTANOM' value="%CTANOM%" 
+          min="0" max="200" step="1"
+          title="Nominal current of the CT Clamp. Integer only." />
+
+          <label>ESP32 pin attenuation: </label>
+          <select name='CTATTEN'>
+          %CTATTEN%
+          </select>
+          </div>
         </div>
+
         </div>
 
         <div class="settings-card">
@@ -1516,6 +1598,7 @@ const char* getCANInterfaceName(CAN_Interface interface) {
         )rawliteral" GPIOOPT1_SETTING R"rawliteral(
         )rawliteral" GPIOOPT2_SETTING R"rawliteral(
         )rawliteral" GPIOOPT3_SETTING R"rawliteral(
+        )rawliteral" GPIOOPT4_SETTING R"rawliteral(
           
         </div>
         </div>
@@ -1580,6 +1663,9 @@ const char* getCANInterfaceName(CAN_Interface interface) {
         </div>
 
         <p class="mqtt-desc">One MQTT server is used for both Battery Emulator and Solark (status, cells, solar/solark, HA discovery).</p>
+        <label>Enable ESPNow: </label>
+        <input type='checkbox' name='ESPNOWENABLED' value='on' %ESPNOWENABLED% />
+
         <label>Enable MQTT: </label>
         <input type='checkbox' name='MQTTENABLED' value='on' %MQTTENABLED% />
 
