@@ -1,6 +1,6 @@
-# Solark RS485 Integration (Battery-Emulator)
+# Solark RS485 Integration (Battery-Emulator-Solark)
 
-This document describes the integration of **Solark inverter data over RS485** into the modified Battery-Emulator firmware (e.g. branch `t-can485-solark`).
+This document describes the integration of **Solark inverter data over RS485** into the **Battery-Emulator-Solark** firmware (e.g. env `lilygo_330` or `battery_emulator_solark`).
 
 ## Replace 10.10.53.32
 
@@ -34,7 +34,7 @@ When built with **`FEATURE_SOLARK_ON_MAIN_RS485`**, the firmware uses **defaults
 
 Enable **Customized MQTT topics** in Settings so these defaults are used (MQTT topic name, object ID prefix, HA device name, HA device ID). You can override any of them in the web UI. The MQTT topic name stays **BE** unless you change it.
 
-**MQTT:** There is a single MQTT configuration (Settings → MQTT). The same broker and credentials are used for both Battery Emulator (status, cells, etc.) and Solark (e.g. **solar/solark**, HA discovery). See **`docs/mqtt-server-and-access.md`** for the full configuration section and how to access the broker.
+**MQTT:** There is a single MQTT configuration (Settings → MQTT). The same broker and credentials are used for both Battery-Emulator-Solark (status, cells, etc.) and Solark (e.g. **solar/solark**, HA discovery). See **`docs/mqtt-server-and-access.md`** for the full configuration section and how to access the broker.
 
 **Full device inventory:** A catalog of every sensor and switch on the live device (http://esphome-web-7a7e60.local/) and what the replacement firmware covers is in **`docs/solark-10.10.53.32-device-inventory.md`**.
 
@@ -138,7 +138,7 @@ The **original 10.10.53.32 device runs ESPHome**, not MQTT: entities are exposed
 | Load Power | W | `{{ value_json.load_power_W }}` |
 | PV Power | W | `{{ value_json.pv_power_W }}` |
 
-- **MQTT discovery:** Enable MQTT and **Home Assistant autodiscovery** in Settings so Solark sensors are created under the same device as the Battery Emulator.
+- **MQTT discovery:** Enable MQTT and **Home Assistant autodiscovery** in Settings so Solark sensors are created under the same device as the Battery-Emulator-Solark.
 - **Reference:** **`docs/home-assistant-10.10.53.32-solark.yaml`** (migration notes); **`docs/esphome-10.10.53.32-solark.yaml`** (original ESPHome register map).
 
 ## Matching 10.10.53.32

@@ -179,7 +179,13 @@ void init_stored_settings() {
   if (!wifiap_enabled)
     wifiap_enabled = true;
   wifi_channel = settings.getUInt("WIFICHANNEL", 0);
-  ssidAP = settings.getString("APNAME", "BatteryEmulator").c_str();
+  ssidAP = settings.getString("APNAME",
+#ifdef PROJECT_VARIANT_BATTERY_EMULATOR_SOLARK
+                              "BatteryEmulatorSolark"
+#else
+                              "BatteryEmulator"
+#endif
+  ).c_str();
   passwordAP = settings.getString("APPASSWORD", "123456789").c_str();
   espnow_enabled = settings.getBool("ESPNOWENABLED", false);
   mqtt_enabled = settings.getBool("MQTTENABLED", false);

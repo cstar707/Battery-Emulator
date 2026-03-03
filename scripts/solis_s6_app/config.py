@@ -113,6 +113,17 @@ def get_modbus_unit() -> int:
 # Optional HTTP auth for fetching Solark data from the board (GET /solark_data).
 SOLARK_HTTP_USER = os.environ.get("SOLARK_HTTP_USER", "").strip() or None
 SOLARK_HTTP_PASSWORD = os.environ.get("SOLARK_HTTP_PASSWORD", "").strip() or None
+
+# ESPHome device at 10.10.53.32 — second HTTP source for Solark data.
+# Host is stored in settings.json; credentials are env/`.env` only.
+def get_esphome_solark_host() -> str:
+    return str(_get("esphome_solark_host", "ESPHOME_SOLARK_HOST", "")).strip()
+
+def get_esphome_solark_port() -> int:
+    return int(os.environ.get("ESPHOME_SOLARK_PORT", "80").strip() or "80")
+
+ESPHOME_SOLARK_USER: str | None = os.environ.get("ESPHOME_SOLARK_USER", "").strip() or None
+ESPHOME_SOLARK_PASSWORD: str | None = os.environ.get("ESPHOME_SOLARK_PASSWORD", "").strip() or None
 # MQTT topic for Solark data (board publishes same JSON as /solark_data). Empty = don't subscribe.
 SOLARK_MQTT_TOPIC = (os.environ.get("SOLARK_MQTT_TOPIC", "solar/solark") or "").strip()
 # When Solark SOC >= this (percent), switch Solis to self-use. 0 = disabled.

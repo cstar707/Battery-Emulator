@@ -40,8 +40,13 @@ bool mqtt_manual_topic_object_name =
 // may break compatibility with previous versions of MQTT naming
 const char* mqtt_topic_name =
     "BE";  // Custom MQTT topic name. Previously, the name was automatically set to "battery-emulator_esp32-XXXXXX"
-#ifdef FEATURE_SOLARK_ON_MAIN_RS485
-/* When replacing 10.10.53.32 (ESPHome Solark logger), match that device: friendly_name "sunsynk", same HA device/entity naming. */
+#ifdef PROJECT_VARIANT_BATTERY_EMULATOR_SOLARK
+/* Battery-Emulator-Solark: Ruxiu + Sol-Ark. Use "Battery Emulator Solark" branding; override to "sunsynk" in Settings if replacing 10.10.53.32. */
+const char* mqtt_object_id_prefix = "battery_emulator_solark_";
+const char* mqtt_device_name = "Battery Emulator Solark";
+const char* ha_device_id = "battery-emulator-solark";
+#elif defined(FEATURE_SOLARK_ON_MAIN_RS485)
+/* Legacy: When replacing 10.10.53.32, match that device (sunsynk). */
 const char* mqtt_object_id_prefix = "sunsynk_";
 const char* mqtt_device_name = "sunsynk";
 const char* ha_device_id = "sunsynk";
@@ -223,7 +228,11 @@ void create_global_sensor_configs() {
 SensorConfig buttonConfigs[] = {{"BMSRESET", "Reset BMS", nullptr, nullptr, nullptr, nullptr},
                                 {"PAUSE", "Pause charge/discharge", nullptr, nullptr, nullptr, nullptr},
                                 {"RESUME", "Resume charge/discharge", nullptr, nullptr, nullptr, nullptr},
+#ifdef PROJECT_VARIANT_BATTERY_EMULATOR_SOLARK
+                                {"RESTART", "Restart Battery Emulator Solark", nullptr, nullptr, nullptr, nullptr},
+#else
                                 {"RESTART", "Restart Battery Emulator", nullptr, nullptr, nullptr, nullptr},
+#endif
                                 {"STOP", "Open Contactors", nullptr, nullptr, nullptr, nullptr}};
 
 static String generateCommonInfoAutoConfigTopic(const char* object_id) {
@@ -245,7 +254,12 @@ static String generateButtonAutoConfigTopic(const char* subtype) {
 void set_common_discovery_attributes(JsonDocument& doc) {
   doc["device"]["identifiers"][0] = device_id;
   doc["device"]["manufacturer"] = "DalaTech";
-  doc["device"]["model"] = "BatteryEmulator";
+  doc["device"]["model"] =
+#ifdef PROJECT_VARIANT_BATTERY_EMULATOR_SOLARK
+      "BatteryEmulatorSolark";
+#else
+      "BatteryEmulator";
+#endif
   doc["device"]["name"] = device_name;
   doc["availability"][0]["topic"] = lwt_topic;
   doc["payload_available"] = "online";
@@ -607,6 +621,7 @@ static bool publish_solark_rs485(void) {
   doc["battery_soc_pptt"] = s.battery_soc_pptt;
   doc["battery_voltage_dV"] = s.battery_voltage_dV;
   doc["battery_current_dA"] = s.battery_current_dA;
+  doc["battery_temperature"] = (float)((int)(s.battery_temperature_C * 10.0f + 0.5f)) / 10.0f;
   doc["grid_power_W"] = s.grid_power_W;
   doc["load_power_W"] = s.load_power_W;
   doc["pv_power_W"] = s.pv_power_W;
@@ -847,11 +862,20 @@ bool init_mqtt(void) {
     // Use default naming based on WiFi hostname for topic, object ID prefix, and device name
     topic_name = "battery-emulator_" + String(WiFi.getHostname());
     object_id_prefix = String(WiFi.getHostname()) + String("_");
+#ifdef PROJECT_VARIANT_BATTERY_EMULATOR_SOLARK
+    device_name = "BatteryEmulatorSolark_" + String(WiFi.getHostname());
+    device_id = "battery-emulator-solark";
+#else
     device_name = "BatteryEmulator_" + String(WiFi.getHostname());
     device_id = "battery-emulator";
+#endif
   }
 
+#ifdef PROJECT_VARIANT_BATTERY_EMULATOR_SOLARK
+  String clientId = String("BatteryEmulatorSolarkClient-") + WiFi.getHostname();
+#else
   String clientId = String("BatteryEmulatorClient-") + WiFi.getHostname();
+#endif
 
   mqtt_cfg.broker.address.transport = MQTT_TRANSPORT_OVER_TCP;
   mqtt_cfg.broker.address.hostname = mqtt_server.c_str();

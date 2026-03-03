@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Battery Emulator OTA Update</title>
+    <title>Battery Emulator Solark OTA Update</title>
 <script>
 let loadingDivText = "Loading...";
 async function checkEmulatorStatusReboot() {
@@ -127,7 +127,7 @@ h3 {font-size: 2rem; margin: 0.00em 0 0.00em 0; font-weight: bold; font-family: 
         <div id="rebooting-message">Loading...</div>
         <div class="spinner"></div>
     </div>
-	<h2>Battery Emulator</h2>
+	<h2>Battery Emulator Solark</h2>
 	<p><h3>OTA update</h3></p>
 	<p class="text-sm ml-2 pr-5">based on <svg version="1.2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 197" width="110" height="30" class="dark:text-[#e4e6eb]" style="display: inline;">
         <path fill-rule="evenodd" fill="currentColor" d="m10.3 51.9l-10.3-5.9v76c0 1.7 0.9 3.4 2.4 4.2l7.9 4.6zm19.5 11l-12.2-6.9v79l12.2 7zm19.5 11.1l-12.2-6.9v79.1l12.2 7.1zm19.5 11.1l-12.2-7v79.4l12.2 7zm6.1-84.4c-1.5-0.9-3.3-0.9-4.8 0l-67 38.7 12.2 6.9 69.9-39.7zm-52.2 49.9l10.9 6.2 69.8-39.6-10.9-6.3zm18.4 10.4l10.9 6.2 69.6-39.5-10.8-6.3zm18.4 10.5l13 7.4 69.5-39.4-13-7.5zm16.8 13.8v79.4l66.4-38.3c1.5-0.9 2.4-2.5 2.4-4.2v-76z"></path>
@@ -222,7 +222,7 @@ h3 {font-size: 2rem; margin: 0.00em 0 0.00em 0; font-weight: bold; font-family: 
 	  <div id="actionsButtons" style="display: inline;width: 350px;" class="flex flex-col justify-center mt-12 mb-4">
         <!-- Create a button -->
 		<button style="display: inline-block;padding: 10px 20px;margin: 5px;" onclick="window.location.href = '/';" type="button" class="dark:text-white bg-gray-50 border border-[#b0b3b8] border-opacity-40 hover:bg-gray-200 text-gray-700 text-xs focus:outline-none focus:ring-4 focus:ring-gray-300 font-medium rounded-full px-4 py-2 mr-2 mt-2 flex flex-row gap-2 items-center dark:bg-[#242526] dark:hover:bg-[#3a3b3c] dark:focus:ring-[#3a3b3c] dark:border-[#3a3b3c]">
-              Back to Battery Emulator
+              Back to Battery Emulator Solark
           </button>
 	  <button style="display: inline-block;padding: 10px 20px;margin: 5px;" onclick="resetView()" type="button" class="dark:text-white bg-gray-50 border border-[#b0b3b8] border-opacity-40 hover:bg-gray-200 text-gray-700 text-xs focus:outline-none focus:ring-4 focus:ring-gray-300 font-medium rounded-full px-4 py-2 mr-2 mt-4 flex flex-row gap-2 items-center dark:bg-[#242526] dark:hover:bg-[#3a3b3c] dark:focus:ring-[#3a3b3c] dark:border-[#3a3b3c]">
 	  New Update

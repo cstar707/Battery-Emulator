@@ -174,6 +174,8 @@ static void parse_and_update(uint8_t* buf, int len) {
   if (n >= 18) {
     datalayer_extended.solark_rs485.battery_voltage_dV = (uint16_t)((uint32_t)regs[16] / 10u); /* 183: ×0.01 V → dV (37.00 V → 370 dV) */
     datalayer_extended.solark_rs485.battery_soc_pptt = regs[17] <= 100 ? (uint16_t)(regs[17] * 100u) : regs[17]; /* 184: % → pptt */
+    /* 182: Battery Temperature S_WORD offset -1000, ×0.1 °C → temp = (reg - 1000) * 0.1 */
+    datalayer_extended.solark_rs485.battery_temperature_C = ((float)(int16_t)regs[15] - 1000.0f) * 0.1f;
   }
   if (n >= 21) {
     datalayer_extended.solark_rs485.pv_power_W = (int32_t)((uint32_t)regs[19] + (uint32_t)regs[20]); /* 186 PV1 + 187 PV2, U_WORD W */

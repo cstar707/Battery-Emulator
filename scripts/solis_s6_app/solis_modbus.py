@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import logging
 import os
+import threading
+import time
 from typing import Any
 
 from pymodbus.client import ModbusTcpClient
@@ -74,6 +76,12 @@ def _holding_addr(solis_reg: int) -> int:
     return (solis_reg - _HOLDING_BASE) if _USE_ZERO_BASED else solis_reg
 
 
+# Serialise all Modbus I/O so the background poll and any write never interleave.
+# Without this the TID-mismatch bypass lets a poll response get consumed by a write
+# request (or vice versa), returning the wrong number of registers and corrupting writes.
+_modbus_lock = threading.Lock()
+
+
 def _get_client() -> ModbusTcpClient:
     return ModbusTcpClient(host=get_inverter_host(), port=get_inverter_port(), timeout=10)
 
@@ -109,6 +117,11 @@ def _read_holding(client: ModbusTcpClient, solis_reg: int, count: int = 1) -> li
         if rr.isError():
             return None
         out = list(rr.registers)
+        if len(out) != count:
+            # Response register count doesn't match request — likely a cross-contaminated
+            # response from a concurrent poll. Reject it rather than using corrupt data.
+            logger.warning("read_holding %s: expected %s registers, got %s (discarding)", solis_reg, count, len(out))
+            return None
         logger.debug("read_holding %s = %s", solis_reg, out)
         return out
     except (ModbusException, Exception) as e:
@@ -171,6 +184,11 @@ def _decode_hybrid_bits(val: int) -> dict[str, bool]:
 def poll_solis() -> dict[str, Any]:
     """Read all Solis input (and holding 43110) and return a flat dict for UI."""
     logger.debug("poll_solis start")
+    with _modbus_lock:
+        return _poll_solis_locked()
+
+
+def _poll_solis_locked() -> dict[str, Any]:
     client = _get_client()
     out: dict[str, Any] = {
         "ok": False,
@@ -311,8 +329,58 @@ def get_storage_control_bits() -> dict[str, bool]:
         return {n: False for n in names}
 
 
+def set_storage_control_bits(changes: dict) -> bool:
+    """Read 43110, apply multiple bit changes atomically, write back, read back to confirm.
+
+    Args:
+        changes: dict mapping bit_index (int) -> desired_state (bool)
+                 e.g. {0: True, 6: False} to enable self-use and disable feed-in together.
+    """
+    with _modbus_lock:
+        return _set_storage_control_bits_locked(changes)
+
+
+def _set_storage_control_bits_locked(changes: dict) -> bool:
+    client = _get_client()
+    try:
+        if not client.connect():
+            return False
+        h = _read_holding(client, _REG_STORAGE_CONTROL, 1)
+        if not h:
+            client.close()
+            return False
+        val = h[0]
+        for bit_index, on in changes.items():
+            if on:
+                val |= 1 << bit_index
+            else:
+                val &= ~(1 << bit_index)
+        expected = val & 0xFFFF
+        if not _write_holding(client, _REG_STORAGE_CONTROL, expected):
+            client.close()
+            return False
+        time.sleep(0.3)
+        rb = _read_holding(client, _REG_STORAGE_CONTROL, 1)
+        client.close()
+        if not rb:
+            logger.warning("set_storage_control_bits: read-back failed after write")
+            return False
+        confirmed = (rb[0] == expected)
+        if not confirmed:
+            logger.warning("set_storage_control_bits: write mismatch — expected %s, got %s", expected, rb[0])
+        return confirmed
+    except Exception as e:
+        logger.exception("set_storage_control_bits: %s", e)
+        return False
+
+
 def set_storage_control_bit(bit_index: int, on: bool) -> bool:
-    """Read 43110, set or clear one bit, write back. bit_index 0..11."""
+    """Read 43110, set or clear one bit, write back, then read back to confirm. bit_index 0..11."""
+    with _modbus_lock:
+        return _set_storage_control_bit_locked(bit_index, on)
+
+
+def _set_storage_control_bit_locked(bit_index: int, on: bool) -> bool:
     client = _get_client()
     try:
         if not client.connect():
@@ -326,9 +394,21 @@ def set_storage_control_bit(bit_index: int, on: bool) -> bool:
             val |= 1 << bit_index
         else:
             val &= ~(1 << bit_index)
-        ok = _write_holding(client, _REG_STORAGE_CONTROL, val & 0xFFFF)
+        expected = val & 0xFFFF
+        if not _write_holding(client, _REG_STORAGE_CONTROL, expected):
+            client.close()
+            return False
+        # Read back to confirm the inverter applied the change
+        time.sleep(0.3)
+        rb = _read_holding(client, _REG_STORAGE_CONTROL, 1)
         client.close()
-        return ok
+        if not rb:
+            logger.warning("set_storage_control_bit: read-back failed after write")
+            return False
+        confirmed = (rb[0] == expected)
+        if not confirmed:
+            logger.warning("set_storage_control_bit: write mismatch — expected %s, got %s", expected, rb[0])
+        return confirmed
     except Exception as e:
         logger.exception("set_storage_control_bit: %s", e)
         return False
@@ -358,7 +438,12 @@ def get_hybrid_control_bits() -> dict[str, bool]:
 
 
 def set_hybrid_control_bit(bit_index: int, on: bool) -> bool:
-    """Read 43483, set or clear one bit, write back. bit_index 0..7."""
+    """Read 43483, set or clear one bit, write back, then read back to confirm. bit_index 0..7."""
+    with _modbus_lock:
+        return _set_hybrid_control_bit_locked(bit_index, on)
+
+
+def _set_hybrid_control_bit_locked(bit_index: int, on: bool) -> bool:
     client = _get_client()
     try:
         if not client.connect():
@@ -372,9 +457,20 @@ def set_hybrid_control_bit(bit_index: int, on: bool) -> bool:
             val |= 1 << bit_index
         else:
             val &= ~(1 << bit_index)
-        ok = _write_holding(client, _REG_HYBRID_CONTROL, val & 0xFFFF)
+        expected = val & 0xFFFF
+        if not _write_holding(client, _REG_HYBRID_CONTROL, expected):
+            client.close()
+            return False
+        time.sleep(0.3)
+        rb = _read_holding(client, _REG_HYBRID_CONTROL, 1)
         client.close()
-        return ok
+        if not rb:
+            logger.warning("set_hybrid_control_bit: read-back failed after write")
+            return False
+        confirmed = (rb[0] == expected)
+        if not confirmed:
+            logger.warning("set_hybrid_control_bit: write mismatch — expected %s, got %s", expected, rb[0])
+        return confirmed
     except Exception as e:
         logger.exception("set_hybrid_control_bit: %s", e)
         return False
@@ -385,6 +481,11 @@ def apply_use_all_solar_preset() -> bool:
     Preset: Self-use, no export — use all solar for load and battery (load-based; no export to grid).
     Sets: Self-Use ON (43110.0), Feed-in OFF (43110.6), Allow export OFF (43483.3).
     """
+    with _modbus_lock:
+        return _apply_use_all_solar_preset_locked()
+
+
+def _apply_use_all_solar_preset_locked() -> bool:
     client = _get_client()
     try:
         if not client.connect():

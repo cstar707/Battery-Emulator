@@ -74,7 +74,11 @@ void init_serial() {
     delay(10);
   }
   delay(800);
+#ifdef PROJECT_VARIANT_BATTERY_EMULATOR_SOLARK
+  Serial.println("\nBattery Emulator Solark - serial 115200");
+#else
   Serial.println("\nBattery Emulator - serial 115200");
+#endif
   Serial.flush();
 #else
   while (!Serial) {}

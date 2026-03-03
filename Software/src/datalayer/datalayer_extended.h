@@ -978,6 +978,8 @@ struct DATALAYER_SOLARK_RS485 {
   uint16_t battery_voltage_dV = 0;
   /** Battery current dA (positive = charge). */
   int16_t battery_current_dA = 0;
+  /** Battery temperature °C (register 182: offset -1000, ×0.1 °C). */
+  float battery_temperature_C = 0.0f;
 
   /** Grid power W (positive = import, negative = export). */
   int32_t grid_power_W = 0;

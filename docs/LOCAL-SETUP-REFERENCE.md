@@ -6,9 +6,9 @@ Everything below is **stored locally** in this repository. **Credentials and ser
 
 ## Build and flash
 
-- **Env:** `lilygo_330` (Battery-Emulator + Solark on main RS485; inverter must be CAN, e.g. Sol-Ark LV).
+- **Env:** `lilygo_330` or `battery_emulator_solark` (Battery-Emulator-Solark: Battery-Emulator + Solark on main RS485; inverter must be CAN, e.g. Sol-Ark LV).
 - **Build:** `pio run -e lilygo_330`
-- **Flash:** PlatformIO upload or web installer. First boot may be AP mode (Battery-Emulator Wi‑Fi).
+- **Flash:** PlatformIO upload or web installer. First boot may be AP mode (BatteryEmulatorSolark Wi‑Fi).
 
 ---
 
@@ -16,7 +16,7 @@ Everything below is **stored locally** in this repository. **Credentials and ser
 
 - **By IP:** `http://<board-ip>`
 - **By hostname:** `http://esphome-web-7a7e60.local/`
-- **First time (AP):** Connect to Battery-Emulator Wi‑Fi → `http://192.168.4.1` → **Settings**
+- **First time (AP):** Connect to BatteryEmulatorSolark Wi‑Fi → `http://192.168.4.1` → **Settings**
 
 ---
 

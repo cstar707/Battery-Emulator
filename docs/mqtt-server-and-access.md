@@ -1,14 +1,14 @@
 # MQTT server – configuration and access
 
-The Battery-Emulator board (including when replacing 10.10.53.32) uses **one MQTT connection** to publish both **Battery Emulator** data (battery state, cells, status) and **Solark** data (inverter monitoring, and later switches). There is a **single configuration section** for the MQTT server; that setup is used for everything.
+The Battery-Emulator-Solark board (including when replacing 10.10.53.32) uses **one MQTT connection** to publish both **Battery-Emulator-Solark** data (battery state, cells, status) and **Solark** data (inverter monitoring, and later switches). There is a **single configuration section** for the MQTT server; that setup is used for everything.
 
 ---
 
-## 1. MQTT configuration section (used for both Battery Emulator and Solark)
+## 1. MQTT configuration section (used for both Battery-Emulator-Solark and Solark)
 
 **One broker, one set of settings.** Configure the MQTT server (broker) in the board’s **web UI → Settings → MQTT**. The same broker and credentials are used for:
 
-- Battery Emulator: `BE/status`, common info, cell voltages, balancing, events, buttons, HA discovery for battery.
+- Battery-Emulator-Solark: `BE/status`, common info, cell voltages, balancing, events, buttons, HA discovery for battery.
 - Solark: **solar/solark** (same topic as today; when implemented, slave could be e.g. solar/solark_slave), HA discovery for Solark sensors/switches.
 - **ESP board health:** `BE/board` – free heap, min free heap, heap size, max alloc heap, CPU temperature (°C), uptime (ms), and (when performance measurement is enabled) core/MQTT/WiFi task max times (µs) so you can monitor for overload.
 
@@ -30,7 +30,7 @@ You do **not** configure MQTT separately for battery vs Solark. Enable MQTT and 
 | **Customized MQTT topics** | MQTTTOPICS | Use custom topic name, object ID, device name | Check when replacing 10.10.53.32 (sunsynk) |
 | **MQTT topic name** | MQTTTOPIC | Prefix for all topics (e.g. `BE`) | `BE` |
 | **Prefix for MQTT object ID** | MQTTOBJIDPREFIX | e.g. `sunsynk_` for Solark-style entities | `be_` or `sunsynk_` |
-| **HA device name** | MQTTDEVICENAME | Device name in HA (e.g. sunsynk) | `Battery Emulator` or `sunsynk` |
+| **HA device name** | MQTTDEVICENAME | Device name in HA (e.g. sunsynk) | `Battery Emulator Solark` or `sunsynk` |
 | **HA device ID** | HADEVICEID | Stable device ID in HA | `battery-emulator` or `sunsynk` |
 
 **How to open Settings:**
@@ -78,7 +78,7 @@ You do **not** configure MQTT separately for battery vs Solark. Enable MQTT and 
 | Question | Answer |
 |----------|--------|
 | **Where is the MQTT server?** | The MQTT **broker** is a host you set in the board’s **Settings → MQTT server** (e.g. your HA host or a dedicated broker). The board does not host a broker. |
-| **How do I set it?** | Web UI → **Settings** → **MQTT**. One configuration is used for both Battery Emulator and Solark; set **MQTT server** (hostname/IP), **MQTT port** (1883), optionally user/password, enable MQTT, save. |
+| **How do I set it?** | Web UI → **Settings** → **MQTT**. One configuration is used for both Battery-Emulator-Solark and Solark; set **MQTT server** (hostname/IP), **MQTT port** (1883), optionally user/password, enable MQTT, save. |
 | **How do I open the board’s web UI?** | **http://\<board-ip\>** or **http://esphome-web-7a7e60.local/** (replacement device with default hostname). |
 | **How do I access the data?** | Use the **same broker** the board uses: subscribe to `BE/#` (or your topic) from HA, `mosquitto_sub`, or any MQTT client. Solark data is on **solar/solark**. |
 

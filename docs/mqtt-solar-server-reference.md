@@ -51,7 +51,7 @@ Today the server may get **Solark** data from the existing ESPHome device via **
 | **Broker** | Same host as solar dashboards, port `1883` (Mosquitto). Set broker host in Settings; do not commit. |
 | **Auth** | Username + password; set in board Settings to match server config (never commit). |
 | **Board config** | Settings → MQTT: server = broker IP/hostname (local only), port `1883`, same user/password as server. |
-| **Board publishes** | **solar/solark** (Solark, same as today), `BE/status`, `BE/board`, etc. (one MQTT config for both Battery Emulator and Solark). |
+| **Board publishes** | **solar/solark** (Solark, same as today), `BE/status`, `BE/board`, etc. (one MQTT config for both Battery-Emulator-Solark and Solark). |
 | **Server publishes** | `solar/dashboard`, `solar/solark`, `solar/solark/sensors/*`, `solar/envoy`, etc. |
 
 For full board MQTT configuration (all fields, NVM keys), see **`docs/mqtt-server-and-access.md`**.

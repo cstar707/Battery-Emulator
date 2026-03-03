@@ -47,6 +47,10 @@ try:
         MQTT_USER,
         POLL_INTERVAL_SEC,
         save_settings,
+        ESPHOME_SOLARK_PASSWORD,
+        ESPHOME_SOLARK_USER,
+        get_esphome_solark_host,
+        get_esphome_solark_port,
         SOLARK_HTTP_PASSWORD,
         SOLARK_HTTP_USER,
         SOLARK_MQTT_TOPIC,
@@ -140,6 +144,7 @@ try:
         poll_solis,
         set_hybrid_control_bit,
         set_storage_control_bit,
+        set_storage_control_bits,
     )
     _STORAGE_BIT_NAMES, _HYBRID_BIT_NAMES = _SM, _HM
     _modbus_available = True
@@ -147,6 +152,7 @@ except Exception as e:
     logging.warning("Modbus unavailable, using stubs: %s", e)
     _modbus_available = False
     poll_solis = _modbus_stub_poll
+    set_storage_control_bits = _modbus_stub_return_false
     set_storage_control_bit = set_hybrid_control_bit = _modbus_stub_return_false
     apply_use_all_solar_preset = _modbus_stub_return_false
     get_storage_control_bits = _modbus_stub_return_dict_bits
@@ -181,6 +187,23 @@ _AUTO_SWITCH_COOLDOWN_SEC = 300  # don't flip Solis mode more than once per 5 mi
 
 # Modbus write timeout (seconds) so a stuck inverter doesn't hang the request
 _MODBUS_WRITE_TIMEOUT = 15.0
+
+# Mutual exclusion rules for storage register 43110.
+# When turning ON a bit in this map, also turn OFF the paired bits.
+# e.g. enabling Self-Use (0) must clear Feed-In Priority (6), and vice versa.
+_STORAGE_BIT_EXCLUSIVE: dict[int, list[int]] = {
+    0: [6],   # Self-Use ON  → Feed-In Priority OFF
+    6: [0],   # Feed-In ON   → Self-Use OFF
+}
+
+
+def _storage_changes_with_exclusions(bit_index: int, on: bool) -> dict:
+    """Return full set of bit changes to apply, including mutual exclusions."""
+    changes = {bit_index: on}
+    if on and bit_index in _STORAGE_BIT_EXCLUSIVE:
+        for excl in _STORAGE_BIT_EXCLUSIVE[bit_index]:
+            changes[excl] = False
+    return changes
 
 
 def _on_solark_mqtt_message(_client, _userdata, msg):
@@ -241,6 +264,78 @@ def _fetch_solark_data_sync() -> tuple[dict, str | None]:
         return {}, err
 
 
+def _fetch_esphome_solark_data_sync() -> tuple[dict, str | None]:
+    """Fetch Solark data from ESPHome device via per-sensor REST API.
+
+    All fields use the sunsynk Total* sensors which combine primary+slave inverters.
+    """
+    host = get_esphome_solark_host()
+    if not host:
+        return {}, None
+    port = get_esphome_solark_port()
+
+    creds_header: str | None = None
+    if ESPHOME_SOLARK_USER and ESPHOME_SOLARK_PASSWORD:
+        creds = b64encode(f"{ESPHOME_SOLARK_USER}:{ESPHOME_SOLARK_PASSWORD}".encode()).decode()
+        creds_header = f"Basic {creds}"
+
+    def _get(sensor_id: str) -> float | None:
+        url = f"http://{host}:{port}/sensor/{sensor_id}"
+        req = UrllibRequest(url)
+        if creds_header:
+            req.add_header("Authorization", creds_header)
+        try:
+            with urlopen(req, timeout=4) as r:
+                d = json.loads(r.read().decode())
+                v = d.get("value")
+                return float(v) if v is not None else None
+        except Exception as exc:
+            raise OSError(f"{sensor_id}: {exc}") from exc
+
+    try:
+        soc = _get("sunsynk_battery_soc")
+        if soc is None:
+            return {}, f"ESPHome {host}: battery_soc is NA"
+
+        def _w(sid: str) -> int:
+            v = _get(sid)
+            return int(v) if v is not None else 0
+
+        def _kwh(sid: str) -> float | None:
+            v = _get(sid)
+            return round(float(v), 2) if v is not None else None
+
+        result: dict = {
+            # --- live power ---
+            "battery_soc_pptt":       int(soc * 100),
+            "battery_power_W":        _w("sunsynk_total_battery_power"),
+            "pv_power_W":             _w("sunsynk_total_solar_power"),
+            "grid_ct_power_W":        _w("sunsynk_total_grid_ct_power"),
+            "inverter_power_W":       _w("sunsynk_total_inverter_power"),
+            # --- live electrical ---
+            "battery_current_dA":     int((_get("sunsynk_total_battery_current") or 0) * 10),
+            "battery_voltage_dV":     int((_get("sunsynk_battery_voltage") or 0) * 10),
+            "inverter_current_dA":    int((_get("sunsynk_total_inverter_current") or 0) * 10),
+            # --- today's energy (kWh) ---
+            "day_pv_energy_kWh":      _kwh("sunsynk_total_day_pv_energy"),
+            "day_batt_charge_kWh":    _kwh("sunsynk_total_day_battery_charge"),
+            "day_batt_discharge_kWh": _kwh("sunsynk_total_day_battery_discharge"),
+            "day_load_energy_kWh":    _kwh("sunsynk_total_day_load_energy"),
+            # --- lifetime totals (kWh) ---
+            "total_pv_energy_kWh":    _kwh("sunsynk_total_pv_energy"),
+            "total_batt_charge_kWh":  _kwh("sunsynk_total_battery_charge"),
+            "total_batt_dis_kWh":     _kwh("sunsynk_total_battery_discharge"),
+            "total_load_energy_kWh":  _kwh("sunsynk_total_load_energy"),
+            "total_grid_export_kWh":  _kwh("sunsynk_total_grid_export"),
+            "total_grid_import_kWh":  _kwh("sunsynk_total_grid_import"),
+        }
+        return result, None
+    except (URLError, OSError, ValueError, json.JSONDecodeError) as exc:
+        err = str(exc)
+        logger.warning("ESPHome Solark fetch %s: %s", host, err)
+        return {}, err
+
+
 def _run_solark_solis_automation(solis_data: dict, solark_data: dict) -> None:
     """If Solark SOC >= threshold, set Solis to self-use; if below hysteresis and we auto-switched, set feed-in."""
     global _solark_auto_self_use_active, _last_solis_auto_switch_ts
@@ -259,19 +354,23 @@ def _run_solark_solis_automation(solis_data: dict, solark_data: dict) -> None:
     feed_in = bool(storage_bits.get("feed_in_priority"))
     threshold_pptt = SOLARK_SOC_SELF_USE_THRESHOLD_PCT * 100
     below_pptt = SOLARK_SOC_FEEDIN_BELOW_PCT * 100
+    logger.debug(
+        "automation check: soc_pptt=%d threshold=%d below=%d self_use=%s feed_in=%s auto_active=%s",
+        soc_pptt, threshold_pptt, below_pptt, self_use, feed_in, _solark_auto_self_use_active,
+    )
     if soc_pptt >= threshold_pptt and (feed_in or not self_use):
-        # Switch Solis to self-use (bit 0 on, bit 6 off)
+        # Switch Solis to self-use (bit 0 on, bit 6 off — atomic)
         try:
-            if set_storage_control_bit(0, True) and set_storage_control_bit(6, False):
+            if set_storage_control_bits({0: True, 6: False}):
                 _solark_auto_self_use_active = True
                 _last_solis_auto_switch_ts = now
                 logger.info("Solark SOC %.1f%% >= %d%%: Solis switched to self-use", soc_pct, SOLARK_SOC_SELF_USE_THRESHOLD_PCT)
         except Exception as e:
             logger.warning("Automation set self-use: %s", e)
     elif _solark_auto_self_use_active and soc_pptt < below_pptt and self_use:
-        # Hysteresis: switch back to feed-in
+        # Hysteresis: switch back to feed-in (bit 6 on, bit 0 off — atomic)
         try:
-            if set_storage_control_bit(6, True) and set_storage_control_bit(0, False):
+            if set_storage_control_bits({6: True, 0: False}):
                 _solark_auto_self_use_active = False
                 _last_solis_auto_switch_ts = now
                 logger.info("Solark SOC %.1f%% < %d%%: Solis switched to feed-in", soc_pct, SOLARK_SOC_FEEDIN_BELOW_PCT)
@@ -289,8 +388,13 @@ def _poll_sync() -> None:
             publish_solis_sensors(data, ts=ts)
         except Exception as mqtt_e:
             logger.warning("MQTT publish: %s", mqtt_e)
-        # Fetch Solark data from board (HTTP); MQTT subscriber may also update _solark_cache
+        # --- Solark data: try Battery-Emulator HTTP, then ESPHome, then MQTT (background) ---
         solark_host = get_solark1_host()
+        esphome_host = get_esphome_solark_host()
+        solark_data: dict = {}
+        http_err: str | None = None
+
+        battery_emulator_ok = False
         if solark_host:
             solark_data, http_err = _fetch_solark_data_sync()
             if not http_err and solark_data:
@@ -299,18 +403,32 @@ def _poll_sync() -> None:
                 _solark_cache["ok"] = True
                 _solark_cache["source"] = "http"
                 _solark_cache["last_error"] = None
-                if SOLARK_SOC_SELF_USE_THRESHOLD_PCT > 0:
-                    _run_solark_solis_automation(data, solark_data)
-            else:
-                _solark_cache["last_error"] = http_err
-                _solark_cache["source"] = "http"
-                if not _solark_cache.get("data") and not _solark_cache.get("ok"):
-                    _solark_cache["ts"] = ts
-        else:
-            if not _solark_cache.get("ok"):
-                _solark_cache["last_error"] = "Solark board IP not set (Settings)"
-                _solark_cache["source"] = None
+                battery_emulator_ok = True
+
+        if not battery_emulator_ok and esphome_host:
+            # Battery-Emulator not configured or unavailable — always refresh from ESPHome each cycle
+            esphome_data, esphome_err = _fetch_esphome_solark_data_sync()
+            if not esphome_err and esphome_data:
+                _solark_cache["data"] = esphome_data
                 _solark_cache["ts"] = ts
+                _solark_cache["ok"] = True
+                _solark_cache["source"] = "esphome"
+                _solark_cache["last_error"] = None
+            else:
+                _solark_cache["ok"] = False
+                _solark_cache["last_error"] = esphome_err or http_err
+                _solark_cache["source"] = "esphome"
+                _solark_cache["ts"] = ts
+        elif not solark_host and not esphome_host:
+            _solark_cache["ok"] = False
+            _solark_cache["last_error"] = "No Solark source configured (Settings)"
+            _solark_cache["source"] = None
+            _solark_cache["ts"] = ts
+
+        # Run automation using whatever solark data we have
+        cached_solark = _solark_cache.get("data") or {}
+        if cached_solark and SOLARK_SOC_SELF_USE_THRESHOLD_PCT > 0:
+            _run_solark_solis_automation(data, cached_solark)
     except Exception as e:
         logger.exception("poll: %s", e)
         _solis_cache = {"data": {}, "ts": time.time(), "ok": False}
@@ -451,7 +569,7 @@ async def index(request: Request):
         flash_error=q.get("error"),
         flash_automation=q.get("automation"),  # "on" or "off" after toggle
     )
-    return templates.TemplateResponse(request, "dashboard.html", ctx)
+    return templates.TemplateResponse("dashboard.html", ctx)
 
 
 @app.post("/")
@@ -493,7 +611,7 @@ async def index_toggle_redirect(request: Request):
 @app.get("/sensors", response_class=HTMLResponse)
 async def sensors_page(request: Request):
     ctx = _page_ctx(request, data=_solis_cache.get("data", {}), ok=_solis_cache.get("ok", False))
-    return templates.TemplateResponse(request, "sensors.html", ctx)
+    return templates.TemplateResponse("sensors.html", ctx)
 
 
 @app.get("/control", response_class=HTMLResponse)
@@ -510,7 +628,7 @@ async def control_page(request: Request):
         flash_saved=q.get("saved") == "1",
         flash_error=q.get("error"),
     )
-    return templates.TemplateResponse(request, "control.html", ctx)
+    return templates.TemplateResponse("control.html", ctx)
 
 
 def _settings_values() -> dict:
@@ -523,6 +641,7 @@ def _settings_values() -> dict:
         "solark1_port": get_solark1_port(),
         "solark1_modbus_unit": get_solark1_modbus_unit(),
         "solark2_modbus_unit": get_solark2_modbus_unit(),
+        "esphome_solark_host": get_esphome_solark_host(),
         "solark_soc_automation_enabled": get_solark_soc_automation_enabled(),
     }
 
@@ -541,7 +660,7 @@ async def settings_page(request: Request):
         mqtt_host=MQTT_HOST or "(disabled)",
         **_settings_values(),
     )
-    return templates.TemplateResponse(request, "settings.html", ctx)
+    return templates.TemplateResponse("settings.html", ctx)
 
 
 @app.post("/settings")
@@ -557,6 +676,7 @@ async def settings_save(request: Request):
             "solark1_port": int((form.get("solark1_port") or "502").strip() or "502"),
             "solark1_modbus_unit": int((form.get("solark1_modbus_unit") or "1").strip() or "1"),
             "solark2_modbus_unit": int((form.get("solark2_modbus_unit") or "2").strip() or "2"),
+            "esphome_solark_host": (form.get("esphome_solark_host") or "").strip(),
             "solark_soc_automation_enabled": form.get("solark_soc_automation_enabled") in ("1", "on", "true", "yes"),
         }
         save_settings(data)
@@ -617,7 +737,7 @@ async def debug_page(request: Request):
             status_code=503,
         )
     try:
-        return templates.TemplateResponse(request, "debug.html", _page_ctx(request))
+        return templates.TemplateResponse("debug.html", _page_ctx(request))
     except Exception as e:
         logger.exception("debug page: %s", e)
         return HTMLResponse("<p>Error loading debug page.</p><a href='/'>Dashboard</a>", status_code=500)
@@ -676,8 +796,11 @@ async def api_version():
 async def api_dashboard():
     data = _solis_cache.get("data", {}) or {}
     storage_bits = _merge_bits({n: False for n in _STORAGE_BIT_NAMES}, data.get("storage_bits"))
+    hybrid_bits  = _merge_bits({n: False for n in _HYBRID_BIT_NAMES},  data.get("hybrid_bits"))
     out = dict(data)
     out["storage_mode"] = _storage_mode_label(storage_bits)
+    out["storage_bits"] = storage_bits
+    out["hybrid_bits"]  = hybrid_bits
     solark_data = _solark_cache.get("data", {}) or {}
     return {
         "ok": _solis_cache.get("ok"),
@@ -823,8 +946,9 @@ async def control_toggle_redirect(request: Request):
                     timeout=_MODBUS_WRITE_TIMEOUT,
                 )
             elif register == "storage" and 0 <= bit_index <= 11:
+                changes = _storage_changes_with_exclusions(bit_index, on_bool)
                 ok = await asyncio.wait_for(
-                    loop.run_in_executor(None, lambda: set_storage_control_bit(bit_index, on_bool)),
+                    loop.run_in_executor(None, lambda: set_storage_control_bits(changes)),
                     timeout=_MODBUS_WRITE_TIMEOUT,
                 )
         except asyncio.TimeoutError:
@@ -837,6 +961,50 @@ async def control_toggle_redirect(request: Request):
     except Exception as e:
         logger.exception("POST /control: %s", e)
         return RedirectResponse(url="/control?error=server_error", status_code=303)
+
+
+@app.post("/api/control")
+async def api_control(request: Request):
+    """JSON control endpoint — same logic as POST /control but returns {ok, error} instead of redirect."""
+    try:
+        body = await request.json()
+        preset = body.get("preset")
+        if preset == "use_all_solar":
+            loop = asyncio.get_event_loop()
+            try:
+                ok = await asyncio.wait_for(
+                    loop.run_in_executor(None, apply_use_all_solar_preset),
+                    timeout=_MODBUS_WRITE_TIMEOUT,
+                )
+            except asyncio.TimeoutError:
+                return {"ok": False, "error": "timeout"}
+            return {"ok": bool(ok)}
+        bit_index = int(body.get("bit_index", -1))
+        on_bool = bool(body.get("on", True))
+        register = str(body.get("register", "storage")).lower()
+        ok = False
+        loop = asyncio.get_event_loop()
+        try:
+            if register == "hybrid" and 0 <= bit_index <= 7:
+                ok = await asyncio.wait_for(
+                    loop.run_in_executor(None, lambda: set_hybrid_control_bit(bit_index, on_bool)),
+                    timeout=_MODBUS_WRITE_TIMEOUT,
+                )
+            elif register == "storage" and 0 <= bit_index <= 11:
+                # Apply mutual exclusions atomically in a single read-modify-write
+                changes = _storage_changes_with_exclusions(bit_index, on_bool)
+                ok = await asyncio.wait_for(
+                    loop.run_in_executor(None, lambda: set_storage_control_bits(changes)),
+                    timeout=_MODBUS_WRITE_TIMEOUT,
+                )
+            else:
+                return {"ok": False, "error": "invalid_bit"}
+        except asyncio.TimeoutError:
+            return {"ok": False, "error": "timeout"}
+        return {"ok": bool(ok), "error": None if ok else "write_failed"}
+    except Exception as e:
+        logger.exception("POST /api/control: %s", e)
+        return {"ok": False, "error": "server_error"}
 
 
 if __name__ == "__main__":

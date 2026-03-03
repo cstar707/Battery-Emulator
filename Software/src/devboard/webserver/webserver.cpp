@@ -881,7 +881,11 @@ String processor(const String& var) {
     content += "</style>";
 
     // Compact header
+#ifdef PROJECT_VARIANT_BATTERY_EMULATOR_SOLARK
+    content += "<h2>Battery Emulator Solark</h2>";
+#else
     content += "<h2>Battery Emulator</h2>";
+#endif
 
     // Start content block
     content += "<div style='background-color: #303E47; padding: 10px; margin-bottom: 10px; border-radius: 50px'>";

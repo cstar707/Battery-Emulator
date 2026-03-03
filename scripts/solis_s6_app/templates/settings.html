@@ -43,7 +43,12 @@
         <label for="solark2_modbus_unit">Solark2 Modbus ID</label>
         <input type="number" id="solark2_modbus_unit" name="solark2_modbus_unit" value="{{ solark2_modbus_unit }}" min="1" max="247" title="Second inverter on same board" />
       </div>
-    <p class="muted" style="margin-top: 0.75rem;">The app talks to <strong>Solis</strong> via Modbus. <strong>Solark</strong> data is read two ways: HTTP (<code>GET /solark_data</code> on the board IP above) and/or MQTT (topic <code>solar/solark</code> on the same broker as Solis). If HTTP fails (e.g. board not reachable), data from MQTT will still appear.</p>
+    <h3 style="margin-top: 1.25rem; margin-bottom: 0.75rem; font-size: 1rem; color: var(--muted);">Solark – ESPHome source (10.10.53.32)</h3>
+      <div class="settings-row">
+        <label for="esphome_solark_host">ESPHome device IP</label>
+        <input type="text" id="esphome_solark_host" name="esphome_solark_host" value="{{ esphome_solark_host }}" placeholder="e.g. 10.10.53.32" />
+      </div>
+    <p class="muted" style="margin-top: 0.75rem;">The app reads Solark data from three sources (in priority order): <strong>1)</strong> Battery-Emulator HTTP (<code>GET /solark_data</code> on the board IP above), <strong>2)</strong> ESPHome device (<code>/sensor/sunsynk_*</code> — uses Total sensors combining master+slave), <strong>3)</strong> MQTT topic <code>solar/solark</code>. Credentials for ESPHome are set via <code>.env</code> (ESPHOME_SOLARK_USER / ESPHOME_SOLARK_PASSWORD).</p>
 
       <h3 style="margin-top: 1.25rem; margin-bottom: 0.75rem; font-size: 1rem; color: var(--muted);">Automation</h3>
       <div class="settings-row">

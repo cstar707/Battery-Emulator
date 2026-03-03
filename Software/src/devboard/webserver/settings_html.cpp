@@ -448,7 +448,13 @@ String raw_settings_processor(const String& var, BatteryEmulatorSettingsStore& s
   }
 
   if (var == "APNAME") {
-    return settings.getString("APNAME", "BatteryEmulator");
+    return settings.getString("APNAME",
+#ifdef PROJECT_VARIANT_BATTERY_EMULATOR_SOLARK
+                              "BatteryEmulatorSolark"
+#else
+                              "BatteryEmulator"
+#endif
+    );
   }
 
   if (var == "STATICIP") {

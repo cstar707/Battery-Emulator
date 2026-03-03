@@ -8,7 +8,7 @@ This guide focuses on **setting up the dedicated ESP** (Battery-Emulator board) 
 
 ## 1. Build and flash
 
-- **Environment:** Use **`lilygo_330`** so the board runs Battery-Emulator **and** Solark on the main RS485 (inverter must be **CAN**, e.g. Sol-Ark LV).
+- **Environment:** Use **`lilygo_330`** or **`battery_emulator_solark`** so the board runs **Battery-Emulator-Solark** (Battery-Emulator **and** Solark on the main RS485; inverter must be **CAN**, e.g. Sol-Ark LV).
 - **Build:** From the repo root:
   ```bash
   pio run -e lilygo_330
@@ -21,7 +21,7 @@ This guide focuses on **setting up the dedicated ESP** (Battery-Emulator board) 
 
 - **By IP:** `http://<board-ip>` (e.g. from your router or after connecting to the board’s AP).
 - **By hostname (this build):** `http://esphome-web-7a7e60.local/` (default hostname when replacing 10.10.53.32; requires mDNS).
-- **First time:** Connect to the **Battery-Emulator** Wi‑Fi (default AP password in upstream README), then open `http://192.168.4.1` (or the IP shown) and go to **Settings**.
+- **First time:** Connect to the **BatteryEmulatorSolark** Wi‑Fi (default AP password in upstream README), then open `http://192.168.4.1` (or the IP shown) and go to **Settings**.
 
 ---
 
@@ -34,7 +34,7 @@ Configure everything in the board’s **web UI → Settings**. Credentials and b
 - Connect the board to your LAN so you can reach it by IP/hostname and it can reach the MQTT broker.
 - Set **WiFi SSID** and **WiFi password**; save. The board will reconnect on reboot.
 
-### MQTT (one config for Battery Emulator + Solark)
+### MQTT (one config for Battery-Emulator-Solark + Solark)
 
 | What | Where | Value |
 |------|--------|--------|
@@ -73,7 +73,7 @@ After saving, the board will poll Solark and fill **solar/solark** and the API; 
 |--------|-------------|
 | **MQTT** | **solar/solark** – JSON (battery_power_W, battery_soc_pptt, battery_voltage_dV, battery_current_dA, grid_power_W, load_power_W, pv_power_W, raw_registers). Same topic as today so sensors appear unchanged. Same interval as other MQTT (e.g. 5 s). |
 | **MQTT** | **BE/board** – ESP health: free_heap, min_free_heap, heap_size, max_alloc_heap (bytes), cpu_temp_c (°C), uptime_ms; when performance measurement is on: core_task_10s_max_us, mqtt_task_10s_max_us, wifi_task_10s_max_us (µs). Use to check for overload. |
-| **MQTT** | **BE/status**, common info, cell voltages, events, etc. (Battery Emulator). |
+| **MQTT** | **BE/status**, common info, cell voltages, events, etc. (Battery-Emulator-Solark). |
 | **API** | **GET /solark_data** – Same JSON as solar/solark. |
 | **API** | **GET /sensor/sunsynk_&lt;id&gt;** – ESPHome-style per-sensor (e.g. sunsynk_battery_soc, sunsynk_grid_power). Response: `{"id":"sensor/...", "state": "51 %"}`. |
 | **Web** | **Solark** (or **Solark debug**) in the menu – live view of RS485 data. |
