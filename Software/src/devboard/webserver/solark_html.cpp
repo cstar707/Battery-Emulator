@@ -93,6 +93,7 @@ int solark_data_json(char* buf, size_t buf_size) {
   doc["battery_soc_pptt"] = s.battery_soc_pptt;
   doc["battery_voltage_dV"] = s.battery_voltage_dV;
   doc["battery_current_dA"] = s.battery_current_dA;
+  doc["battery_temperature"] = (float)((int)(s.battery_temperature_C * 10.0f + 0.5f)) / 10.0f;
   doc["grid_power_W"] = s.grid_power_W;
   doc["load_power_W"] = s.load_power_W;
   doc["pv_power_W"] = s.pv_power_W;
@@ -118,6 +119,10 @@ bool solark_sensor_state_by_id(const char* sensor_id, String* out_state) {
   }
   if (strcmp(sensor_id, "sunsynk_battery_current") == 0) {
     *out_state = String(s.battery_current_dA / 10.0, 1) + " A";
+    return true;
+  }
+  if (strcmp(sensor_id, "sunsynk_battery_temperature") == 0) {
+    *out_state = String(s.battery_temperature_C, 1) + " °C";
     return true;
   }
   if (strcmp(sensor_id, "sunsynk_battery_power") == 0 || strcmp(sensor_id, "sunsynk_total_battery_power") == 0) {

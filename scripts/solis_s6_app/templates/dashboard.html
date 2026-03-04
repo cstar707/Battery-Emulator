@@ -30,8 +30,11 @@
     <div class="grid2" style="margin-bottom: 1rem;">
       <div class="kpi"><div class="val" id="kpi-solark_battery_soc_pct">{% if solark_data.battery_soc_pptt is defined %}{{ (solark_data.battery_soc_pptt / 100) | int }}%{% else %}—{% endif %}</div><div class="unit">SOC</div></div>
       <div class="kpi"><div class="val" id="kpi-solark_battery_voltage_V">{% if solark_data.battery_voltage_dV is defined %}{{ (solark_data.battery_voltage_dV / 10) | round(1) }} V{% else %}—{% endif %}</div><div class="unit">Batt V</div></div>
-      <div class="kpi"><div class="val" id="kpi-solark_battery_power_W">{{ solark_data.battery_power_W | default('—') }}</div><div class="unit">Batt W</div></div>
+      <div class="kpi"><div class="val" id="kpi-solark_battery_master_power_W">{{ solark_data.battery_master_power_W | default(solark_data.battery_power_W) | default('—') }}</div><div class="unit">Master batt W</div></div>
+      <div class="kpi"><div class="val" id="kpi-solark_battery_slave_power_W">{{ solark_data.battery_slave_power_W | default('—') }}</div><div class="unit">Slave batt W</div></div>
+      <div class="kpi"><div class="val" id="kpi-solark_battery_total_power_W">{{ solark_data.battery_total_power_W | default('—') }}</div><div class="unit">Total batt W</div></div>
       <div class="kpi"><div class="val" id="kpi-solark_battery_current_A">{% if solark_data.battery_current_dA is defined %}{{ (solark_data.battery_current_dA / 10) | round(1) }} A{% else %}—{% endif %}</div><div class="unit">Batt A</div></div>
+      <div class="kpi"><div class="val" id="kpi-solark_battery_temperature">{% if solark_data.battery_temperature is defined %}{{ "%.1f" | format(solark_data.battery_temperature) }}°C{% else %}—{% endif %}</div><div class="unit">Batt temp</div></div>
       <div class="kpi"><div class="val" id="kpi-solark_pv_power_W">{{ solark_data.pv_power_W | default('—') }}</div><div class="unit">Solar W</div></div>
       <div class="kpi"><div class="val" id="kpi-solark_grid_ct_power_W">{{ solark_data.grid_ct_power_W | default('—') }}</div><div class="unit">Grid CT W</div></div>
       <div class="kpi"><div class="val" id="kpi-solark_inverter_power_W">{{ solark_data.inverter_power_W | default('—') }}</div><div class="unit">Inverter W</div></div>
@@ -104,8 +107,6 @@
         <div class="val" id="kpi-solis-net-export">—</div>
         <div class="unit">Solis net <span style="font-size:0.65rem;opacity:0.7">(PV−load±batt)</span> &nbsp;<span id="kpi-solis-net-direction" style="font-weight:700;font-size:0.75rem;padding:0.1rem 0.35rem;border-radius:4px;"></span></div>
       </div>
-      <div class="kpi"><div class="val" id="kpi-energy_today_grid_export_kWh">{{ "%.1f" | format(data.energy_today_grid_export_kWh | default(0)) }}</div><div class="unit">Export today kWh</div></div>
-      <div class="kpi"><div class="val" id="kpi-energy_today_grid_import_kWh">{{ "%.1f" | format(data.energy_today_grid_import_kWh | default(0)) }}</div><div class="unit">Import today kWh</div></div>
     </div>
   </div>
 
@@ -115,6 +116,7 @@
       <div class="kpi"><div class="val" id="kpi-battery_soc_pct">{{ data.battery_soc_pct | default(0) | int }}%</div><div class="unit">SOC</div></div>
       <div class="kpi"><div class="val" id="kpi-battery_voltage_V">{{ "%.1f" | format(data.battery_voltage_V | default(0)) }}</div><div class="unit">Battery V</div></div>
       <div class="kpi"><div class="val" id="kpi-battery_current_A">{{ "%.1f" | format(data.battery_current_A | default(0)) }}</div><div class="unit">Battery A</div></div>
+      <div class="kpi"><div class="val" id="kpi-ac_voltage_V">{{ "%.1f" | format(data.ac_voltage_V | default(0)) }}</div><div class="unit">Grid V</div></div>
       <div class="kpi"><div class="val" id="kpi-grid_freq_Hz">{{ "%.2f" | format(data.grid_freq_Hz | default(0)) }}</div><div class="unit">Grid Hz</div></div>
       <div class="kpi"><div class="val" id="kpi-inverter_temp_C">{{ "%.1f" | format(data.inverter_temp_C | default(0)) }}</div><div class="unit">Inverter °C</div></div>
     </div>
@@ -125,6 +127,8 @@
     <div class="grid2">
       <div class="kpi"><div class="val" id="kpi-energy_today_pv_kWh">{{ "%.2f" | format(data.energy_today_pv_kWh | default(0)) }}</div><div class="unit">PV</div></div>
       <div class="kpi"><div class="val" id="kpi-energy_today_load_kWh">{{ "%.2f" | format(data.energy_today_load_kWh | default(0)) }}</div><div class="unit">Load</div></div>
+      <div class="kpi"><div class="val" id="kpi-energy_today_grid_import_kWh">{{ "%.2f" | format(data.energy_today_grid_import_kWh | default(0)) }}</div><div class="unit">Today Grid Import</div></div>
+      <div class="kpi"><div class="val" id="kpi-energy_today_grid_export_kWh">{{ "%.2f" | format(data.energy_today_grid_export_kWh | default(0)) }}</div><div class="unit">Today Grid Export</div></div>
       <div class="kpi"><div class="val" id="kpi-energy_today_bat_charge_kWh">{{ "%.2f" | format(data.energy_today_bat_charge_kWh | default(0)) }}</div><div class="unit">Bat charge</div></div>
       <div class="kpi"><div class="val" id="kpi-energy_today_bat_discharge_kWh">{{ "%.2f" | format(data.energy_today_bat_discharge_kWh | default(0)) }}</div><div class="unit">Bat discharge</div></div>
     </div>
@@ -166,7 +170,7 @@
         var kpis = [
           ['grid_power_W', 0], ['pv_power_W', 0], ['battery_power_W', 0], ['load_power_W', 0],
           ['active_power_W', 0],
-          ['battery_soc_pct', 0, '%'], ['battery_voltage_V', 1], ['battery_current_A', 1], ['grid_freq_Hz', 2], ['inverter_temp_C', 1],
+          ['battery_soc_pct', 0, '%'], ['battery_voltage_V', 1], ['battery_current_A', 1], ['ac_voltage_V', 1], ['grid_freq_Hz', 2], ['inverter_temp_C', 1],
           ['energy_today_pv_kWh', 2], ['energy_today_load_kWh', 2], ['energy_today_bat_charge_kWh', 2], ['energy_today_bat_discharge_kWh', 2],
           ['energy_today_grid_export_kWh', 1], ['energy_today_grid_import_kWh', 1]
         ];
@@ -206,9 +210,18 @@
         var solarkSoc = solarkData.battery_soc_pptt != null ? (Math.round(solarkData.battery_soc_pptt / 100) + '%') : '—';
         var elSolarkSoc = document.getElementById('kpi-solark_battery_soc_pct');
         if (elSolarkSoc && elSolarkSoc.textContent !== solarkSoc) elSolarkSoc.textContent = solarkSoc;
-        // Integer W fields
-        [['battery_power_W','kpi-solark_battery_power_W'],
-         ['pv_power_W','kpi-solark_pv_power_W'],
+        // Master battery power (fallback to battery_power_W when no separate master)
+        var masterW = solarkData.battery_master_power_W != null ? solarkData.battery_master_power_W : solarkData.battery_power_W;
+        var slaveW = solarkData.battery_slave_power_W;
+        var totalW = solarkData.battery_total_power_W != null ? solarkData.battery_total_power_W : ((masterW != null && slaveW != null) ? (masterW + slaveW) : (masterW != null ? masterW : null));
+        var elMaster = document.getElementById('kpi-solark_battery_master_power_W');
+        var elSlave = document.getElementById('kpi-solark_battery_slave_power_W');
+        var elTotal = document.getElementById('kpi-solark_battery_total_power_W');
+        if (elMaster) { var n = (masterW != null) ? String(masterW) : '—'; if (elMaster.textContent !== n) elMaster.textContent = n; }
+        if (elSlave) { var n = (slaveW != null) ? String(slaveW) : '—'; if (elSlave.textContent !== n) elSlave.textContent = n; }
+        if (elTotal) { var n = (totalW != null) ? String(totalW) : '—'; if (elTotal.textContent !== n) elTotal.textContent = n; }
+        // Other integer W fields
+        [['pv_power_W','kpi-solark_pv_power_W'],
          ['grid_ct_power_W','kpi-solark_grid_ct_power_W'],
          ['inverter_power_W','kpi-solark_inverter_power_W']
         ].forEach(function(p) {
@@ -216,6 +229,10 @@
           var v = solarkData[p[0]];
           if (el) { var n = (v != null) ? String(v) : '—'; if (el.textContent !== n) el.textContent = n; }
         });
+        // Battery temperature
+        var battTemp = solarkData.battery_temperature;
+        var elBattTemp = document.getElementById('kpi-solark_battery_temperature');
+        if (elBattTemp) { var n = (battTemp != null && battTemp !== '') ? (Number(battTemp).toFixed(1) + '°C') : '—'; if (elBattTemp.textContent !== n) elBattTemp.textContent = n; }
         // Scaled deci fields (stored × 10)
         [['battery_current_dA','kpi-solark_battery_current_A',' A'],
          ['battery_voltage_dV','kpi-solark_battery_voltage_V',' V'],

@@ -60,7 +60,7 @@ def _serializable_payload(data: dict[str, Any]) -> dict[str, Any]:
     """Build JSON-serializable dict; exclude raw_blocks (large), include storage_bits/hybrid_bits."""
     out: dict[str, Any] = {}
     for k, v in data.items():
-        if k == "raw_blocks":
+        if k == "raw_blocks" or k.startswith("_"):
             continue
         if isinstance(v, (dict, list)):
             try:

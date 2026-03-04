@@ -17,7 +17,7 @@ from typing import Any
 from pymodbus.client import ModbusTcpClient
 from pymodbus.exceptions import ModbusException
 
-from config import get_inverter_host, get_inverter_port, get_modbus_unit
+from config import get_inverter_host, get_inverter_port, get_modbus_unit, SOLIS_DAILY_PV_SCALE
 
 # Solis inverter/datalogger often does not echo the Modbus TCP transaction_id. pymodbus then
 # rejects responses (framer logs "Skipping", transaction layer raises). We relax both so
@@ -232,7 +232,9 @@ def _poll_solis_locked() -> dict[str, Any]:
             # Block 33000-33040
             b0 = all_regs.get(33000)
             if b0 and len(b0) >= 37:
-                out["energy_today_pv_kWh"] = (_reg(b0, 35, 0) / 10.0)  # 33035 = today 0.1 kWh
+                raw_33035 = _reg(b0, 35, 0)
+                out["energy_today_pv_kWh"] = (raw_33035 / 10.0) * SOLIS_DAILY_PV_SCALE  # 33035 = today 0.1 kWh
+                out["_raw_33035"] = raw_33035  # for debug when value seems wrong
                 out["product_model"] = _reg(b0, 0)
 
             # Block 33049-33084

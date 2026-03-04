@@ -53,6 +53,7 @@ try:
         get_esphome_solark_port,
         SOLARK_HTTP_PASSWORD,
         SOLARK_HTTP_USER,
+        SOLIS_DAILY_PV_SCALE,
         SOLARK_MQTT_TOPIC,
         SOLARK_SOC_FEEDIN_BELOW_PCT,
         SOLARK_SOC_SELF_USE_THRESHOLD_PCT,
@@ -64,6 +65,7 @@ except Exception as e:
     INVERTER_LABEL_SOLARK1, INVERTER_LABEL_SOLARK2 = "Solark1", "Solark2"
     MQTT_HOST, POLL_INTERVAL_SEC = "", 5.0
     SOLARK_SOC_SELF_USE_THRESHOLD_PCT, SOLARK_SOC_FEEDIN_BELOW_PCT = 98, 95
+    SOLIS_DAILY_PV_SCALE = 1.0
     SOLARK_HTTP_USER, SOLARK_HTTP_PASSWORD = None, None
     SOLARK_MQTT_TOPIC = "solar/solark"
     MQTT_CLIENT_ID = "solis-s6-ui"
@@ -305,16 +307,23 @@ def _fetch_esphome_solark_data_sync() -> tuple[dict, str | None]:
             v = _get(sid)
             return round(float(v), 2) if v is not None else None
 
+        master_batt = _w("sunsynk_battery_power")  # primary inverter only
+        total_batt = _w("sunsynk_total_battery_power")  # master + slave
+        slave_batt = total_batt - master_batt if (total_batt != 0 or master_batt != 0) else 0
         result: dict = {
             # --- live power ---
             "battery_soc_pptt":       int(soc * 100),
-            "battery_power_W":        _w("sunsynk_total_battery_power"),
+            "battery_power_W":        total_batt,  # backward compat (total)
+            "battery_master_power_W": master_batt,
+            "battery_slave_power_W":  slave_batt,
+            "battery_total_power_W":  total_batt,
             "pv_power_W":             _w("sunsynk_total_solar_power"),
             "grid_ct_power_W":        _w("sunsynk_total_grid_ct_power"),
             "inverter_power_W":       _w("sunsynk_total_inverter_power"),
             # --- live electrical ---
             "battery_current_dA":     int((_get("sunsynk_total_battery_current") or 0) * 10),
             "battery_voltage_dV":     int((_get("sunsynk_battery_voltage") or 0) * 10),
+            "battery_temperature":    _get("sunsynk_battery_temperature"),
             "inverter_current_dA":    int((_get("sunsynk_total_inverter_current") or 0) * 10),
             # --- today's energy (kWh) ---
             "day_pv_energy_kWh":      _kwh("sunsynk_total_day_pv_energy"),
@@ -824,6 +833,60 @@ async def api_dashboard():
 @app.get("/api/sensors")
 async def api_sensors():
     return _solis_cache.get("data", {})
+
+
+@app.get("/api/debug/register/33035")
+async def api_debug_register_33035():
+    """Debug: raw value of register 33035 (PV today) and computed kWh. Use when daily PV seems wrong."""
+    data = _solis_cache.get("data", {}) or {}
+    raw = data.get("_raw_33035")
+    computed = data.get("energy_today_pv_kWh")
+    return {
+        "register": 33035,
+        "raw_value": raw,
+        "computed_kWh": computed,
+        "scale": SOLIS_DAILY_PV_SCALE,
+        "note": "If raw≈260 but inverter shows 15.2, set SOLIS_DAILY_PV_SCALE=0.585 in .env (or correct ratio)",
+    }
+
+
+@app.get("/api/debug/registers/energy")
+async def api_debug_registers_energy():
+    """Debug: dump energy block 33000 (registers 33029-33040) to find which holds today's PV.
+    Per Solis docs: 33029-30=Total, 33031-32=CurrMonth, 33033-34=LastMonth, 33035=Today, 33036=Yesterday.
+    If inverter shows 15.2 kWh, look for raw value 152 (0.1 kWh units) in the dump."""
+    data = _solis_cache.get("data", {}) or {}
+    blocks = data.get("raw_blocks", {})
+    b0 = blocks.get("33000")
+    if not b0 or len(b0) < 41:
+        return {"ok": False, "error": "Block 33000 not in cache or too short", "hint": "Poll once, then retry"}
+    # Indices 28-40 = registers 33028-33040
+    reg_names = {
+        28: "33028 (reserved)",
+        29: "33029-30 Total PV (hi)",
+        30: "33029-30 Total PV (lo)",
+        31: "33031-32 Curr Month (hi)",
+        32: "33031-32 Curr Month (lo)",
+        33: "33033-34 Last Month (hi)",
+        34: "33033-34 Last Month (lo)",
+        35: "33035 TODAY ← we use this",
+        36: "33036 Yesterday",
+        37: "33037-38 This Year (hi)",
+        38: "33037-38 This Year (lo)",
+        39: "33039-40 Last Year (hi)",
+        40: "33039-40 Last Year (lo)",
+    }
+    dump = []
+    for i in range(28, 41):
+        raw = b0[i] if i < len(b0) else None
+        kWh = (raw / 10.0) if raw is not None else None
+        dump.append({"idx": i, "reg": 33000 + i, "name": reg_names.get(i), "raw": raw, "kWh_if_0_1": kWh})
+    return {
+        "ok": True,
+        "current_energy_today_pv_kWh": data.get("energy_today_pv_kWh"),
+        "registers": dump,
+        "note": "If inverter shows 15.2 kWh, find raw=152. That register is the correct one for Today PV.",
+    }
 
 
 @app.get("/api/storage_bits")

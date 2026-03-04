@@ -160,6 +160,14 @@ INVERTER_HOST = get_inverter_host()
 INVERTER_PORT = get_inverter_port()
 MODBUS_UNIT = get_modbus_unit()
 
+# Optional scale for daily PV (register 33035). Use if Modbus returns aggregated/multiple-inverter
+# value. E.g. SOLIS_DAILY_PV_SCALE=0.585 converts 26 → 15.2 when inverter display shows 15.2.
+try:
+    _s = os.environ.get("SOLIS_DAILY_PV_SCALE", "").strip()
+    SOLIS_DAILY_PV_SCALE = float(_s) if _s else 1.0
+except (ValueError, TypeError):
+    SOLIS_DAILY_PV_SCALE = 1.0
+
 # App server
 HOST = os.environ.get("SOLIS_APP_HOST", "0.0.0.0")
 PORT = int(os.environ.get("SOLIS_APP_PORT", "3007"))
