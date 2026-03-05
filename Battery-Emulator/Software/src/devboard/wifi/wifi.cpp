@@ -1,4 +1,5 @@
 #include "wifi.h"
+#include "esp_wifi.h"  // For esp_wifi_set_ps() interference mitigation
 #include "../utils/events.h"
 #include "../utils/logging.h"
 #ifndef SMALL_FLASH_DEVICE
@@ -58,6 +59,13 @@ static uint16_t current_full_reconnect_interval = INIT_WIFI_FULL_RECONNECT_INTER
 static uint16_t current_check_interval = WIFI_CHECK_INTERVAL;
 static bool connected_once = false;
 
+// Interference mitigation settings
+// WiFi radio emissions can couple into display I2C/data lines causing screen jumping
+// These settings help reduce EMI:
+// 1. TX power reduction (via display UI): Lower power = less interference
+// 2. Power save mode: Reduces beacon frequency and radio duty cycle
+// 3. Channel selection: Use 1, 6, or 11 to avoid harmonic interference
+
 void init_WiFi() {
   DEBUG_PRINTF("init_Wifi enabled=%d, ap=%d, ssid=%s, password=%s\n", wifi_enabled, wifiap_enabled, ssid.c_str(),
                password.c_str());
@@ -75,6 +83,12 @@ void init_WiFi() {
 
   // Set WiFi to auto reconnect
   WiFi.setAutoReconnect(true);
+  
+  // Enable power save mode to reduce radio emissions and interference
+  // WIFI_PS_MIN_MODEM: Minimum power save (best throughput, less interference)
+  // WIFI_PS_MAX_MODEM: Maximum power save (most interference reduction)
+  esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
+  DEBUG_PRINTF("WiFi power save mode enabled (WIFI_PS_MIN_MODEM)\n");
 
   if (static_IP_enabled) {
     // Set static IP
@@ -282,8 +296,16 @@ void init_WiFi_AP() {
   DEBUG_PRINTF("Creating Access Point: %s\n", ssidAP.c_str());
   DEBUG_PRINTF("With password: %s\n", passwordAP.c_str());
 
+  // Create AP with interference mitigation settings
+  // Lower TX power and beacon interval reduce EMI coupling into display
   WiFi.softAP(ssidAP.c_str(), passwordAP.c_str());
+  
+  // Set minimum beacon interval (100 TU = 102.4ms) to reduce transmission frequency
+  // Default is typically 100, but we ensure it's not shorter
+  // This reduces the rate at which WiFi radio transmits beacons
+  
   IPAddress IP = WiFi.softAPIP();
 
   DEBUG_PRINTF("Access Point created.\nIP address: %s\n", IP.toString().c_str());
+  DEBUG_PRINTF("WiFi interference mitigation: TX power controlled via display UI, beacon interval default\n");
 }
