@@ -1595,43 +1595,47 @@ static void create_ui() {
     return lbl;
   };
 
-  int s_card_w = 150, s_card_h = 60, s_gap = 10;
+  int s_card_w = 100, s_card_h = 55, s_gap = 8;
+  int left_col = 10;
+  int right_col = 520;
+  
+  // LEFT COLUMN: Solark, Solis, Envoy
   
   // SOLARK section (top left)
-  make_section_title(10, 45, "SOLARK");
+  make_section_title(left_col, 45, "SOLARK");
   int solark_y = 65;
-  make_solar_card(10, solark_y, s_card_w, s_card_h, "PV", &lbl_solark_pv);
-  make_solar_card(10+s_card_w+s_gap, solark_y, s_card_w, s_card_h, "LOAD", &lbl_solark_load);
-  make_solar_card(10+(s_card_w+s_gap)*2, solark_y, s_card_w, s_card_h, "GRID", &lbl_solark_grid);
-  make_solar_card(10+(s_card_w+s_gap)*3, solark_y, s_card_w, s_card_h, "BATT", &lbl_solark_batt);
-  make_solar_card(10+(s_card_w+s_gap)*4, solark_y, s_card_w, s_card_h, "SOC", &lbl_solark_soc);
-  make_solar_card(10+(s_card_w+s_gap)*5, solark_y, s_card_w, s_card_h, "DAY PV", &lbl_solark_day);
+  make_solar_card(left_col, solark_y, s_card_w, s_card_h, "PV", &lbl_solark_pv);
+  make_solar_card(left_col+s_card_w+s_gap, solark_y, s_card_w, s_card_h, "LOAD", &lbl_solark_load);
+  make_solar_card(left_col+(s_card_w+s_gap)*2, solark_y, s_card_w, s_card_h, "GRID", &lbl_solark_grid);
+  make_solar_card(left_col, solark_y+s_card_h+s_gap, s_card_w, s_card_h, "BATT", &lbl_solark_batt);
+  make_solar_card(left_col+s_card_w+s_gap, solark_y+s_card_h+s_gap, s_card_w, s_card_h, "SOC", &lbl_solark_soc);
+  make_solar_card(left_col+(s_card_w+s_gap)*2, solark_y+s_card_h+s_gap, s_card_w, s_card_h, "DAY", &lbl_solark_day);
 
   // SOLIS section (middle left)
-  make_section_title(10, 140, "SOLIS");
-  int solis_y = 160;
-  make_solar_card(10, solis_y, s_card_w, s_card_h, "PV", &lbl_solis_pv);
-  make_solar_card(10+s_card_w+s_gap, solis_y, s_card_w, s_card_h, "LOAD", &lbl_solis_load);
-  make_solar_card(10+(s_card_w+s_gap)*2, solis_y, s_card_w, s_card_h, "GRID", &lbl_solis_grid);
-  make_solar_card(10+(s_card_w+s_gap)*3, solis_y, s_card_w, s_card_h, "BATT", &lbl_solis_batt);
-  make_solar_card(10+(s_card_w+s_gap)*4, solis_y, s_card_w, s_card_h, "SOC", &lbl_solis_soc);
-  make_solar_card(10+(s_card_w+s_gap)*5, solis_y, s_card_w, s_card_h, "DAY PV", &lbl_solis_day);
+  make_section_title(left_col, 185, "SOLIS");
+  int solis_y = 205;
+  make_solar_card(left_col, solis_y, s_card_w, s_card_h, "PV", &lbl_solis_pv);
+  make_solar_card(left_col+s_card_w+s_gap, solis_y, s_card_w, s_card_h, "LOAD", &lbl_solis_load);
+  make_solar_card(left_col+(s_card_w+s_gap)*2, solis_y, s_card_w, s_card_h, "GRID", &lbl_solis_grid);
+  make_solar_card(left_col, solis_y+s_card_h+s_gap, s_card_w, s_card_h, "BATT", &lbl_solis_batt);
+  make_solar_card(left_col+s_card_w+s_gap, solis_y+s_card_h+s_gap, s_card_w, s_card_h, "SOC", &lbl_solis_soc);
+  make_solar_card(left_col+(s_card_w+s_gap)*2, solis_y+s_card_h+s_gap, s_card_w, s_card_h, "DAY", &lbl_solis_day);
 
-  // ENVOY section (bottom)
-  make_section_title(10, 235, "ENVOY");
-  int envoy_y = 255;
-  make_solar_card(10, envoy_y, s_card_w, s_card_h, "ENVOY 1", &lbl_envoy1_power);
-  make_solar_card(10+s_card_w+s_gap, envoy_y, s_card_w, s_card_h, "ENVOY 2", &lbl_envoy2_power);
+  // ENVOY section (bottom left)
+  make_section_title(left_col, 325, "ENVOY");
+  int envoy_y = 345;
+  make_solar_card(left_col, envoy_y, s_card_w*1.5, s_card_h, "ENVOY 1", &lbl_envoy1_power);
+  make_solar_card(left_col+s_card_w*1.5+s_gap*2, envoy_y, s_card_w*1.5, s_card_h, "ENVOY 2", &lbl_envoy2_power);
 
-  // Legacy cards (for backward compatibility - shown on right side)
-  make_section_title(680, 45, "LEGACY");
+  // RIGHT COLUMN: Legacy (original combined view)
+  make_section_title(right_col, 45, "LEGACY");
   int legacy_y = 65;
-  make_solar_card(680, legacy_y, s_card_w, s_card_h, "PV POWER", &lbl_solar_pv);
-  make_solar_card(680+s_card_w+s_gap, legacy_y, s_card_w, s_card_h, "LOAD POWER", &lbl_solar_load);
-  make_solar_card(680, legacy_y+s_card_h+s_gap, s_card_w, s_card_h, "GRID POWER", &lbl_solar_grid);
-  make_solar_card(680+s_card_w+s_gap, legacy_y+s_card_h+s_gap, s_card_w, s_card_h, "BATT POWER", &lbl_solar_batt_power);
-  make_solar_card(680, legacy_y+(s_card_h+s_gap)*2, s_card_w, s_card_h, "INVERTER SOC", &lbl_solar_batt_soc);
-  make_solar_card(680+s_card_w+s_gap, legacy_y+(s_card_h+s_gap)*2, s_card_w, s_card_h, "TODAY PV", &lbl_solar_day_pv);
+  make_solar_card(right_col, legacy_y, s_card_w, s_card_h, "PV", &lbl_solar_pv);
+  make_solar_card(right_col+s_card_w+s_gap, legacy_y, s_card_w, s_card_h, "LOAD", &lbl_solar_load);
+  make_solar_card(right_col+(s_card_w+s_gap)*2, legacy_y, s_card_w, s_card_h, "GRID", &lbl_solar_grid);
+  make_solar_card(right_col, legacy_y+s_card_h+s_gap, s_card_w, s_card_h, "BATT", &lbl_solar_batt_power);
+  make_solar_card(right_col+s_card_w+s_gap, legacy_y+s_card_h+s_gap, s_card_w, s_card_h, "SOC", &lbl_solar_batt_soc);
+  make_solar_card(right_col+(s_card_w+s_gap)*2, legacy_y+s_card_h+s_gap, s_card_w, s_card_h, "DAY", &lbl_solar_day_pv);
 #endif
 }
 
