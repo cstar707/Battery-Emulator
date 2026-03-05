@@ -83,12 +83,6 @@ void init_WiFi() {
 
   // Set WiFi to auto reconnect
   WiFi.setAutoReconnect(true);
-  
-  // Enable power save mode to reduce radio emissions and interference
-  // WIFI_PS_MIN_MODEM: Minimum power save (best throughput, less interference)
-  // WIFI_PS_MAX_MODEM: Maximum power save (most interference reduction)
-  esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
-  DEBUG_PRINTF("WiFi power save mode enabled (WIFI_PS_MIN_MODEM)\n");
 
   if (static_IP_enabled) {
     // Set static IP

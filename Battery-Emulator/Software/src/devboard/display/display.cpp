@@ -646,10 +646,19 @@ static void show_screen_alerts(lv_event_t* e) {
 
 #ifdef HW_WAVESHARE7B_DISPLAY_ONLY
 static void show_screen_solar(lv_event_t* e) {
+  // Defensive null checks to prevent crash
+  if (!screen_solar) {
+    DEBUG_PRINTF("Error: screen_solar is NULL\n");
+    return;
+  }
+  if (!tab_btns[0] || !tab_btns[1] || !tab_btns[2] || !tab_btns[3]) {
+    DEBUG_PRINTF("Error: tab_btns not initialized\n");
+    return;
+  }
   if (screen_main) lv_obj_add_flag(screen_main, LV_OBJ_FLAG_HIDDEN);
   if (screen_cells) lv_obj_add_flag(screen_cells, LV_OBJ_FLAG_HIDDEN);
   if (screen_alerts) lv_obj_add_flag(screen_alerts, LV_OBJ_FLAG_HIDDEN);
-  if (screen_solar) lv_obj_clear_flag(screen_solar, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_clear_flag(screen_solar, LV_OBJ_FLAG_HIDDEN);
   current_screen = 3;
   lv_obj_set_style_bg_color(tab_btns[0], lv_color_hex(0x21262d), 0);
   lv_obj_set_style_bg_color(tab_btns[1], lv_color_hex(0x21262d), 0);
