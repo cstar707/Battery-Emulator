@@ -95,6 +95,7 @@ static const char HTML_HEADER[] =
     "<h1>Battery Monitor</h1>"
     "<nav>"
     "<a href='/'>Dashboard</a>"
+    "<a href='/solar'>Solar</a>"
     "<a href='/cellmonitor'>Cells</a>"
     "<a href='/events'>Events</a>"
     "<a href='/canlog'>MQTT Log</a>"
@@ -132,6 +133,32 @@ static void handle_api_status(AsyncWebServerRequest* request) {
   doc["mqtt_alive"] = bat.CAN_battery_still_alive;
 
   const SolarData& sol = mqtt_display_bridge::get_solar_data();
+  
+  // Solark data
+  doc["solark"]["pv_w"] = sol.solark_pv_power_W;
+  doc["solark"]["load_w"] = sol.solark_load_power_W;
+  doc["solark"]["grid_w"] = sol.solark_grid_power_W;
+  doc["solark"]["batt_w"] = sol.solark_battery_power_W;
+  doc["solark"]["batt_soc"] = sol.solark_battery_soc_pct;
+  doc["solark"]["day_pv_kwh"] = sol.solark_day_pv_energy_kWh;
+  doc["solark"]["last_update_ms"] = sol.solark_last_update_ms;
+  
+  // Solis data
+  doc["solis"]["pv_w"] = sol.solis_pv_power_W;
+  doc["solis"]["load_w"] = sol.solis_load_power_W;
+  doc["solis"]["grid_w"] = sol.solis_grid_power_W;
+  doc["solis"]["batt_w"] = sol.solis_battery_power_W;
+  doc["solis"]["batt_soc"] = sol.solis_battery_soc_pct;
+  doc["solis"]["day_pv_kwh"] = sol.solis_day_pv_energy_kWh;
+  doc["solis"]["last_update_ms"] = sol.solis_last_update_ms;
+  
+  // Envoy data
+  doc["envoy"]["1"]["power_w"] = sol.envoy1_active_power_W;
+  doc["envoy"]["1"]["last_update_ms"] = sol.envoy1_last_update_ms;
+  doc["envoy"]["2"]["power_w"] = sol.envoy2_active_power_W;
+  doc["envoy"]["2"]["last_update_ms"] = sol.envoy2_last_update_ms;
+  
+  // Legacy compatibility (mapped to Solark)
   doc["solar"]["pv_w"] = sol.pv_power_W;
   doc["solar"]["load_w"] = sol.load_power_W;
   doc["solar"]["grid_w"] = sol.grid_power_W;
@@ -194,29 +221,96 @@ static void handle_root(AsyncWebServerRequest* request) {
            info.number_of_cells,
            alive ? "ok" : "err", alive ? "LIVE" : "STALE");
 
-  // Solar section
+  // Solar sections
   const SolarData& sol = mqtt_display_bridge::get_solar_data();
-  char sol_buf[1024];
-  if (sol.last_update_ms == 0) {
-    snprintf(sol_buf, sizeof(sol_buf), "<div class='card'><div class='section-title'>SOLAR</div><p class='err'>No solar data yet</p></div>");
+  char sol_buf[2048];
+  
+  // Check if we have any solar data
+  bool any_solar_data = (sol.solark_last_update_ms > 0) || (sol.solis_last_update_ms > 0) || 
+                       (sol.envoy1_last_update_ms > 0) || (sol.envoy2_last_update_ms > 0);
+  
+  if (!any_solar_data) {
+    snprintf(sol_buf, sizeof(sol_buf), "<div class='card'><div class='section-title'>SOLAR / INVERTER</div><p class='err'>No solar data yet</p></div>");
   } else {
-    snprintf(sol_buf, sizeof(sol_buf),
-             "<div class='card'>"
-             "<div class='section-title'>SOLAR / INVERTER</div>"
-             "<div class='grid'>"
-             "<div><div class='stat-label'>PV POWER</div><div class='stat-value ok'>%.0f W</div></div>"
-             "<div><div class='stat-label'>LOAD POWER</div><div class='stat-value'>%.0f W</div></div>"
-             "<div><div class='stat-label'>GRID POWER</div><div class='stat-value %s'>%.0f W</div></div>"
-             "<div><div class='stat-label'>BATT POWER</div><div class='stat-value %s'>%.0f W</div></div>"
-             "<div><div class='stat-label'>INV SOC</div><div class='stat-value ok'>%.1f %%</div></div>"
-             "<div><div class='stat-label'>TODAY PV</div><div class='stat-value'>%.2f kWh</div></div>"
-             "</div></div>",
-             sol.pv_power_W,
-             sol.load_power_W,
-             sol.grid_power_W < 0 ? "ok" : "err", sol.grid_power_W,
-             sol.battery_power_W >= 0 ? "ok" : "warn", sol.battery_power_W,
-             sol.battery_soc_pct,
-             sol.day_pv_energy_kWh);
+    // Helper function for power formatting
+    auto format_power = [](float w) -> String {
+      if (fabsf(w) >= 1000.0f) {
+        char buf[32];
+        snprintf(buf, sizeof(buf), "%.2f kW", w / 1000.0f);
+        return String(buf);
+      } else {
+        char buf[32];
+        snprintf(buf, sizeof(buf), "%.0f W", w);
+        return String(buf);
+      }
+    };
+    
+    // Helper function for grid power with sign
+    auto format_grid = [](float w) -> String {
+      char buf[32];
+      if (w >= 0) {
+        snprintf(buf, sizeof(buf), "+%.0f W", w);
+      } else {
+        snprintf(buf, sizeof(buf), "%.0f W", w);
+      }
+      return String(buf);
+    };
+    
+    String sol_html = "";
+    
+    // Solark section
+    sol_html += "<div class='card'><div class='section-title'>SOLARK</div><div class='grid'>";
+    if (sol.solark_last_update_ms > 0) {
+      sol_html += "<div><div class='stat-label'>PV</div><div class='stat-value ok'>" + format_power(sol.solark_pv_power_W) + "</div></div>";
+      sol_html += "<div><div class='stat-label'>LOAD</div><div class='stat-value'>" + format_power(sol.solark_load_power_W) + "</div></div>";
+      sol_html += "<div><div class='stat-label'>GRID</div><div class='stat-value " + String(sol.solark_grid_power_W < 0 ? "ok" : "err") + "'>" + format_grid(sol.solark_grid_power_W) + "</div></div>";
+      sol_html += "<div><div class='stat-label'>BATT</div><div class='stat-value " + String(sol.solark_battery_power_W >= 0 ? "ok" : "warn") + "'>" + format_power(sol.solark_battery_power_W) + "</div></div>";
+      sol_html += "<div><div class='stat-label'>SOC</div><div class='stat-value ok'>" + String(sol.solark_battery_soc_pct, 1) + " %</div></div>";
+      sol_html += "<div><div class='stat-label'>DAY PV</div><div class='stat-value'>" + String(sol.solark_day_pv_energy_kWh, 2) + " kWh</div></div>";
+    } else {
+      sol_html += "<div><div class='stat-label'>PV</div><div class='stat-value'>--</div></div>";
+      sol_html += "<div><div class='stat-label'>LOAD</div><div class='stat-value'>--</div></div>";
+      sol_html += "<div><div class='stat-label'>GRID</div><div class='stat-value'>--</div></div>";
+      sol_html += "<div><div class='stat-label'>BATT</div><div class='stat-value'>--</div></div>";
+      sol_html += "<div><div class='stat-label'>SOC</div><div class='stat-value'>--</div></div>";
+      sol_html += "<div><div class='stat-label'>DAY PV</div><div class='stat-value'>--</div></div>";
+    }
+    sol_html += "</div></div>";
+    
+    // Solis section
+    sol_html += "<div class='card'><div class='section-title'>SOLIS</div><div class='grid'>";
+    if (sol.solis_last_update_ms > 0) {
+      sol_html += "<div><div class='stat-label'>PV</div><div class='stat-value ok'>" + format_power(sol.solis_pv_power_W) + "</div></div>";
+      sol_html += "<div><div class='stat-label'>LOAD</div><div class='stat-value'>" + format_power(sol.solis_load_power_W) + "</div></div>";
+      sol_html += "<div><div class='stat-label'>GRID</div><div class='stat-value " + String(sol.solis_grid_power_W < 0 ? "ok" : "err") + "'>" + format_grid(sol.solis_grid_power_W) + "</div></div>";
+      sol_html += "<div><div class='stat-label'>BATT</div><div class='stat-value " + String(sol.solis_battery_power_W >= 0 ? "ok" : "warn") + "'>" + format_power(sol.solis_battery_power_W) + "</div></div>";
+      sol_html += "<div><div class='stat-label'>SOC</div><div class='stat-value ok'>" + String(sol.solis_battery_soc_pct, 1) + " %</div></div>";
+      sol_html += "<div><div class='stat-label'>DAY PV</div><div class='stat-value'>" + String(sol.solis_day_pv_energy_kWh, 2) + " kWh</div></div>";
+    } else {
+      sol_html += "<div><div class='stat-label'>PV</div><div class='stat-value'>--</div></div>";
+      sol_html += "<div><div class='stat-label'>LOAD</div><div class='stat-value'>--</div></div>";
+      sol_html += "<div><div class='stat-label'>GRID</div><div class='stat-value'>--</div></div>";
+      sol_html += "<div><div class='stat-label'>BATT</div><div class='stat-value'>--</div></div>";
+      sol_html += "<div><div class='stat-label'>SOC</div><div class='stat-value'>--</div></div>";
+      sol_html += "<div><div class='stat-label'>DAY PV</div><div class='stat-value'>--</div></div>";
+    }
+    sol_html += "</div></div>";
+    
+    // Envoy section
+    sol_html += "<div class='card'><div class='section-title'>ENVOY ACTIVE POWER</div><div class='grid'>";
+    if (sol.envoy1_last_update_ms > 0) {
+      sol_html += "<div><div class='stat-label'>ENVOY 1</div><div class='stat-value'>" + format_power(sol.envoy1_active_power_W) + "</div></div>";
+    } else {
+      sol_html += "<div><div class='stat-label'>ENVOY 1</div><div class='stat-value'>--</div></div>";
+    }
+    if (sol.envoy2_last_update_ms > 0) {
+      sol_html += "<div><div class='stat-label'>ENVOY 2</div><div class='stat-value'>" + format_power(sol.envoy2_active_power_W) + "</div></div>";
+    } else {
+      sol_html += "<div><div class='stat-label'>ENVOY 2</div><div class='stat-value'>--</div></div>";
+    }
+    sol_html += "</div></div>";
+    
+    snprintf(sol_buf, sizeof(sol_buf), "%s", sol_html.c_str());
   }
 
   String page = String(buf) + sol_buf + HTML_FOOTER;
@@ -387,6 +481,142 @@ static void handle_reboot(AsyncWebServerRequest* request) {
   ESP.restart();
 }
 
+// ── /solar ───────────────────────────────────────────────────────────────────
+
+static void handle_solar(AsyncWebServerRequest* request) {
+  const SolarData& sol = mqtt_display_bridge::get_solar_data();
+  
+  // Helper function for power formatting
+  auto format_power = [](float w) -> String {
+    if (fabsf(w) >= 1000.0f) {
+      char buf[32];
+      snprintf(buf, sizeof(buf), "%.2f kW", w / 1000.0f);
+      return String(buf);
+    } else {
+      char buf[32];
+      snprintf(buf, sizeof(buf), "%.0f W", w);
+      return String(buf);
+    }
+  };
+  
+  // Helper function for grid power with sign
+  auto format_grid = [](float w) -> String {
+    char buf[32];
+    if (w >= 0) {
+      snprintf(buf, sizeof(buf), "+%.0f W", w);
+    } else {
+      snprintf(buf, sizeof(buf), "%.0f W", w);
+    }
+    return String(buf);
+  };
+  
+  // Helper function for data age
+  auto format_age = [](unsigned long update_ms) -> String {
+    if (update_ms == 0) return "Never";
+    unsigned long age_s = (millis() - update_ms) / 1000;
+    if (age_s < 60) return String(age_s) + "s ago";
+    if (age_s < 3600) return String(age_s / 60) + "m ago";
+    return String(age_s / 3600) + "h ago";
+  };
+  
+  String page = HTML_HEADER;
+  page += "<div class='card'><div class='section-title'>SOLAR / INVERTER MONITORING</div>";
+  
+  // Check if we have any solar data
+  bool any_solar_data = (sol.solark_last_update_ms > 0) || (sol.solis_last_update_ms > 0) || 
+                       (sol.envoy1_last_update_ms > 0) || (sol.envoy2_last_update_ms > 0);
+  
+  if (!any_solar_data) {
+    page += "<p class='err'>No solar data received yet. Check MQTT broker connection and topic subscriptions.</p>";
+  } else {
+    page += "<p><strong>Last Update:</strong> " + format_age(max({sol.solark_last_update_ms, sol.solis_last_update_ms, sol.envoy1_last_update_ms, sol.envoy2_last_update_ms})) + "</p>";
+  }
+  page += "</div>";
+  
+  // Solark Section
+  page += "<div class='card'>";
+  page += "<div class='section-title'>SOLARK INVERTER</div>";
+  page += "<div class='grid'>";
+  
+  if (sol.solark_last_update_ms > 0) {
+    page += "<div><div class='stat-label'>PV Generation</div><div class='stat-value ok'>" + format_power(sol.solark_pv_power_W) + "</div></div>";
+    page += "<div><div class='stat-label'>House Load</div><div class='stat-value'>" + format_power(sol.solark_load_power_W) + "</div></div>";
+    page += "<div><div class='stat-label'>Grid Power</div><div class='stat-value " + String(sol.solark_grid_power_W < 0 ? "ok" : "err") + "'>" + format_grid(sol.solark_grid_power_W) + "</div></div>";
+    page += "<div><div class='stat-label'>Battery Power</div><div class='stat-value " + String(sol.solark_battery_power_W >= 0 ? "ok" : "warn") + "'>" + format_power(sol.solark_battery_power_W) + "</div></div>";
+    page += "<div><div class='stat-label'>Battery SOC</div><div class='stat-value ok'>" + String(sol.solark_battery_soc_pct, 1) + " %</div></div>";
+    page += "<div><div class='stat-label'>Today's PV</div><div class='stat-value'>" + String(sol.solark_day_pv_energy_kWh, 2) + " kWh</div></div>";
+    page += "<div><div class='stat-label'>Data Age</div><div class='stat-value'>" + format_age(sol.solark_last_update_ms) + "</div></div>";
+  } else {
+    page += "<div><div class='stat-label'>PV Generation</div><div class='stat-value'>--</div></div>";
+    page += "<div><div class='stat-label'>House Load</div><div class='stat-value'>--</div></div>";
+    page += "<div><div class='stat-label'>Grid Power</div><div class='stat-value'>--</div></div>";
+    page += "<div><div class='stat-label'>Battery Power</div><div class='stat-value'>--</div></div>";
+    page += "<div><div class='stat-label'>Battery SOC</div><div class='stat-value'>--</div></div>";
+    page += "<div><div class='stat-label'>Today's PV</div><div class='stat-value'>--</div></div>";
+    page += "<div><div class='stat-label'>Data Age</div><div class='stat-value'>--</div></div>";
+  }
+  page += "</div></div>";
+  
+  // Solis Section
+  page += "<div class='card'>";
+  page += "<div class='section-title'>SOLIS INVERTER</div>";
+  page += "<div class='grid'>";
+  
+  if (sol.solis_last_update_ms > 0) {
+    page += "<div><div class='stat-label'>PV Generation</div><div class='stat-value ok'>" + format_power(sol.solis_pv_power_W) + "</div></div>";
+    page += "<div><div class='stat-label'>House Load</div><div class='stat-value'>" + format_power(sol.solis_load_power_W) + "</div></div>";
+    page += "<div><div class='stat-label'>Grid Power</div><div class='stat-value " + String(sol.solis_grid_power_W < 0 ? "ok" : "err") + "'>" + format_grid(sol.solis_grid_power_W) + "</div></div>";
+    page += "<div><div class='stat-label'>Battery Power</div><div class='stat-value " + String(sol.solis_battery_power_W >= 0 ? "ok" : "warn") + "'>" + format_power(sol.solis_battery_power_W) + "</div></div>";
+    page += "<div><div class='stat-label'>Battery SOC</div><div class='stat-value ok'>" + String(sol.solis_battery_soc_pct, 1) + " %</div></div>";
+    page += "<div><div class='stat-label'>Today's PV</div><div class='stat-value'>" + String(sol.solis_day_pv_energy_kWh, 2) + " kWh</div></div>";
+    page += "<div><div class='stat-label'>Data Age</div><div class='stat-value'>" + format_age(sol.solis_last_update_ms) + "</div></div>";
+  } else {
+    page += "<div><div class='stat-label'>PV Generation</div><div class='stat-value'>--</div></div>";
+    page += "<div><div class='stat-label'>House Load</div><div class='stat-value'>--</div></div>";
+    page += "<div><div class='stat-label'>Grid Power</div><div class='stat-value'>--</div></div>";
+    page += "<div><div class='stat-label'>Battery Power</div><div class='stat-value'>--</div></div>";
+    page += "<div><div class='stat-label'>Battery SOC</div><div class='stat-value'>--</div></div>";
+    page += "<div><div class='stat-label'>Today's PV</div><div class='stat-value'>--</div></div>";
+    page += "<div><div class='stat-label'>Data Age</div><div class='stat-value'>--</div></div>";
+  }
+  page += "</div></div>";
+  
+  // Envoy Section
+  page += "<div class='card'>";
+  page += "<div class='section-title'>ENVOY DEVICES</div>";
+  page += "<div class='grid'>";
+  
+  if (sol.envoy1_last_update_ms > 0) {
+    page += "<div><div class='stat-label'>Envoy 1 Power</div><div class='stat-value'>" + format_power(sol.envoy1_active_power_W) + "</div></div>";
+    page += "<div><div class='stat-label'>Envoy 1 Age</div><div class='stat-value'>" + format_age(sol.envoy1_last_update_ms) + "</div></div>";
+  } else {
+    page += "<div><div class='stat-label'>Envoy 1 Power</div><div class='stat-value'>--</div></div>";
+    page += "<div><div class='stat-label'>Envoy 1 Age</div><div class='stat-value'>--</div></div>";
+  }
+  
+  if (sol.envoy2_last_update_ms > 0) {
+    page += "<div><div class='stat-label'>Envoy 2 Power</div><div class='stat-value'>" + format_power(sol.envoy2_active_power_W) + "</div></div>";
+    page += "<div><div class='stat-label'>Envoy 2 Age</div><div class='stat-value'>" + format_age(sol.envoy2_last_update_ms) + "</div></div>";
+  } else {
+    page += "<div><div class='stat-label'>Envoy 2 Power</div><div class='stat-value'>--</div></div>";
+    page += "<div><div class='stat-label'>Envoy 2 Age</div><div class='stat-value'>--</div></div>";
+  }
+  page += "</div></div>";
+  
+  // MQTT Topics Info
+  page += "<div class='card'>";
+  page += "<div class='section-title'>MQTT TOPICS</div>";
+  page += "<table><tr><th>Source</th><th>Topic Pattern</th><th>Status</th></tr>";
+  page += "<tr><td>Solark</td><td>solar/solark/sensors/#</td><td>" + String(sol.solark_last_update_ms > 0 ? "<span class='ok'>Active</span>" : "<span class='err'>No data</span>") + "</td></tr>";
+  page += "<tr><td>Solis</td><td>solar/solis/sensors/#</td><td>" + String(sol.solis_last_update_ms > 0 ? "<span class='ok'>Active</span>" : "<span class='err'>No data</span>") + "</td></tr>";
+  page += "<tr><td>Envoy 1</td><td>envoy/1/active_power</td><td>" + String(sol.envoy1_last_update_ms > 0 ? "<span class='ok'>Active</span>" : "<span class='err'>No data</span>") + "</td></tr>";
+  page += "<tr><td>Envoy 2</td><td>envoy/2/active_power</td><td>" + String(sol.envoy2_last_update_ms > 0 ? "<span class='ok'>Active</span>" : "<span class='err'>No data</span>") + "</td></tr>";
+  page += "</table></div>";
+  
+  page += HTML_FOOTER;
+  request->send(200, "text/html", page);
+}
+
 // ── Stub functions required by webserver.h API ───────────────────────────────
 
 String processor(const String& var) {
@@ -403,6 +633,7 @@ String get_firmware_info_processor(const String& var) {
 
 void init_webserver() {
   server.on("/", HTTP_GET, handle_root);
+  server.on("/solar", HTTP_GET, handle_solar);
   server.on("/cellmonitor", HTTP_GET, handle_cellmonitor);
   server.on("/events", HTTP_GET, handle_events);
   server.on("/canlog", HTTP_GET, handle_canlog);

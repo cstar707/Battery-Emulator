@@ -12,7 +12,10 @@
 #define TOPIC_BE_INFO "BE/info"
 #define TOPIC_BE_SPEC_DATA "BE/spec_data"
 #define TOPIC_BE_EVENTS "BE/events"
-#define TOPIC_SOLAR_PREFIX "solar/solark/sensors/"
+#define TOPIC_SOLARK_PREFIX "solar/solark/sensors/"
+#define TOPIC_SOLIS_PREFIX "solar/solis/sensors/"
+#define TOPIC_ENVOY1 "envoy/1/active_power"
+#define TOPIC_ENVOY2 "envoy/2/active_power"
 
 namespace mqtt_display_bridge {
 
@@ -170,7 +173,7 @@ static void handle_be_events(const char* data, int data_len) {
 
 // ── solar/solark/sensors/<suffix> handler ────────────────────────────────────
 
-static void handle_solar_sensor(const char* suffix, const char* payload, int payload_len) {
+static void handle_solark_sensor(const char* suffix, const char* payload, int payload_len) {
   char val_buf[32];
   int copy_len = (payload_len < (int)(sizeof(val_buf) - 1)) ? payload_len : (int)(sizeof(val_buf) - 1);
   memcpy(val_buf, payload, copy_len);
@@ -179,18 +182,25 @@ static void handle_solar_sensor(const char* suffix, const char* payload, int pay
   float val = atof(val_buf);
 
   if (strcmp(suffix, "solar_power") == 0) {
-    solar_data.pv_power_W = val;
+    solar_data.solark_pv_power_W = val;
+    solar_data.pv_power_W = val;  // Legacy compatibility
   } else if (strcmp(suffix, "total_solar_power") == 0) {
+    solar_data.solark_pv_power_W = val;
     solar_data.pv_power_W = val;  // prefer total if available
   } else if (strcmp(suffix, "load_power") == 0) {
+    solar_data.solark_load_power_W = val;
     solar_data.load_power_W = val;
   } else if (strcmp(suffix, "grid_power") == 0) {
+    solar_data.solark_grid_power_W = val;
     solar_data.grid_power_W = val;
   } else if (strcmp(suffix, "battery_power") == 0 || strcmp(suffix, "total_battery_power") == 0) {
+    solar_data.solark_battery_power_W = val;
     solar_data.battery_power_W = val;
   } else if (strcmp(suffix, "battery_soc") == 0) {
+    solar_data.solark_battery_soc_pct = val;
     solar_data.battery_soc_pct = val;
   } else if (strcmp(suffix, "day_pv_energy") == 0) {
+    solar_data.solark_day_pv_energy_kWh = val;
     solar_data.day_pv_energy_kWh = val;
   } else if (strcmp(suffix, "day_battery_charge") == 0) {
     solar_data.day_batt_charge_kWh = val;
@@ -198,7 +208,56 @@ static void handle_solar_sensor(const char* suffix, const char* payload, int pay
     solar_data.day_batt_discharge_kWh = val;
   }
 
+  solar_data.solark_last_update_ms = millis();
   solar_data.last_update_ms = millis();
+}
+
+// ── solar/solis/sensors/<suffix> handler ──────────────────────────────────────
+
+static void handle_solis_sensor(const char* suffix, const char* payload, int payload_len) {
+  char val_buf[32];
+  int copy_len = (payload_len < (int)(sizeof(val_buf) - 1)) ? payload_len : (int)(sizeof(val_buf) - 1);
+  memcpy(val_buf, payload, copy_len);
+  val_buf[copy_len] = '\0';
+
+  float val = atof(val_buf);
+
+  if (strcmp(suffix, "solar_power") == 0) {
+    solar_data.solis_pv_power_W = val;
+  } else if (strcmp(suffix, "total_solar_power") == 0) {
+    solar_data.solis_pv_power_W = val;
+  } else if (strcmp(suffix, "load_power") == 0) {
+    solar_data.solis_load_power_W = val;
+  } else if (strcmp(suffix, "grid_power") == 0) {
+    solar_data.solis_grid_power_W = val;
+  } else if (strcmp(suffix, "battery_power") == 0 || strcmp(suffix, "total_battery_power") == 0) {
+    solar_data.solis_battery_power_W = val;
+  } else if (strcmp(suffix, "battery_soc") == 0) {
+    solar_data.solis_battery_soc_pct = val;
+  } else if (strcmp(suffix, "day_pv_energy") == 0) {
+    solar_data.solis_day_pv_energy_kWh = val;
+  }
+
+  solar_data.solis_last_update_ms = millis();
+}
+
+// ── envoy/<id>/active_power handler ─────────────────────────────────────────
+
+static void handle_envoy_power(const char* topic, const char* payload, int payload_len) {
+  char val_buf[32];
+  int copy_len = (payload_len < (int)(sizeof(val_buf) - 1)) ? payload_len : (int)(sizeof(val_buf) - 1);
+  memcpy(val_buf, payload, copy_len);
+  val_buf[copy_len] = '\0';
+
+  float val = atof(val_buf);
+
+  if (strcmp(topic, TOPIC_ENVOY1) == 0) {
+    solar_data.envoy1_active_power_W = val;
+    solar_data.envoy1_last_update_ms = millis();
+  } else if (strcmp(topic, TOPIC_ENVOY2) == 0) {
+    solar_data.envoy2_active_power_W = val;
+    solar_data.envoy2_last_update_ms = millis();
+  }
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -222,9 +281,14 @@ void on_mqtt_message(const char* topic_raw, int topic_len, const char* data, int
     handle_be_spec_data(data, data_len);
   } else if (strcmp(topic, TOPIC_BE_EVENTS) == 0) {
     handle_be_events(data, data_len);
-  } else if (strncmp(topic, TOPIC_SOLAR_PREFIX, strlen(TOPIC_SOLAR_PREFIX)) == 0) {
-    const char* suffix = topic + strlen(TOPIC_SOLAR_PREFIX);
-    handle_solar_sensor(suffix, data, data_len);
+  } else if (strncmp(topic, TOPIC_SOLARK_PREFIX, strlen(TOPIC_SOLARK_PREFIX)) == 0) {
+    const char* suffix = topic + strlen(TOPIC_SOLARK_PREFIX);
+    handle_solark_sensor(suffix, data, data_len);
+  } else if (strncmp(topic, TOPIC_SOLIS_PREFIX, strlen(TOPIC_SOLIS_PREFIX)) == 0) {
+    const char* suffix = topic + strlen(TOPIC_SOLIS_PREFIX);
+    handle_solis_sensor(suffix, data, data_len);
+  } else if (strcmp(topic, TOPIC_ENVOY1) == 0 || strcmp(topic, TOPIC_ENVOY2) == 0) {
+    handle_envoy_power(topic, data, data_len);
   }
 }
 
@@ -234,6 +298,9 @@ void subscribe_topics(void* client_handle) {
   esp_mqtt_client_subscribe(client, TOPIC_BE_SPEC_DATA, 0);
   esp_mqtt_client_subscribe(client, TOPIC_BE_EVENTS, 0);
   esp_mqtt_client_subscribe(client, "solar/solark/sensors/#", 0);
+  esp_mqtt_client_subscribe(client, "solar/solis/sensors/#", 0);
+  esp_mqtt_client_subscribe(client, TOPIC_ENVOY1, 0);
+  esp_mqtt_client_subscribe(client, TOPIC_ENVOY2, 0);
 }
 
 void tick_alive_counter() {

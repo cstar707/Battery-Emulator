@@ -5,6 +5,31 @@
 
 // Solar/inverter data received from ESPHome solar/solark/sensors/#
 struct SolarData {
+  // Solark inverter data
+  float solark_pv_power_W = 0.0f;
+  float solark_load_power_W = 0.0f;
+  float solark_grid_power_W = 0.0f;
+  float solark_battery_power_W = 0.0f;
+  float solark_battery_soc_pct = 0.0f;
+  float solark_day_pv_energy_kWh = 0.0f;
+  unsigned long solark_last_update_ms = 0;
+  
+  // Solis inverter data
+  float solis_pv_power_W = 0.0f;
+  float solis_load_power_W = 0.0f;
+  float solis_grid_power_W = 0.0f;
+  float solis_battery_power_W = 0.0f;
+  float solis_battery_soc_pct = 0.0f;
+  float solis_day_pv_energy_kWh = 0.0f;
+  unsigned long solis_last_update_ms = 0;
+  
+  // Envoy device data
+  float envoy1_active_power_W = 0.0f;
+  unsigned long envoy1_last_update_ms = 0;
+  float envoy2_active_power_W = 0.0f;
+  unsigned long envoy2_last_update_ms = 0;
+  
+  // Legacy compatibility fields (mapped to Solark data)
   float pv_power_W = 0.0f;
   float load_power_W = 0.0f;
   float grid_power_W = 0.0f;     // positive = import, negative = export
