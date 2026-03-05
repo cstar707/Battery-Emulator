@@ -99,7 +99,7 @@ static lv_obj_t* lbl_brightness;
 static lv_obj_t* lbl_backup_battery;
 static bool wifi_ap_enabled = false;  // Synced with wifiap_enabled after init_WiFi()
 static uint8_t brightness_level = 70;  // 0-100% (default 70% to reduce edge glow / backlight bleed)
-static uint8_t wifi_tx_power = 1;  // Index into power levels (default 8.5dBm)
+uint8_t wifi_tx_power = 1;  // Index into power levels (default 8.5dBm) - global for wifi.cpp access
 
 // Auto-dim feature
 static unsigned long lastTouchMillis = 0;

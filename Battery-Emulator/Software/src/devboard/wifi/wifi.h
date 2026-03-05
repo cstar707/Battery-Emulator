@@ -51,4 +51,10 @@ extern uint8_t static_subnet2;
 extern uint8_t static_subnet3;
 extern uint8_t static_subnet4;
 
+// WiFi TX power level from display settings (0-6 index into power table)
+// Used by init_WiFi_AP() to set transmit power on startup
+extern uint8_t wifi_tx_power;
+
+void init_WiFi_AP();
+
 #endif
