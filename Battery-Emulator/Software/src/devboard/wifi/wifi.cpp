@@ -291,6 +291,13 @@ void init_WiFi_AP() {
   DEBUG_PRINTF("With password: %s\n", passwordAP.c_str());
 
   WiFi.softAP(ssidAP.c_str(), passwordAP.c_str());
+  
+  // Apply TX power setting from display UI
+  if (wifi_tx_power == 0) {
+    WiFi.setTxPower(WIFI_POWER_5dBm);  // Minimum power to reduce interference
+    DEBUG_PRINTF("WiFi TX power set to 5dBm (minimum)\n");
+  }
+  
   IPAddress IP = WiFi.softAPIP();
 
   DEBUG_PRINTF("Access Point created.\nIP address: %s\n", IP.toString().c_str());

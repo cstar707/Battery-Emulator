@@ -99,7 +99,7 @@ static lv_obj_t* lbl_brightness;
 static lv_obj_t* lbl_backup_battery;
 static bool wifi_ap_enabled = false;  // Synced with wifiap_enabled after init_WiFi()
 static uint8_t brightness_level = 70;  // 0-100% (default 70% to reduce edge glow / backlight bleed)
-uint8_t wifi_tx_power = 1;  // Index into power levels (default 8.5dBm) - global for wifi.cpp access
+uint8_t wifi_tx_power = 0;  // Index into power levels (default 5dBm minimum) - global for wifi.cpp access
 
 // Auto-dim feature
 static unsigned long lastTouchMillis = 0;
@@ -115,31 +115,31 @@ static lv_obj_t* screen_main;
 static lv_obj_t* screen_cells;
 static lv_obj_t* screen_alerts;
 #ifdef HW_WAVESHARE7B_DISPLAY_ONLY
-static lv_obj_t* screen_solar;
-static lv_obj_t* tab_btns[4];
+static lv_obj_t* screen_solar = NULL;
+static lv_obj_t* tab_btns[4] = {NULL, NULL, NULL, NULL};
 // Solar tab labels
 static lv_obj_t* lbl_solar_pv;
 static lv_obj_t* lbl_solar_load;
 static lv_obj_t* lbl_solar_grid;
 static lv_obj_t* lbl_solar_batt_power;
 static lv_obj_t* lbl_solar_batt_soc;
-static lv_obj_t* lbl_solar_day_pv;
-static lv_obj_t* lbl_solar_status;
+static lv_obj_t* lbl_solar_day_pv = NULL;
+static lv_obj_t* lbl_solar_status = NULL;
 // Enhanced solar labels for Solark, Solis, Envoy
-static lv_obj_t* lbl_solark_pv;
-static lv_obj_t* lbl_solark_load;
-static lv_obj_t* lbl_solark_grid;
-static lv_obj_t* lbl_solark_batt;
-static lv_obj_t* lbl_solark_soc;
-static lv_obj_t* lbl_solark_day;
-static lv_obj_t* lbl_solis_pv;
-static lv_obj_t* lbl_solis_load;
-static lv_obj_t* lbl_solis_grid;
-static lv_obj_t* lbl_solis_batt;
-static lv_obj_t* lbl_solis_soc;
-static lv_obj_t* lbl_solis_day;
-static lv_obj_t* lbl_envoy1_power;
-static lv_obj_t* lbl_envoy2_power;
+static lv_obj_t* lbl_solark_pv = NULL;
+static lv_obj_t* lbl_solark_load = NULL;
+static lv_obj_t* lbl_solark_grid = NULL;
+static lv_obj_t* lbl_solark_batt = NULL;
+static lv_obj_t* lbl_solark_soc = NULL;
+static lv_obj_t* lbl_solark_day = NULL;
+static lv_obj_t* lbl_solis_pv = NULL;
+static lv_obj_t* lbl_solis_load = NULL;
+static lv_obj_t* lbl_solis_grid = NULL;
+static lv_obj_t* lbl_solis_batt = NULL;
+static lv_obj_t* lbl_solis_soc = NULL;
+static lv_obj_t* lbl_solis_day = NULL;
+static lv_obj_t* lbl_envoy1_power = NULL;
+static lv_obj_t* lbl_envoy2_power = NULL;
 #else
 static lv_obj_t* tab_btns[3];
 #endif
@@ -646,24 +646,30 @@ static void show_screen_alerts(lv_event_t* e) {
 
 #ifdef HW_WAVESHARE7B_DISPLAY_ONLY
 static void show_screen_solar(lv_event_t* e) {
+  DEBUG_PRINTF("show_screen_solar: entered\n");
   // Defensive null checks to prevent crash
   if (!screen_solar) {
-    DEBUG_PRINTF("Error: screen_solar is NULL\n");
+    DEBUG_PRINTF("show_screen_solar: screen_solar is NULL!\n");
     return;
   }
+  DEBUG_PRINTF("show_screen_solar: screen_solar OK\n");
   if (!tab_btns[0] || !tab_btns[1] || !tab_btns[2] || !tab_btns[3]) {
-    DEBUG_PRINTF("Error: tab_btns not initialized\n");
+    DEBUG_PRINTF("show_screen_solar: tab_btns not initialized!\n");
     return;
   }
+  DEBUG_PRINTF("show_screen_solar: tab_btns OK, hiding other screens\n");
   if (screen_main) lv_obj_add_flag(screen_main, LV_OBJ_FLAG_HIDDEN);
   if (screen_cells) lv_obj_add_flag(screen_cells, LV_OBJ_FLAG_HIDDEN);
   if (screen_alerts) lv_obj_add_flag(screen_alerts, LV_OBJ_FLAG_HIDDEN);
+  DEBUG_PRINTF("show_screen_solar: clearing screen_solar hidden flag\n");
   lv_obj_clear_flag(screen_solar, LV_OBJ_FLAG_HIDDEN);
   current_screen = 3;
+  DEBUG_PRINTF("show_screen_solar: setting tab colors\n");
   lv_obj_set_style_bg_color(tab_btns[0], lv_color_hex(0x21262d), 0);
   lv_obj_set_style_bg_color(tab_btns[1], lv_color_hex(0x21262d), 0);
   lv_obj_set_style_bg_color(tab_btns[2], lv_color_hex(0x21262d), 0);
   lv_obj_set_style_bg_color(tab_btns[3], lv_color_hex(0x1f6feb), 0);
+  DEBUG_PRINTF("show_screen_solar: done\n");
 }
 #endif
 
