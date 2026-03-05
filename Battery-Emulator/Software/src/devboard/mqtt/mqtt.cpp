@@ -4,15 +4,20 @@
 #include <freertos/FreeRTOS.h>
 #include <src/communication/nvm/comm_nvm.h>
 #include <list>
+#ifndef HW_WAVESHARE7B_DISPLAY_ONLY
 #include "../../battery/BATTERIES.h"
 #include "../../communication/contactorcontrol/comm_contactorcontrol.h"
+#include "../../devboard/safety/safety.h"
+#endif
 #include "../../datalayer/datalayer.h"
 #include "../../devboard/hal/hal.h"
-#include "../../devboard/safety/safety.h"
 #include "../../lib/bblanchon-ArduinoJson/ArduinoJson.h"
 #include "../utils/events.h"
 #include "../utils/timer.h"
 #include "../webserver/webserver.h"
+#ifdef HW_WAVESHARE7B_DISPLAY_ONLY
+#include "../display/mqtt_display_bridge.h"
+#endif
 #include "mqtt.h"
 #include "mqtt_client.h"
 
@@ -90,6 +95,7 @@ static void publish_values(void) {
   }
 }
 
+#ifndef HW_WAVESHARE7B_DISPLAY_ONLY
 static bool ha_common_info_published = false;
 static bool ha_cell_voltages_published = false;
 static bool ha_events_published = false;
@@ -561,7 +567,17 @@ static bool publish_buttons_discovery(void) {
   }
   return true;
 }
+#endif  // !HW_WAVESHARE7B_DISPLAY_ONLY
 
+#ifdef HW_WAVESHARE7B_DISPLAY_ONLY
+static void subscribe() {
+  mqtt_display_bridge::subscribe_topics(client);
+}
+
+void mqtt_message_received(char* topic_raw, int topic_len, char* data, int data_len) {
+  mqtt_display_bridge::on_mqtt_message(topic_raw, topic_len, data, data_len);
+}
+#else
 static void subscribe() {
   esp_mqtt_client_subscribe(client, (topic_name + "/command/+").c_str(), 1);
 }
@@ -631,6 +647,7 @@ void mqtt_message_received(char* topic_raw, int topic_len, char* data, int data_
 
   free(topic);
 }
+#endif  // HW_WAVESHARE7B_DISPLAY_ONLY
 
 static void mqtt_event_handler(void* handler_args, esp_event_base_t base, int32_t event_id, void* event_data) {
   esp_mqtt_event_handle_t event = (esp_mqtt_event_handle_t)event_data;
@@ -638,8 +655,9 @@ static void mqtt_event_handler(void* handler_args, esp_event_base_t base, int32_
     case MQTT_EVENT_CONNECTED:
       clear_event(EVENT_MQTT_DISCONNECT);
       set_event(EVENT_MQTT_CONNECT, 0);
-
+#ifndef HW_WAVESHARE7B_DISPLAY_ONLY
       publish_buttons_discovery();
+#endif
       subscribe();
       logging.println("MQTT connected");
       break;
@@ -677,10 +695,12 @@ static void mqtt_event_handler(void* handler_args, esp_event_base_t base, int32_
 }
 
 bool init_mqtt(void) {
+#ifndef HW_WAVESHARE7B_DISPLAY_ONLY
   if (ha_autodiscovery_enabled) {
     create_battery_sensor_configs();
     create_global_sensor_configs();
   }
+#endif
 
   if (mqtt_manual_topic_object_name) {
 
@@ -756,9 +776,11 @@ void mqtt_client_loop(void) {
     }
 
     // Skip publishing if OTA update is in progress to avoid interference
+#ifndef HW_WAVESHARE7B_DISPLAY_ONLY
     if (publish_global_timer.elapsed() && !ota_active) {
       publish_values();
     }
+#endif
   }
 }
 

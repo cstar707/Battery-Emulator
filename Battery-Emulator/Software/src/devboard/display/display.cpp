@@ -11,11 +11,16 @@ void update_display() {}
 // 1024x600 RGB LCD with GT911 capacitive touch and LVGL
 // Using native Waveshare ESP-IDF LCD driver
 
+#ifndef HW_WAVESHARE7B_DISPLAY_ONLY
 #include "../../battery/BATTERIES.h"
+#endif
 #include "../../datalayer/datalayer.h"
 #include "../hal/hal.h"
 #include "../utils/events.h"
 #include "../utils/logging.h"
+#ifdef HW_WAVESHARE7B_DISPLAY_ONLY
+#include "mqtt_display_bridge.h"
+#endif
 
 #include <Arduino.h>
 #include <WiFi.h>
@@ -32,7 +37,7 @@ void update_display() {}
 #define SCREEN_HEIGHT 600
 
 // UI Version - increment with each UI change
-#define UI_VERSION "2.2.2"
+#define UI_VERSION "2.3.0"
 
 // GT911 Touch pins
 #define TOUCH_INT 4
@@ -88,10 +93,11 @@ static lv_obj_t* wifi_panel;
 static lv_obj_t* wifi_confirm_panel;
 static lv_obj_t* lbl_wifi_status;
 static lv_obj_t* lbl_wifi_power;
+static lv_obj_t* lbl_wifi_conf_msg;
 static lv_obj_t* brightness_slider;
 static lv_obj_t* lbl_brightness;
 static lv_obj_t* lbl_backup_battery;
-static bool wifi_ap_enabled = false;  // Track AP state
+static bool wifi_ap_enabled = false;  // Synced with wifiap_enabled after init_WiFi()
 static uint8_t brightness_level = 70;  // 0-100% (default 70% to reduce edge glow / backlight bleed)
 static uint8_t wifi_tx_power = 1;  // Index into power levels (default 8.5dBm)
 
@@ -108,7 +114,20 @@ static lv_obj_t* lbl_can_status;
 static lv_obj_t* screen_main;
 static lv_obj_t* screen_cells;
 static lv_obj_t* screen_alerts;
+#ifdef HW_WAVESHARE7B_DISPLAY_ONLY
+static lv_obj_t* screen_solar;
+static lv_obj_t* tab_btns[4];
+// Solar tab labels
+static lv_obj_t* lbl_solar_pv;
+static lv_obj_t* lbl_solar_load;
+static lv_obj_t* lbl_solar_grid;
+static lv_obj_t* lbl_solar_batt_power;
+static lv_obj_t* lbl_solar_batt_soc;
+static lv_obj_t* lbl_solar_day_pv;
+static lv_obj_t* lbl_solar_status;
+#else
 static lv_obj_t* tab_btns[3];
+#endif
 static uint8_t current_screen = 0;
 
 // Cell voltage grid (up to 108 cells for Model Y)
@@ -316,7 +335,10 @@ static void btn_wifi_close_cb(lv_event_t* e) {
 static void update_wifi_status_display() {
   if (lbl_wifi_status) {
     if (wifi_ap_enabled) {
-      lv_label_set_text(lbl_wifi_status, "AP: ON (BatteryEmulator)");
+      // Show the actual AP SSID from the wifi module
+      static char ap_status[80];
+      snprintf(ap_status, sizeof(ap_status), "AP: ON (%s)", ssidAP.c_str());
+      lv_label_set_text(lbl_wifi_status, ap_status);
     } else {
       lv_label_set_text(lbl_wifi_status, "AP: OFF");
     }
@@ -337,6 +359,11 @@ static void update_wifi_status_display() {
 // Show AP enable confirmation
 static void btn_wifi_enable_cb(lv_event_t* e) {
   if (!wifi_ap_enabled) {
+    if (lbl_wifi_conf_msg) {
+      static char msg[80];
+      snprintf(msg, sizeof(msg), "SSID: %s\nPass: %s", ssidAP.c_str(), passwordAP.c_str());
+      lv_label_set_text(lbl_wifi_conf_msg, msg);
+    }
     if (wifi_confirm_backdrop) lv_obj_clear_flag(wifi_confirm_backdrop, LV_OBJ_FLAG_HIDDEN);
     if (wifi_confirm_panel) lv_obj_clear_flag(wifi_confirm_panel, LV_OBJ_FLAG_HIDDEN);
   }
@@ -359,13 +386,14 @@ static void btn_wifi_confirm_enable_cb(lv_event_t* e) {
   lv_refr_now(NULL);
   delay(100);
   
-  // Enable WiFi AP
+  // Enable WiFi AP — use ssidAP/passwordAP set by comm_nvm, keep STA connection alive
   wifi_ap_enabled = true;
-  WiFi.mode(WIFI_AP);
+  wifiap_enabled = true;
+  WiFi.mode(WIFI_AP_STA);
   WiFi.setTxPower(wifi_power_values[wifi_tx_power]);
   esp_wifi_set_ps(WIFI_PS_NONE);
-  WiFi.softAP("BatteryEmulator", "12345678", 1, 0, 4);
-  DEBUG_PRINTF("WiFi AP enabled at %s\n", wifi_power_names[wifi_tx_power]);
+  init_WiFi_AP();
+  DEBUG_PRINTF("WiFi AP enabled: %s at %s\n", ssidAP.c_str(), wifi_power_names[wifi_tx_power]);
   
   // Wait for WiFi radio to stabilize
   delay(1500);
@@ -508,21 +536,27 @@ static void btn_reboot_cancel_cb(lv_event_t* e) {
 
 // Contactors button: show confirm panel (Open/Close contactors) only when allowed
 static void btn_contactors_cb(lv_event_t* e) {
-  if (!battery || !battery->supports_contactor_close()) return;  // Greyed out = no action
+#ifndef HW_WAVESHARE7B_DISPLAY_ONLY
+  if (!battery || !battery->supports_contactor_close()) return;
+#endif
   if (contactor_backdrop) lv_obj_clear_flag(contactor_backdrop, LV_OBJ_FLAG_HIDDEN);
   if (contactor_confirm_panel) lv_obj_clear_flag(contactor_confirm_panel, LV_OBJ_FLAG_HIDDEN);
 }
 
 // Contactor confirm: Open
 static void btn_contactor_open_cb(lv_event_t* e) {
+#ifndef HW_WAVESHARE7B_DISPLAY_ONLY
   if (battery) battery->request_open_contactors();
+#endif
   if (contactor_backdrop) lv_obj_add_flag(contactor_backdrop, LV_OBJ_FLAG_HIDDEN);
   if (contactor_confirm_panel) lv_obj_add_flag(contactor_confirm_panel, LV_OBJ_FLAG_HIDDEN);
 }
 
 // Contactor confirm: Close
 static void btn_contactor_close_cb(lv_event_t* e) {
+#ifndef HW_WAVESHARE7B_DISPLAY_ONLY
   if (battery) battery->request_close_contactors();
+#endif
   if (contactor_backdrop) lv_obj_add_flag(contactor_backdrop, LV_OBJ_FLAG_HIDDEN);
   if (contactor_confirm_panel) lv_obj_add_flag(contactor_confirm_panel, LV_OBJ_FLAG_HIDDEN);
 }
@@ -549,13 +583,19 @@ static void add_event(const char* msg) {
 static void show_screen_main(lv_event_t* e);
 static void show_screen_cells(lv_event_t* e);
 static void show_screen_alerts(lv_event_t* e);
+#ifdef HW_WAVESHARE7B_DISPLAY_ONLY
+static void show_screen_solar(lv_event_t* e);
+#endif
 
 static void show_screen_main(lv_event_t* e) {
   if (screen_main) lv_obj_clear_flag(screen_main, LV_OBJ_FLAG_HIDDEN);
   if (screen_cells) lv_obj_add_flag(screen_cells, LV_OBJ_FLAG_HIDDEN);
   if (screen_alerts) lv_obj_add_flag(screen_alerts, LV_OBJ_FLAG_HIDDEN);
+#ifdef HW_WAVESHARE7B_DISPLAY_ONLY
+  if (screen_solar) lv_obj_add_flag(screen_solar, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_set_style_bg_color(tab_btns[3], lv_color_hex(0x21262d), 0);
+#endif
   current_screen = 0;
-  // Update tab colors
   lv_obj_set_style_bg_color(tab_btns[0], lv_color_hex(0x1f6feb), 0);
   lv_obj_set_style_bg_color(tab_btns[1], lv_color_hex(0x21262d), 0);
   lv_obj_set_style_bg_color(tab_btns[2], lv_color_hex(0x21262d), 0);
@@ -565,6 +605,10 @@ static void show_screen_cells(lv_event_t* e) {
   if (screen_main) lv_obj_add_flag(screen_main, LV_OBJ_FLAG_HIDDEN);
   if (screen_cells) lv_obj_clear_flag(screen_cells, LV_OBJ_FLAG_HIDDEN);
   if (screen_alerts) lv_obj_add_flag(screen_alerts, LV_OBJ_FLAG_HIDDEN);
+#ifdef HW_WAVESHARE7B_DISPLAY_ONLY
+  if (screen_solar) lv_obj_add_flag(screen_solar, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_set_style_bg_color(tab_btns[3], lv_color_hex(0x21262d), 0);
+#endif
   current_screen = 1;
   lv_obj_set_style_bg_color(tab_btns[0], lv_color_hex(0x21262d), 0);
   lv_obj_set_style_bg_color(tab_btns[1], lv_color_hex(0x1f6feb), 0);
@@ -575,11 +619,29 @@ static void show_screen_alerts(lv_event_t* e) {
   if (screen_main) lv_obj_add_flag(screen_main, LV_OBJ_FLAG_HIDDEN);
   if (screen_cells) lv_obj_add_flag(screen_cells, LV_OBJ_FLAG_HIDDEN);
   if (screen_alerts) lv_obj_clear_flag(screen_alerts, LV_OBJ_FLAG_HIDDEN);
+#ifdef HW_WAVESHARE7B_DISPLAY_ONLY
+  if (screen_solar) lv_obj_add_flag(screen_solar, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_set_style_bg_color(tab_btns[3], lv_color_hex(0x21262d), 0);
+#endif
   current_screen = 2;
   lv_obj_set_style_bg_color(tab_btns[0], lv_color_hex(0x21262d), 0);
   lv_obj_set_style_bg_color(tab_btns[1], lv_color_hex(0x21262d), 0);
   lv_obj_set_style_bg_color(tab_btns[2], lv_color_hex(0x1f6feb), 0);
 }
+
+#ifdef HW_WAVESHARE7B_DISPLAY_ONLY
+static void show_screen_solar(lv_event_t* e) {
+  if (screen_main) lv_obj_add_flag(screen_main, LV_OBJ_FLAG_HIDDEN);
+  if (screen_cells) lv_obj_add_flag(screen_cells, LV_OBJ_FLAG_HIDDEN);
+  if (screen_alerts) lv_obj_add_flag(screen_alerts, LV_OBJ_FLAG_HIDDEN);
+  if (screen_solar) lv_obj_clear_flag(screen_solar, LV_OBJ_FLAG_HIDDEN);
+  current_screen = 3;
+  lv_obj_set_style_bg_color(tab_btns[0], lv_color_hex(0x21262d), 0);
+  lv_obj_set_style_bg_color(tab_btns[1], lv_color_hex(0x21262d), 0);
+  lv_obj_set_style_bg_color(tab_btns[2], lv_color_hex(0x21262d), 0);
+  lv_obj_set_style_bg_color(tab_btns[3], lv_color_hex(0x1f6feb), 0);
+}
+#endif
 
 static void create_ui() {
   // Dark background
@@ -1300,11 +1362,11 @@ static void create_ui() {
   lv_obj_set_style_text_color(wifi_conf_title, lv_color_hex(0xf0883e), 0);
   lv_obj_align(wifi_conf_title, LV_ALIGN_TOP_MID, 0, 15);
   
-  lv_obj_t* wifi_conf_msg = lv_label_create(wifi_confirm_panel);
-  lv_label_set_text(wifi_conf_msg, "Display will pause during enable");
-  lv_obj_set_style_text_font(wifi_conf_msg, &lv_font_montserrat_14, 0);
-  lv_obj_set_style_text_color(wifi_conf_msg, lv_color_hex(0x8b949e), 0);
-  lv_obj_align(wifi_conf_msg, LV_ALIGN_TOP_MID, 0, 45);
+  lbl_wifi_conf_msg = lv_label_create(wifi_confirm_panel);
+  lv_label_set_text(lbl_wifi_conf_msg, "Display will pause during enable");
+  lv_obj_set_style_text_font(lbl_wifi_conf_msg, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_color(lbl_wifi_conf_msg, lv_color_hex(0x8b949e), 0);
+  lv_obj_align(lbl_wifi_conf_msg, LV_ALIGN_TOP_MID, 0, 45);
   
   lv_obj_t* btn_wifi_cancel = lv_btn_create(wifi_confirm_panel);
   lv_obj_set_size(btn_wifi_cancel, 100, 40);
@@ -1419,7 +1481,7 @@ static void create_ui() {
   
   // ===== TAB BUTTONS (top right) =====
   int tab_w = 80, tab_h = 30;
-  int tab_x = 700;
+  int tab_x = 550;  // Shifted left so status label (ACTIVE/STANDBY/FAULT) at x=900 is visible
   
   tab_btns[0] = lv_btn_create(lv_scr_act());
   lv_obj_set_pos(tab_btns[0], tab_x, 8);
@@ -1453,6 +1515,74 @@ static void create_ui() {
   lv_label_set_text(lbl_tab2, "Alerts");
   lv_obj_set_style_text_font(lbl_tab2, &lv_font_montserrat_12, 0);
   lv_obj_center(lbl_tab2);
+
+#ifdef HW_WAVESHARE7B_DISPLAY_ONLY
+  tab_btns[3] = lv_btn_create(lv_scr_act());
+  lv_obj_set_pos(tab_btns[3], tab_x + (tab_w + 5) * 3, 8);
+  lv_obj_set_size(tab_btns[3], tab_w, tab_h);
+  lv_obj_set_style_bg_color(tab_btns[3], lv_color_hex(0x21262d), 0);
+  lv_obj_set_style_radius(tab_btns[3], 6, 0);
+  lv_obj_add_event_cb(tab_btns[3], show_screen_solar, LV_EVENT_CLICKED, NULL);
+  lv_obj_t* lbl_tab3 = lv_label_create(tab_btns[3]);
+  lv_label_set_text(lbl_tab3, "Solar");
+  lv_obj_set_style_text_font(lbl_tab3, &lv_font_montserrat_12, 0);
+  lv_obj_center(lbl_tab3);
+
+  // ===== SOLAR SCREEN =====
+  screen_solar = lv_obj_create(lv_scr_act());
+  lv_obj_set_size(screen_solar, 984, 550);
+  lv_obj_set_pos(screen_solar, 20, 45);
+  lv_obj_set_style_bg_color(screen_solar, lv_color_hex(0x0d1117), 0);
+  lv_obj_set_style_border_width(screen_solar, 0, 0);
+  lv_obj_set_style_radius(screen_solar, 0, 0);
+  lv_obj_set_style_pad_all(screen_solar, 0, 0);
+  lv_obj_add_flag(screen_solar, LV_OBJ_FLAG_HIDDEN);
+
+  // Solar screen title
+  lv_obj_t* lbl_solar_title = lv_label_create(screen_solar);
+  lv_label_set_text(lbl_solar_title, "SOLAR / INVERTER");
+  lv_obj_set_style_text_font(lbl_solar_title, &lv_font_montserrat_16, 0);
+  lv_obj_set_style_text_color(lbl_solar_title, lv_color_hex(0xf0a500), 0);
+  lv_obj_set_pos(lbl_solar_title, 10, 10);
+
+  // Solar status (data age)
+  lbl_solar_status = lv_label_create(screen_solar);
+  lv_label_set_text(lbl_solar_status, "No data");
+  lv_obj_set_style_text_font(lbl_solar_status, &lv_font_montserrat_12, 0);
+  lv_obj_set_style_text_color(lbl_solar_status, lv_color_hex(0x8b949e), 0);
+  lv_obj_set_pos(lbl_solar_status, 400, 14);
+
+  // Helper to create a solar stat card — same style as main screen cards
+  auto make_solar_card = [&](int x, int y, int w, int h, const char* label_text, lv_obj_t** value_label) {
+    lv_obj_t* card = lv_obj_create(screen_solar);
+    lv_obj_set_pos(card, x, y);
+    lv_obj_set_size(card, w, h);
+    lv_obj_set_style_bg_color(card, lv_color_hex(0x161b22), 0);
+    lv_obj_set_style_border_color(card, lv_color_hex(0x30363d), 0);
+    lv_obj_set_style_border_width(card, 1, 0);
+    lv_obj_set_style_radius(card, 8, 0);
+    lv_obj_set_style_pad_all(card, 8, 0);
+    lv_obj_t* lbl = lv_label_create(card);
+    lv_label_set_text(lbl, label_text);
+    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(lbl, lv_color_hex(0x8b949e), 0);
+    lv_obj_set_pos(lbl, 8, 6);
+    *value_label = lv_label_create(card);
+    lv_label_set_text(*value_label, "--");
+    lv_obj_set_style_text_font(*value_label, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(*value_label, lv_color_hex(0xe6edf3), 0);
+    lv_obj_set_pos(*value_label, 8, 28);
+    return card;
+  };
+
+  int scw = 230, sch = 90, sgap = 12, row1y = 55, row2y = 160;
+  make_solar_card(10,             row1y, scw, sch, "PV POWER",     &lbl_solar_pv);
+  make_solar_card(10+scw+sgap,    row1y, scw, sch, "LOAD POWER",   &lbl_solar_load);
+  make_solar_card(10+(scw+sgap)*2,row1y, scw, sch, "GRID POWER",   &lbl_solar_grid);
+  make_solar_card(10+(scw+sgap)*3,row1y, scw, sch, "BATT POWER",   &lbl_solar_batt_power);
+  make_solar_card(10,             row2y, scw, sch, "INVERTER SOC", &lbl_solar_batt_soc);
+  make_solar_card(10+scw+sgap,    row2y, scw, sch, "TODAY PV",     &lbl_solar_day_pv);
+#endif
 }
 
 void init_display() {
@@ -1534,6 +1664,10 @@ void init_display() {
   // Initialize touch timer for auto-dim
   lastTouchMillis = millis();
   
+  // Sync the local AP flag with the global wifiap_enabled setting so the
+  // WiFi status card shows the correct state on boot without user interaction.
+  wifi_ap_enabled = wifiap_enabled;
+
   display_initialized = true;
   DEBUG_PRINTF("Display initialization complete!\n");
 }
@@ -1649,8 +1783,12 @@ void update_display() {
       lv_label_set_text(lbl_contactor, "OPEN");
       lv_obj_set_style_text_color(lbl_contactor, lv_color_hex(0xff7b72), 0);
     }
-    // Contactors button: greyed out when not available, normal green when allowed
+    // Contactors button: greyed out in display-only mode (no local battery)
     if (btn_contactors) {
+#ifdef HW_WAVESHARE7B_DISPLAY_ONLY
+      lv_obj_add_state(btn_contactors, LV_STATE_DISABLED);
+      if (lbl_contactors_btn) lv_obj_add_state(lbl_contactors_btn, LV_STATE_DISABLED);
+#else
       if (battery && battery->supports_contactor_close()) {
         lv_obj_clear_state(btn_contactors, LV_STATE_DISABLED);
         if (lbl_contactors_btn) lv_obj_clear_state(lbl_contactors_btn, LV_STATE_DISABLED);
@@ -1658,17 +1796,31 @@ void update_display() {
         lv_obj_add_state(btn_contactors, LV_STATE_DISABLED);
         if (lbl_contactors_btn) lv_obj_add_state(lbl_contactors_btn, LV_STATE_DISABLED);
       }
+#endif
     }
-    // Update WiFi/Network status
-    if (wifi_ap_enabled) {
-      // Show AP info when AP is enabled
-      lv_label_set_text(lbl_wifi, "AP: BatteryEmulator\nPass: 12345678\nIP: 192.168.4.1");
-      lv_obj_set_style_text_color(lbl_wifi, lv_color_hex(0x58a6ff), 0);  // Blue for AP mode
+    // Update WiFi/Network status — sync with wifiap_enabled (AP can be auto-disabled by wifi_monitor)
+    wifi_ap_enabled = wifiap_enabled;
+    if (wifi_ap_enabled && WiFi.status() == WL_CONNECTED) {
+      // AP+STA mode: show AP SSID, AP IP, and network (STA) IP
+      static char wifi_both[80];
+      snprintf(wifi_both, sizeof(wifi_both), "AP: %s\n%s\nNet: %s",
+               ssidAP.c_str(),
+               WiFi.softAPIP().toString().c_str(),
+               WiFi.localIP().toString().c_str());
+      lv_label_set_text(lbl_wifi, wifi_both);
+      lv_obj_set_style_text_color(lbl_wifi, lv_color_hex(0x58a6ff), 0);
+    } else if (wifi_ap_enabled) {
+      // AP only: show AP SSID and AP IP
+      static char wifi_ap[64];
+      snprintf(wifi_ap, sizeof(wifi_ap), "AP: %s\n%s",
+               ssidAP.c_str(), WiFi.softAPIP().toString().c_str());
+      lv_label_set_text(lbl_wifi, wifi_ap);
+      lv_obj_set_style_text_color(lbl_wifi, lv_color_hex(0x58a6ff), 0);
     } else if (WiFi.status() == WL_CONNECTED) {
-      static char wifi_text[64];
-      snprintf(wifi_text, sizeof(wifi_text), "%s\n%s", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
-      lv_label_set_text(lbl_wifi, wifi_text);
-      lv_obj_set_style_text_color(lbl_wifi, lv_color_hex(0x7ee787), 0);  // Green for connected
+      static char wifi_sta[64];
+      snprintf(wifi_sta, sizeof(wifi_sta), "%s\n%s", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
+      lv_label_set_text(lbl_wifi, wifi_sta);
+      lv_obj_set_style_text_color(lbl_wifi, lv_color_hex(0x7ee787), 0);
     } else {
       lv_label_set_text(lbl_wifi, "WiFi Off");
       lv_obj_set_style_text_color(lbl_wifi, lv_color_hex(0x8b949e), 0);
@@ -1844,8 +1996,64 @@ void update_display() {
       }
       lv_label_set_text(lbl_event_list, events_text);
     }
+
+#ifdef HW_WAVESHARE7B_DISPLAY_ONLY
+    // Update Solar tab values
+    if (current_screen == 3) {
+      const SolarData& sol = mqtt_display_bridge::get_solar_data();
+      static char s_pv[24], s_load[24], s_grid[24], s_bpwr[24], s_soc[24], s_day[24], s_stat[48];
+
+      if (sol.last_update_ms == 0) {
+        lv_label_set_text(lbl_solar_status, "No data from broker");
+        lv_label_set_text(lbl_solar_pv, "--");
+        lv_label_set_text(lbl_solar_load, "--");
+        lv_label_set_text(lbl_solar_grid, "--");
+        lv_label_set_text(lbl_solar_batt_power, "--");
+        lv_label_set_text(lbl_solar_batt_soc, "--");
+        lv_label_set_text(lbl_solar_day_pv, "--");
+      } else {
+        unsigned long age_s = (millis() - sol.last_update_ms) / 1000;
+        snprintf(s_stat, sizeof(s_stat), "Updated %lus ago", age_s);
+        lv_label_set_text(lbl_solar_status, s_stat);
+
+        auto fmt_w = [](char* buf, size_t sz, float w) {
+          if (fabsf(w) >= 1000.0f)
+            snprintf(buf, sz, "%.2f kW", w / 1000.0f);
+          else
+            snprintf(buf, sz, "%.0f W", w);
+        };
+
+        fmt_w(s_pv,   sizeof(s_pv),   sol.pv_power_W);
+        fmt_w(s_load, sizeof(s_load), sol.load_power_W);
+        fmt_w(s_bpwr, sizeof(s_bpwr), sol.battery_power_W);
+
+        // Grid: show + for import, - for export
+        if (sol.grid_power_W >= 0)
+          snprintf(s_grid, sizeof(s_grid), "+%.0f W", sol.grid_power_W);
+        else
+          snprintf(s_grid, sizeof(s_grid), "%.0f W", sol.grid_power_W);
+
+        snprintf(s_soc,  sizeof(s_soc),  "%.1f %%", sol.battery_soc_pct);
+        snprintf(s_day,  sizeof(s_day),  "%.2f kWh", sol.day_pv_energy_kWh);
+
+        lv_label_set_text(lbl_solar_pv,        s_pv);
+        lv_label_set_text(lbl_solar_load,      s_load);
+        lv_label_set_text(lbl_solar_grid,      s_grid);
+        lv_label_set_text(lbl_solar_batt_power, s_bpwr);
+        lv_label_set_text(lbl_solar_batt_soc,  s_soc);
+        lv_label_set_text(lbl_solar_day_pv,    s_day);
+
+        // Color grid: green = exporting, red = importing
+        lv_obj_set_style_text_color(lbl_solar_grid,
+          lv_color_hex(sol.grid_power_W < 0 ? 0x7ee787 : 0xff7b72), 0);
+        // Color battery power: blue = charging, orange = discharging
+        lv_obj_set_style_text_color(lbl_solar_batt_power,
+          lv_color_hex(sol.battery_power_W >= 0 ? 0x58a6ff : 0xffa657), 0);
+      }
+    }
+#endif
   }
-  
+
   // Auto-dim disabled - causes display flickering via I2C interference
   // if (!screen_dimmed && (millis() - lastTouchMillis > DIM_TIMEOUT_MS)) {
   //   screen_dimmed = true;

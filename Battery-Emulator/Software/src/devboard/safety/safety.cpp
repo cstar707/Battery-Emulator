@@ -1,3 +1,4 @@
+#ifndef HW_WAVESHARE7B_DISPLAY_ONLY
 #include "safety.h"
 #include "../../battery/BATTERIES.h"
 #include "../../charger/CHARGERS.h"
@@ -528,3 +529,5 @@ std::string get_emulator_pause_status() {
   }
 }
 //battery pause status
+
+#endif  // !HW_WAVESHARE7B_DISPLAY_ONLY

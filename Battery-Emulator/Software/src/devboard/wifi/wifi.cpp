@@ -7,6 +7,9 @@
 
 bool wifi_enabled = true;
 bool wifiap_enabled = true;
+static bool ap_should_disable = false;   // Set by event handler, processed by wifi_monitor
+static bool ap_should_enable = false;    // Set by event handler, processed by wifi_monitor
+static bool ap_was_auto_disabled = false;
 bool mdns_enabled = true;  //If true, allows battery monitor te be found by .local address
 uint16_t wifi_channel = 0;
 
@@ -101,6 +104,27 @@ void init_WiFi() {
 void wifi_monitor() {
   if (ssid.empty() || password.empty()) {
     return;
+  }
+
+  // Process deferred AP disable (set by onWifiGotIP event handler)
+  // Only disable the AP softAP — do NOT call WiFi.mode() as it disrupts
+  // the ESPAsyncWebServer lwIP socket bindings and hangs HTTP.
+  if (ap_should_disable) {
+    ap_should_disable = false;
+    ap_was_auto_disabled = true;
+    wifiap_enabled = false;
+    WiFi.softAPdisconnect(true);
+    DEBUG_PRINTF("AP auto-disabled (STA connected)\n");
+  }
+
+  // Process deferred AP re-enable (set by onWifiDisconnect event handler)
+  if (ap_should_enable) {
+    ap_should_enable = false;
+    ap_was_auto_disabled = false;
+    wifiap_enabled = true;
+    WiFi.mode(WIFI_AP_STA);
+    init_WiFi_AP();
+    DEBUG_PRINTF("AP auto-enabled (STA disconnected)\n");
   }
 
   unsigned long currentMillis = millis();
@@ -208,6 +232,10 @@ void onWifiGotIP(WiFiEvent_t event, WiFiEventInfo_t info) {
   logging.print("Wi-Fi Got IP. ");
   logging.print("IP address: ");
   logging.println(WiFi.localIP().toString());
+  // Defer AP disable to wifi_monitor — never call WiFi API from inside an event handler
+  if (wifiap_enabled) {
+    ap_should_disable = true;
+  }
 }
 
 // Event handler for Wi-Fi disconnection
@@ -220,6 +248,11 @@ void onWifiDisconnect(WiFiEvent_t event, WiFiEventInfo_t info) {
   //we dont do anything here, the reconnect will be handled by the monitor
   //too many events received when the connection is lost
   //normal reconnect retry start at first 2 seconds
+
+  // Defer AP re-enable to wifi_monitor — never call WiFi API from inside an event handler
+  if (ap_was_auto_disabled && !wifiap_enabled) {
+    ap_should_enable = true;
+  }
 }
 
 // Initialise mDNS (Only available on devices with )

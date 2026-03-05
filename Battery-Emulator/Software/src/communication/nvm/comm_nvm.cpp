@@ -1,3 +1,4 @@
+#ifndef HW_WAVESHARE7B_DISPLAY_ONLY
 #include "comm_nvm.h"
 #include "../../battery/BATTERIES.h"
 #include "../../battery/Battery.h"
@@ -173,7 +174,11 @@ void init_stored_settings() {
   // WIFI AP is enabled by default unless disabled in the settings
   wifiap_enabled = settings.getBool("WIFIAPENABLED", true);
   wifi_channel = settings.getUInt("WIFICHANNEL", 0);
+#ifdef HW_WAVESHARE7B_DISPLAY_ONLY
+  ssidAP = settings.getString("APNAME", "battery-monitor").c_str();
+#else
   ssidAP = settings.getString("APNAME", "BatteryEmulator").c_str();
+#endif
   passwordAP = settings.getString("APPASSWORD", "123456789").c_str();
   mqtt_enabled = settings.getBool("MQTTENABLED", false);
   mqtt_timeout_ms = settings.getUInt("MQTTTIMEOUT", 2000);
@@ -250,3 +255,5 @@ void store_settings() {
 
   settings.end();  // Close preferences handle
 }
+
+#endif  // !HW_WAVESHARE7B_DISPLAY_ONLY

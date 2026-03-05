@@ -1,3 +1,4 @@
+#ifndef HW_WAVESHARE7B_DISPLAY_ONLY
 #include "advanced_battery_html.h"
 #include <Arduino.h>
 #include <vector>
@@ -120,3 +121,5 @@ String advanced_battery_processor(const String& var) {
   }
   return String();
 }
+
+#endif  // !HW_WAVESHARE7B_DISPLAY_ONLY

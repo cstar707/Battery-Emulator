@@ -6,17 +6,23 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
+#ifndef HW_WAVESHARE7B_DISPLAY_ONLY
 #include "src/battery/BATTERIES.h"
 #include "src/charger/CHARGERS.h"
 #include "src/communication/Transmitter.h"
 #include "src/communication/can/comm_can.h"
 #include "src/communication/contactorcontrol/comm_contactorcontrol.h"
-#include "src/communication/equipmentstopbutton/comm_equipmentstopbutton.h"
-#include "src/communication/nvm/comm_nvm.h"
 #include "src/communication/precharge_control/precharge_control.h"
 #include "src/communication/rs485/comm_rs485.h"
+#include "src/inverter/INVERTERS.h"
+#endif  // !HW_WAVESHARE7B_DISPLAY_ONLY
+#include "src/communication/equipmentstopbutton/comm_equipmentstopbutton.h"
+#include "src/communication/nvm/comm_nvm.h"
 #include "src/datalayer/datalayer.h"
 #include "src/devboard/display/display.h"
+#ifdef HW_WAVESHARE7B_DISPLAY_ONLY
+#include "src/devboard/display/mqtt_display_bridge.h"
+#endif
 #include "src/devboard/mqtt/mqtt.h"
 #include "src/devboard/sdcard/sdcard.h"
 #include "src/devboard/utils/events.h"
@@ -28,11 +34,16 @@
 #include "src/devboard/utils/value_mapping.h"
 #include "src/devboard/webserver/webserver.h"
 #include "src/devboard/wifi/wifi.h"
-#include "src/inverter/INVERTERS.h"
 
 #if !defined(HW_LILYGO) && !defined(HW_LILYGO2CAN) && !defined(HW_STARK) && !defined(HW_3LB) && !defined(HW_BECOM) && \
     !defined(HW_DEVKIT) && !defined(HW_WAVESHARE7B)
 #error You must select a target hardware!
+#endif
+
+// Display-only build: stub out Transmitter registration
+#ifdef HW_WAVESHARE7B_DISPLAY_ONLY
+#include "src/communication/Transmitter.h"
+void register_transmitter(Transmitter* t) {}
 #endif
 
 // The current software version, shown on webserver
@@ -59,11 +70,13 @@ std::string mqtt_password;  //TODO, move?
 std::string http_username;  //TODO, move?
 std::string http_password;  //TODO, move?
 
+#ifndef HW_WAVESHARE7B_DISPLAY_ONLY
 static std::list<Transmitter*> transmitters;
 void register_transmitter(Transmitter* transmitter) {
   transmitters.push_back(transmitter);
   DEBUG_PRINTF("transmitter registered, total: %d\n", transmitters.size());
 }
+#endif  // !HW_WAVESHARE7B_DISPLAY_ONLY
 
 // Initialization functions
 void init_serial() {
@@ -93,18 +106,22 @@ void init_serial() {
 
 void connectivity_loop(void*) {
   esp_task_wdt_add(NULL);  // Register this task with WDT
-  
+
   // Init display FIRST before WiFi (on same core as update_display for thread safety)
   init_display();
+  esp_task_wdt_reset();  // Prevent WDT panic during slow init
 
   // Init wifi
   init_WiFi();
+  esp_task_wdt_reset();
 
   init_webserver();
+  esp_task_wdt_reset();
 
   if (mdns_enabled) {
     init_mDNS();
   }
+  esp_task_wdt_reset();
 
   while (true) {
     START_TIME_MEASUREMENT(wifi);
@@ -208,6 +225,18 @@ void check_interconnect_available(uint8_t batteryNumber) {
   }
 }
 
+#ifdef HW_WAVESHARE7B_DISPLAY_ONLY
+void update_calculated_values(unsigned long currentMillis) {
+  (void)currentMillis;
+  union {
+    float temp;
+    uint32_t hex;
+  } temp = {.temp = temperatureRead()};
+  if (temp.hex != 0x42555555) {
+    datalayer.system.info.CPU_temperature = temp.temp;
+  }
+}
+#else
 void update_calculated_values(unsigned long currentMillis) {
   /* Update CPU temperature*/
   union {
@@ -407,6 +436,7 @@ void update_calculated_values(unsigned long currentMillis) {
     }
   }
 }
+#endif  // HW_WAVESHARE7B_DISPLAY_ONLY
 
 void check_reset_reason() {
   esp_reset_reason_t reason = esp_reset_reason();
@@ -464,6 +494,35 @@ void check_reset_reason() {
   }
 }
 
+#ifdef HW_WAVESHARE7B_DISPLAY_ONLY
+// Minimal core loop for display-only build: no CAN/battery/inverter processing.
+// Handles OTA and the MQTT-alive countdown ticker.
+void core_loop(void*) {
+  esp_task_wdt_add(NULL);
+  TickType_t xLastWakeTime = xTaskGetTickCount();
+  const TickType_t xFrequency = pdMS_TO_TICKS(1);
+
+  while (true) {
+    ElegantOTA.loop();
+
+    currentMillis = millis();
+    if (currentMillis - previousMillis10ms >= INTERVAL_10_MS) {
+      previousMillis10ms = currentMillis;
+      led_exe();
+    }
+
+    // Tick the MQTT-alive counter every second (mirrors CAN-alive decrement)
+    if (currentMillis - previousMillisUpdateVal >= INTERVAL_1_S) {
+      previousMillisUpdateVal = currentMillis;
+      update_calculated_values(currentMillis);
+      mqtt_display_bridge::tick_alive_counter();
+    }
+
+    esp_task_wdt_reset();
+    vTaskDelayUntil(&xLastWakeTime, xFrequency);
+  }
+}
+#else
 void core_loop(void*) {
   esp_task_wdt_add(NULL);  // Register this task with WDT
   TickType_t xLastWakeTime = xTaskGetTickCount();
@@ -580,6 +639,7 @@ void core_loop(void*) {
     vTaskDelayUntil(&xLastWakeTime, xFrequency);
   }
 }
+#endif  // HW_WAVESHARE7B_DISPLAY_ONLY
 
 void mqtt_loop(void*) {
   esp_task_wdt_add(NULL);  // Register this task with WDT
@@ -638,21 +698,21 @@ void setup() {
                             &logging_loop_task, esp32hal->WIFICORE());
   }
 
+#ifndef HW_WAVESHARE7B_DISPLAY_ONLY
   init_contactors();
-
   init_precharge_control();
-
   setup_charger();
   setup_inverter();
   setup_battery();
   setup_shunt();
-
   // Init CAN only after any CAN receivers have had a chance to register.
   init_CAN();
-
   init_rs485();
+#endif  // !HW_WAVESHARE7B_DISPLAY_ONLY
 
+#ifndef HW_WAVESHARE7B_DISPLAY_ONLY
   init_equipment_stop_button();
+#endif  // !HW_WAVESHARE7B_DISPLAY_ONLY
 
   // BOOT button at runtime is used as an input for various things
   pinMode(0, INPUT_PULLUP);

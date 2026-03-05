@@ -1,3 +1,4 @@
+#ifndef HW_WAVESHARE7B_DISPLAY_ONLY
 #include "comm_equipmentstopbutton.h"
 #include "../../devboard/hal/hal.h"
 #include "../../devboard/safety/safety.h"
@@ -63,3 +64,5 @@ void monitor_equipment_stop_button() {
     }
   }
 }
+
+#endif  // !HW_WAVESHARE7B_DISPLAY_ONLY
