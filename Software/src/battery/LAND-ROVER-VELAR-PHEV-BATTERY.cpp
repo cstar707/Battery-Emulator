@@ -300,16 +300,25 @@ void LandRoverVelarPhevBattery::transmit_can(unsigned long currentMillis) {
   }
 
   // BCCM keep-alive (0x18B) + PCM (0xA2) 50ms – contactor demand. Vehicle uses 50ms.
-  // Phased: delay close for VELAR_CONTACTOR_DELAY_MS after boot, then wake-up (24 09) for VELAR_WAKEUP_PHASE_MS, then drive (20 01).
+  // State machine:
+  //   IDLE     – no close request, or within boot delay        → alive-only / open demand
+  //   WAKEUP   – close requested, contactors not yet confirmed → wake-up pattern (0x24 0x09)
+  //   CLOSED   – BMS confirms contactors closed               → drive/hold pattern (0x20 0x01)
+  // Transition WAKEUP→CLOSED is driven by HVBattContactorStatus feedback, not a fixed timer.
+  // This prevents chatter caused by the BMS re-opening on a mid-cycle byte change.
   if (currentMillis - previousMillis50ms >= INTERVAL_50_MS) {
     previousMillis50ms = currentMillis;
     bool effective_close = userRequestContactorClose && (currentMillis >= VELAR_CONTACTOR_DELAY_MS);
+
+    // Record the moment we first assert close (for timeout fallback)
     if (effective_close && !velar_was_sending_close) {
       velar_close_started_ms = currentMillis;
     }
     velar_was_sending_close = effective_close;
 
-    bool in_wakeup = effective_close && (currentMillis - velar_close_started_ms < VELAR_WAKEUP_PHASE_MS);
+    // Stay in wake-up pattern until BMS confirms closed, or fall through after timeout
+    bool in_wakeup = effective_close && !HVBattContactorStatus &&
+                     (currentMillis - velar_close_started_ms < VELAR_WAKEUP_PHASE_MS);
 
     if (effective_close) {
       VELAR_18B.data.u8[0] = VELAR_18B_BYTE0_CLOSED;
@@ -318,10 +327,10 @@ void LandRoverVelarPhevBattery::transmit_can(unsigned long currentMillis) {
       VELAR_0xA2_PCM_HVBatt.data.u8[1] = 0x03;
       VELAR_0xA2_PCM_HVBatt.data.u8[5] = 0x00;  // HybridMode=0 (Standby)
       if (in_wakeup) {
-        VELAR_0xA2_PCM_HVBatt.data.u8[6] = 0x24;  // wake-up pattern (Key Cycles, wake-up log)
+        VELAR_0xA2_PCM_HVBatt.data.u8[6] = 0x24;  // wake-up pattern (Key Cycles)
         VELAR_0xA2_PCM_HVBatt.data.u8[7] = 0x09;
       } else {
-        VELAR_0xA2_PCM_HVBatt.data.u8[6] = 0x20;  // drive pattern (ShortDrive)
+        VELAR_0xA2_PCM_HVBatt.data.u8[6] = 0x20;  // drive/hold pattern (ShortDrive)
         VELAR_0xA2_PCM_HVBatt.data.u8[7] = 0x01;
       }
     } else {
