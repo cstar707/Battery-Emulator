@@ -1595,47 +1595,34 @@ static void create_ui() {
     return lbl;
   };
 
-  int s_card_w = 100, s_card_h = 55, s_gap = 8;
-  int left_col = 10;
-  int right_col = 520;
+  int s_card_w = 140, s_card_h = 55, s_gap = 12;
+  int col = 10;
   
-  // LEFT COLUMN: Solark, Solis, Envoy
-  
-  // SOLARK section (top left)
-  make_section_title(left_col, 45, "SOLARK");
+  // SOLARK section (top)
+  make_section_title(col, 45, "SOLARK");
   int solark_y = 65;
-  make_solar_card(left_col, solark_y, s_card_w, s_card_h, "PV", &lbl_solark_pv);
-  make_solar_card(left_col+s_card_w+s_gap, solark_y, s_card_w, s_card_h, "LOAD", &lbl_solark_load);
-  make_solar_card(left_col+(s_card_w+s_gap)*2, solark_y, s_card_w, s_card_h, "GRID", &lbl_solark_grid);
-  make_solar_card(left_col, solark_y+s_card_h+s_gap, s_card_w, s_card_h, "BATT", &lbl_solark_batt);
-  make_solar_card(left_col+s_card_w+s_gap, solark_y+s_card_h+s_gap, s_card_w, s_card_h, "SOC", &lbl_solark_soc);
-  make_solar_card(left_col+(s_card_w+s_gap)*2, solark_y+s_card_h+s_gap, s_card_w, s_card_h, "DAY", &lbl_solark_day);
+  make_solar_card(col, solark_y, s_card_w, s_card_h, "PV", &lbl_solark_pv);
+  make_solar_card(col+s_card_w+s_gap, solark_y, s_card_w, s_card_h, "LOAD", &lbl_solark_load);
+  make_solar_card(col+(s_card_w+s_gap)*2, solark_y, s_card_w, s_card_h, "GRID", &lbl_solark_grid);
+  make_solar_card(col+(s_card_w+s_gap)*3, solark_y, s_card_w, s_card_h, "BATT", &lbl_solark_batt);
+  make_solar_card(col+(s_card_w+s_gap)*4, solark_y, s_card_w, s_card_h, "SOC", &lbl_solark_soc);
+  make_solar_card(col+(s_card_w+s_gap)*5, solark_y, s_card_w, s_card_h, "DAY", &lbl_solark_day);
 
-  // SOLIS section (middle left)
-  make_section_title(left_col, 185, "SOLIS");
-  int solis_y = 205;
-  make_solar_card(left_col, solis_y, s_card_w, s_card_h, "PV", &lbl_solis_pv);
-  make_solar_card(left_col+s_card_w+s_gap, solis_y, s_card_w, s_card_h, "LOAD", &lbl_solis_load);
-  make_solar_card(left_col+(s_card_w+s_gap)*2, solis_y, s_card_w, s_card_h, "GRID", &lbl_solis_grid);
-  make_solar_card(left_col, solis_y+s_card_h+s_gap, s_card_w, s_card_h, "BATT", &lbl_solis_batt);
-  make_solar_card(left_col+s_card_w+s_gap, solis_y+s_card_h+s_gap, s_card_w, s_card_h, "SOC", &lbl_solis_soc);
-  make_solar_card(left_col+(s_card_w+s_gap)*2, solis_y+s_card_h+s_gap, s_card_w, s_card_h, "DAY", &lbl_solis_day);
+  // SOLIS section (middle)
+  make_section_title(col, 135, "SOLIS");
+  int solis_y = 155;
+  make_solar_card(col, solis_y, s_card_w, s_card_h, "PV", &lbl_solis_pv);
+  make_solar_card(col+s_card_w+s_gap, solis_y, s_card_w, s_card_h, "LOAD", &lbl_solis_load);
+  make_solar_card(col+(s_card_w+s_gap)*2, solis_y, s_card_w, s_card_h, "GRID", &lbl_solis_grid);
+  make_solar_card(col+(s_card_w+s_gap)*3, solis_y, s_card_w, s_card_h, "BATT", &lbl_solis_batt);
+  make_solar_card(col+(s_card_w+s_gap)*4, solis_y, s_card_w, s_card_h, "SOC", &lbl_solis_soc);
+  make_solar_card(col+(s_card_w+s_gap)*5, solis_y, s_card_w, s_card_h, "DAY", &lbl_solis_day);
 
-  // ENVOY section (bottom left)
-  make_section_title(left_col, 325, "ENVOY");
-  int envoy_y = 345;
-  make_solar_card(left_col, envoy_y, s_card_w*1.5, s_card_h, "ENVOY 1", &lbl_envoy1_power);
-  make_solar_card(left_col+s_card_w*1.5+s_gap*2, envoy_y, s_card_w*1.5, s_card_h, "ENVOY 2", &lbl_envoy2_power);
-
-  // RIGHT COLUMN: Legacy (original combined view)
-  make_section_title(right_col, 45, "LEGACY");
-  int legacy_y = 65;
-  make_solar_card(right_col, legacy_y, s_card_w, s_card_h, "PV", &lbl_solar_pv);
-  make_solar_card(right_col+s_card_w+s_gap, legacy_y, s_card_w, s_card_h, "LOAD", &lbl_solar_load);
-  make_solar_card(right_col+(s_card_w+s_gap)*2, legacy_y, s_card_w, s_card_h, "GRID", &lbl_solar_grid);
-  make_solar_card(right_col, legacy_y+s_card_h+s_gap, s_card_w, s_card_h, "BATT", &lbl_solar_batt_power);
-  make_solar_card(right_col+s_card_w+s_gap, legacy_y+s_card_h+s_gap, s_card_w, s_card_h, "SOC", &lbl_solar_batt_soc);
-  make_solar_card(right_col+(s_card_w+s_gap)*2, legacy_y+s_card_h+s_gap, s_card_w, s_card_h, "DAY", &lbl_solar_day_pv);
+  // ENVOY section (bottom)
+  make_section_title(col, 225, "ENVOY");
+  int envoy_y = 245;
+  make_solar_card(col, envoy_y, s_card_w*1.8, s_card_h, "ENVOY 1", &lbl_envoy1_power);
+  make_solar_card(col+s_card_w*1.8+s_gap*2, envoy_y, s_card_w*1.8, s_card_h, "ENVOY 2", &lbl_envoy2_power);
 #endif
 }
 
@@ -2094,7 +2081,12 @@ void update_display() {
         else
           snprintf(buf, sizeof(buf), "%.0f W", sol.solark_grid_power_W);
         lv_label_set_text(lbl_solark_grid, buf);
-        fmt_w(buf, sizeof(buf), sol.solark_battery_power_W);
+        // Battery: flip sign so charging (negative in data) shows positive
+        float batt_display = -sol.solark_battery_power_W;
+        if (batt_display >= 0)
+          snprintf(buf, sizeof(buf), "+%.0f W", batt_display);
+        else
+          snprintf(buf, sizeof(buf), "%.0f W", batt_display);
         lv_label_set_text(lbl_solark_batt, buf);
         snprintf(buf, sizeof(buf), "%.1f %%", sol.solark_battery_soc_pct);
         lv_label_set_text(lbl_solark_soc, buf);
@@ -2103,9 +2095,9 @@ void update_display() {
         // Color grid
         lv_obj_set_style_text_color(lbl_solark_grid,
           lv_color_hex(sol.solark_grid_power_W < 0 ? 0x7ee787 : 0xff7b72), 0);
-        // Color battery
+        // Color battery: blue=charging(+), orange=discharging(-)
         lv_obj_set_style_text_color(lbl_solark_batt,
-          lv_color_hex(sol.solark_battery_power_W >= 0 ? 0x58a6ff : 0xffa657), 0);
+          lv_color_hex(batt_display >= 0 ? 0x58a6ff : 0xffa657), 0);
       } else {
         lv_label_set_text(lbl_solark_pv, "--");
         lv_label_set_text(lbl_solark_load, "--");
@@ -2126,7 +2118,12 @@ void update_display() {
         else
           snprintf(buf, sizeof(buf), "%.0f W", sol.solis_grid_power_W);
         lv_label_set_text(lbl_solis_grid, buf);
-        fmt_w(buf, sizeof(buf), sol.solis_battery_power_W);
+        // Battery: flip sign so charging (negative in data) shows positive
+        float solis_batt = -sol.solis_battery_power_W;
+        if (solis_batt >= 0)
+          snprintf(buf, sizeof(buf), "+%.0f W", solis_batt);
+        else
+          snprintf(buf, sizeof(buf), "%.0f W", solis_batt);
         lv_label_set_text(lbl_solis_batt, buf);
         snprintf(buf, sizeof(buf), "%.1f %%", sol.solis_battery_soc_pct);
         lv_label_set_text(lbl_solis_soc, buf);
@@ -2135,9 +2132,9 @@ void update_display() {
         // Color grid
         lv_obj_set_style_text_color(lbl_solis_grid,
           lv_color_hex(sol.solis_grid_power_W < 0 ? 0x7ee787 : 0xff7b72), 0);
-        // Color battery
+        // Color battery: blue=charging(+), orange=discharging(-)
         lv_obj_set_style_text_color(lbl_solis_batt,
-          lv_color_hex(sol.solis_battery_power_W >= 0 ? 0x58a6ff : 0xffa657), 0);
+          lv_color_hex(solis_batt >= 0 ? 0x58a6ff : 0xffa657), 0);
       } else {
         lv_label_set_text(lbl_solis_pv, "--");
         lv_label_set_text(lbl_solis_load, "--");
