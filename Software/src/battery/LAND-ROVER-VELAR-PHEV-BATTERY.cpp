@@ -121,11 +121,11 @@ void LandRoverVelarPhevBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
       break;
     case 0x098:
       datalayer.battery.status.CAN_battery_still_alive = CAN_STILL_ALIVE;
-      //HVBattStatusGpCS
-      //HVBattStatusGpCounter
-      //HVBattOCMonitorStatus
-      HVBattContactorStatus = (rx_frame.data.u8[0] & 0x80) >> 7;  // byte 0 bit 7, same as Range Rover 0x080
-      HVBattHVILStatus = (rx_frame.data.u8[1] & 0x80) >> 7;
+      // byte 0 = HVBattStatusGpCS (CRC8 checksum) — do NOT use for status
+      // byte 1 lower nibble = HVBattStatusGpCounter (4-bit rolling counter)
+      // byte 1 bit 4 = contactor status (only changing status bit in bytes 1-7 per log)
+      HVBattContactorStatus = (rx_frame.data.u8[1] & 0x10) >> 4;  // byte1 bit4 (TODO: verify against DBC)
+      HVBattHVILStatus = (rx_frame.data.u8[1] & 0x80) >> 7;       // byte1 bit7
       //HVBattWeldCheckStatus
       //HVBattStatusCAT7NowBPO
       //HVBattStatusCAT6DlyBPO
@@ -322,7 +322,7 @@ void LandRoverVelarPhevBattery::transmit_can(unsigned long currentMillis) {
 
     if (effective_close) {
       VELAR_18B.data.u8[0] = VELAR_18B_BYTE0_CLOSED;
-      VELAR_18B.data.u8[1] = 0x01;  // precharge request
+      VELAR_18B.data.u8[1] = in_wakeup ? 0x01 : 0x00;  // precharge request only during wake-up; clear once drive/closed
       VELAR_0xA2_PCM_HVBatt.data.u8[0] = 0x21;  // vehicle closed
       VELAR_0xA2_PCM_HVBatt.data.u8[1] = 0x03;
       VELAR_0xA2_PCM_HVBatt.data.u8[5] = 0x00;  // HybridMode=0 (Standby)
