@@ -125,6 +125,21 @@ static lv_obj_t* lbl_solar_batt_power;
 static lv_obj_t* lbl_solar_batt_soc;
 static lv_obj_t* lbl_solar_day_pv;
 static lv_obj_t* lbl_solar_status;
+// Enhanced solar labels for Solark, Solis, Envoy
+static lv_obj_t* lbl_solark_pv;
+static lv_obj_t* lbl_solark_load;
+static lv_obj_t* lbl_solark_grid;
+static lv_obj_t* lbl_solark_batt;
+static lv_obj_t* lbl_solark_soc;
+static lv_obj_t* lbl_solark_day;
+static lv_obj_t* lbl_solis_pv;
+static lv_obj_t* lbl_solis_load;
+static lv_obj_t* lbl_solis_grid;
+static lv_obj_t* lbl_solis_batt;
+static lv_obj_t* lbl_solis_soc;
+static lv_obj_t* lbl_solis_day;
+static lv_obj_t* lbl_envoy1_power;
+static lv_obj_t* lbl_envoy2_power;
 #else
 static lv_obj_t* tab_btns[3];
 #endif
@@ -1535,7 +1550,7 @@ static void create_ui() {
 
   // Solar screen title
   lv_obj_t* lbl_solar_title = lv_label_create(screen_solar);
-  lv_label_set_text(lbl_solar_title, "SOLAR / INVERTER");
+  lv_label_set_text(lbl_solar_title, "SOLAR / INVERTER DATA");
   lv_obj_set_style_text_font(lbl_solar_title, &lv_font_montserrat_16, 0);
   lv_obj_set_style_text_color(lbl_solar_title, lv_color_hex(0xf0a500), 0);
   lv_obj_set_pos(lbl_solar_title, 10, 10);
@@ -1547,7 +1562,7 @@ static void create_ui() {
   lv_obj_set_style_text_color(lbl_solar_status, lv_color_hex(0x8b949e), 0);
   lv_obj_set_pos(lbl_solar_status, 400, 14);
 
-  // Helper to create a solar stat card — same style as main screen cards
+  // Helper to create a solar stat card
   auto make_solar_card = [&](int x, int y, int w, int h, const char* label_text, lv_obj_t** value_label) {
     lv_obj_t* card = lv_obj_create(screen_solar);
     lv_obj_set_pos(card, x, y);
@@ -1556,27 +1571,67 @@ static void create_ui() {
     lv_obj_set_style_border_color(card, lv_color_hex(0x30363d), 0);
     lv_obj_set_style_border_width(card, 1, 0);
     lv_obj_set_style_radius(card, 8, 0);
-    lv_obj_set_style_pad_all(card, 8, 0);
+    lv_obj_set_style_pad_all(card, 6, 0);
     lv_obj_t* lbl = lv_label_create(card);
     lv_label_set_text(lbl, label_text);
     lv_obj_set_style_text_font(lbl, &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(lbl, lv_color_hex(0x8b949e), 0);
-    lv_obj_set_pos(lbl, 8, 6);
+    lv_obj_set_pos(lbl, 6, 4);
     *value_label = lv_label_create(card);
     lv_label_set_text(*value_label, "--");
-    lv_obj_set_style_text_font(*value_label, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(*value_label, &lv_font_montserrat_16, 0);
     lv_obj_set_style_text_color(*value_label, lv_color_hex(0xe6edf3), 0);
-    lv_obj_set_pos(*value_label, 8, 28);
+    lv_obj_set_pos(*value_label, 6, 22);
     return card;
   };
 
-  int scw = 230, sch = 90, sgap = 12, row1y = 55, row2y = 160;
-  make_solar_card(10,             row1y, scw, sch, "PV POWER",     &lbl_solar_pv);
-  make_solar_card(10+scw+sgap,    row1y, scw, sch, "LOAD POWER",   &lbl_solar_load);
-  make_solar_card(10+(scw+sgap)*2,row1y, scw, sch, "GRID POWER",   &lbl_solar_grid);
-  make_solar_card(10+(scw+sgap)*3,row1y, scw, sch, "BATT POWER",   &lbl_solar_batt_power);
-  make_solar_card(10,             row2y, scw, sch, "INVERTER SOC", &lbl_solar_batt_soc);
-  make_solar_card(10+scw+sgap,    row2y, scw, sch, "TODAY PV",     &lbl_solar_day_pv);
+  // Helper for section titles
+  auto make_section_title = [&](int x, int y, const char* text) {
+    lv_obj_t* lbl = lv_label_create(screen_solar);
+    lv_label_set_text(lbl, text);
+    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_color(lbl, lv_color_hex(0xf0a500), 0);
+    lv_obj_set_pos(lbl, x, y);
+    return lbl;
+  };
+
+  int s_card_w = 150, s_card_h = 60, s_gap = 10;
+  
+  // SOLARK section (top left)
+  make_section_title(10, 45, "SOLARK");
+  int solark_y = 65;
+  make_solar_card(10, solark_y, s_card_w, s_card_h, "PV", &lbl_solark_pv);
+  make_solar_card(10+s_card_w+s_gap, solark_y, s_card_w, s_card_h, "LOAD", &lbl_solark_load);
+  make_solar_card(10+(s_card_w+s_gap)*2, solark_y, s_card_w, s_card_h, "GRID", &lbl_solark_grid);
+  make_solar_card(10+(s_card_w+s_gap)*3, solark_y, s_card_w, s_card_h, "BATT", &lbl_solark_batt);
+  make_solar_card(10+(s_card_w+s_gap)*4, solark_y, s_card_w, s_card_h, "SOC", &lbl_solark_soc);
+  make_solar_card(10+(s_card_w+s_gap)*5, solark_y, s_card_w, s_card_h, "DAY PV", &lbl_solark_day);
+
+  // SOLIS section (middle left)
+  make_section_title(10, 140, "SOLIS");
+  int solis_y = 160;
+  make_solar_card(10, solis_y, s_card_w, s_card_h, "PV", &lbl_solis_pv);
+  make_solar_card(10+s_card_w+s_gap, solis_y, s_card_w, s_card_h, "LOAD", &lbl_solis_load);
+  make_solar_card(10+(s_card_w+s_gap)*2, solis_y, s_card_w, s_card_h, "GRID", &lbl_solis_grid);
+  make_solar_card(10+(s_card_w+s_gap)*3, solis_y, s_card_w, s_card_h, "BATT", &lbl_solis_batt);
+  make_solar_card(10+(s_card_w+s_gap)*4, solis_y, s_card_w, s_card_h, "SOC", &lbl_solis_soc);
+  make_solar_card(10+(s_card_w+s_gap)*5, solis_y, s_card_w, s_card_h, "DAY PV", &lbl_solis_day);
+
+  // ENVOY section (bottom)
+  make_section_title(10, 235, "ENVOY");
+  int envoy_y = 255;
+  make_solar_card(10, envoy_y, s_card_w, s_card_h, "ENVOY 1", &lbl_envoy1_power);
+  make_solar_card(10+s_card_w+s_gap, envoy_y, s_card_w, s_card_h, "ENVOY 2", &lbl_envoy2_power);
+
+  // Legacy cards (for backward compatibility - shown on right side)
+  make_section_title(680, 45, "LEGACY");
+  int legacy_y = 65;
+  make_solar_card(680, legacy_y, s_card_w, s_card_h, "PV POWER", &lbl_solar_pv);
+  make_solar_card(680+s_card_w+s_gap, legacy_y, s_card_w, s_card_h, "LOAD POWER", &lbl_solar_load);
+  make_solar_card(680, legacy_y+s_card_h+s_gap, s_card_w, s_card_h, "GRID POWER", &lbl_solar_grid);
+  make_solar_card(680+s_card_w+s_gap, legacy_y+s_card_h+s_gap, s_card_w, s_card_h, "BATT POWER", &lbl_solar_batt_power);
+  make_solar_card(680, legacy_y+(s_card_h+s_gap)*2, s_card_w, s_card_h, "INVERTER SOC", &lbl_solar_batt_soc);
+  make_solar_card(680+s_card_w+s_gap, legacy_y+(s_card_h+s_gap)*2, s_card_w, s_card_h, "TODAY PV", &lbl_solar_day_pv);
 #endif
 }
 
@@ -2000,54 +2055,138 @@ void update_display() {
     // Update Solar tab values
     if (current_screen == 3) {
       const SolarData& sol = mqtt_display_bridge::get_solar_data();
-      static char s_pv[24], s_load[24], s_grid[24], s_bpwr[24], s_soc[24], s_day[24], s_stat[48];
+      static char buf[32];
 
-      if (sol.last_update_ms == 0) {
+      auto fmt_w = [](char* b, size_t sz, float w) {
+        if (fabsf(w) >= 1000.0f)
+          snprintf(b, sz, "%.2f kW", w / 1000.0f);
+        else
+          snprintf(b, sz, "%.0f W", w);
+      };
+
+      // Check if any solar data is available
+      bool any_data = sol.solark_last_update_ms > 0 || sol.solis_last_update_ms > 0 || 
+                      sol.envoy1_last_update_ms > 0 || sol.envoy2_last_update_ms > 0;
+
+      if (!any_data) {
         lv_label_set_text(lbl_solar_status, "No data from broker");
+      } else {
+        // Find most recent update
+        unsigned long last_update = max({sol.solark_last_update_ms, sol.solis_last_update_ms, 
+                                         sol.envoy1_last_update_ms, sol.envoy2_last_update_ms});
+        unsigned long age_s = (millis() - last_update) / 1000;
+        snprintf(buf, sizeof(buf), "Updated %lus ago", age_s);
+        lv_label_set_text(lbl_solar_status, buf);
+      }
+
+      // Update Solark section
+      if (sol.solark_last_update_ms > 0) {
+        fmt_w(buf, sizeof(buf), sol.solark_pv_power_W);
+        lv_label_set_text(lbl_solark_pv, buf);
+        fmt_w(buf, sizeof(buf), sol.solark_load_power_W);
+        lv_label_set_text(lbl_solark_load, buf);
+        if (sol.solark_grid_power_W >= 0)
+          snprintf(buf, sizeof(buf), "+%.0f W", sol.solark_grid_power_W);
+        else
+          snprintf(buf, sizeof(buf), "%.0f W", sol.solark_grid_power_W);
+        lv_label_set_text(lbl_solark_grid, buf);
+        fmt_w(buf, sizeof(buf), sol.solark_battery_power_W);
+        lv_label_set_text(lbl_solark_batt, buf);
+        snprintf(buf, sizeof(buf), "%.1f %%", sol.solark_battery_soc_pct);
+        lv_label_set_text(lbl_solark_soc, buf);
+        snprintf(buf, sizeof(buf), "%.2f kWh", sol.solark_day_pv_energy_kWh);
+        lv_label_set_text(lbl_solark_day, buf);
+        // Color grid
+        lv_obj_set_style_text_color(lbl_solark_grid,
+          lv_color_hex(sol.solark_grid_power_W < 0 ? 0x7ee787 : 0xff7b72), 0);
+        // Color battery
+        lv_obj_set_style_text_color(lbl_solark_batt,
+          lv_color_hex(sol.solark_battery_power_W >= 0 ? 0x58a6ff : 0xffa657), 0);
+      } else {
+        lv_label_set_text(lbl_solark_pv, "--");
+        lv_label_set_text(lbl_solark_load, "--");
+        lv_label_set_text(lbl_solark_grid, "--");
+        lv_label_set_text(lbl_solark_batt, "--");
+        lv_label_set_text(lbl_solark_soc, "--");
+        lv_label_set_text(lbl_solark_day, "--");
+      }
+
+      // Update Solis section
+      if (sol.solis_last_update_ms > 0) {
+        fmt_w(buf, sizeof(buf), sol.solis_pv_power_W);
+        lv_label_set_text(lbl_solis_pv, buf);
+        fmt_w(buf, sizeof(buf), sol.solis_load_power_W);
+        lv_label_set_text(lbl_solis_load, buf);
+        if (sol.solis_grid_power_W >= 0)
+          snprintf(buf, sizeof(buf), "+%.0f W", sol.solis_grid_power_W);
+        else
+          snprintf(buf, sizeof(buf), "%.0f W", sol.solis_grid_power_W);
+        lv_label_set_text(lbl_solis_grid, buf);
+        fmt_w(buf, sizeof(buf), sol.solis_battery_power_W);
+        lv_label_set_text(lbl_solis_batt, buf);
+        snprintf(buf, sizeof(buf), "%.1f %%", sol.solis_battery_soc_pct);
+        lv_label_set_text(lbl_solis_soc, buf);
+        snprintf(buf, sizeof(buf), "%.2f kWh", sol.solis_day_pv_energy_kWh);
+        lv_label_set_text(lbl_solis_day, buf);
+        // Color grid
+        lv_obj_set_style_text_color(lbl_solis_grid,
+          lv_color_hex(sol.solis_grid_power_W < 0 ? 0x7ee787 : 0xff7b72), 0);
+        // Color battery
+        lv_obj_set_style_text_color(lbl_solis_batt,
+          lv_color_hex(sol.solis_battery_power_W >= 0 ? 0x58a6ff : 0xffa657), 0);
+      } else {
+        lv_label_set_text(lbl_solis_pv, "--");
+        lv_label_set_text(lbl_solis_load, "--");
+        lv_label_set_text(lbl_solis_grid, "--");
+        lv_label_set_text(lbl_solis_batt, "--");
+        lv_label_set_text(lbl_solis_soc, "--");
+        lv_label_set_text(lbl_solis_day, "--");
+      }
+
+      // Update Envoy section
+      if (sol.envoy1_last_update_ms > 0) {
+        fmt_w(buf, sizeof(buf), sol.envoy1_active_power_W);
+        lv_label_set_text(lbl_envoy1_power, buf);
+      } else {
+        lv_label_set_text(lbl_envoy1_power, "--");
+      }
+      if (sol.envoy2_last_update_ms > 0) {
+        fmt_w(buf, sizeof(buf), sol.envoy2_active_power_W);
+        lv_label_set_text(lbl_envoy2_power, buf);
+      } else {
+        lv_label_set_text(lbl_envoy2_power, "--");
+      }
+
+      // Update Legacy section (mapped to Solark data)
+      if (sol.last_update_ms > 0) {
+        fmt_w(buf, sizeof(buf), sol.pv_power_W);
+        lv_label_set_text(lbl_solar_pv, buf);
+        fmt_w(buf, sizeof(buf), sol.load_power_W);
+        lv_label_set_text(lbl_solar_load, buf);
+        if (sol.grid_power_W >= 0)
+          snprintf(buf, sizeof(buf), "+%.0f W", sol.grid_power_W);
+        else
+          snprintf(buf, sizeof(buf), "%.0f W", sol.grid_power_W);
+        lv_label_set_text(lbl_solar_grid, buf);
+        fmt_w(buf, sizeof(buf), sol.battery_power_W);
+        lv_label_set_text(lbl_solar_batt_power, buf);
+        snprintf(buf, sizeof(buf), "%.1f %%", sol.battery_soc_pct);
+        lv_label_set_text(lbl_solar_batt_soc, buf);
+        snprintf(buf, sizeof(buf), "%.2f kWh", sol.day_pv_energy_kWh);
+        lv_label_set_text(lbl_solar_day_pv, buf);
+        // Color grid
+        lv_obj_set_style_text_color(lbl_solar_grid,
+          lv_color_hex(sol.grid_power_W < 0 ? 0x7ee787 : 0xff7b72), 0);
+        // Color battery
+        lv_obj_set_style_text_color(lbl_solar_batt_power,
+          lv_color_hex(sol.battery_power_W >= 0 ? 0x58a6ff : 0xffa657), 0);
+      } else {
         lv_label_set_text(lbl_solar_pv, "--");
         lv_label_set_text(lbl_solar_load, "--");
         lv_label_set_text(lbl_solar_grid, "--");
         lv_label_set_text(lbl_solar_batt_power, "--");
         lv_label_set_text(lbl_solar_batt_soc, "--");
         lv_label_set_text(lbl_solar_day_pv, "--");
-      } else {
-        unsigned long age_s = (millis() - sol.last_update_ms) / 1000;
-        snprintf(s_stat, sizeof(s_stat), "Updated %lus ago", age_s);
-        lv_label_set_text(lbl_solar_status, s_stat);
-
-        auto fmt_w = [](char* buf, size_t sz, float w) {
-          if (fabsf(w) >= 1000.0f)
-            snprintf(buf, sz, "%.2f kW", w / 1000.0f);
-          else
-            snprintf(buf, sz, "%.0f W", w);
-        };
-
-        fmt_w(s_pv,   sizeof(s_pv),   sol.pv_power_W);
-        fmt_w(s_load, sizeof(s_load), sol.load_power_W);
-        fmt_w(s_bpwr, sizeof(s_bpwr), sol.battery_power_W);
-
-        // Grid: show + for import, - for export
-        if (sol.grid_power_W >= 0)
-          snprintf(s_grid, sizeof(s_grid), "+%.0f W", sol.grid_power_W);
-        else
-          snprintf(s_grid, sizeof(s_grid), "%.0f W", sol.grid_power_W);
-
-        snprintf(s_soc,  sizeof(s_soc),  "%.1f %%", sol.battery_soc_pct);
-        snprintf(s_day,  sizeof(s_day),  "%.2f kWh", sol.day_pv_energy_kWh);
-
-        lv_label_set_text(lbl_solar_pv,        s_pv);
-        lv_label_set_text(lbl_solar_load,      s_load);
-        lv_label_set_text(lbl_solar_grid,      s_grid);
-        lv_label_set_text(lbl_solar_batt_power, s_bpwr);
-        lv_label_set_text(lbl_solar_batt_soc,  s_soc);
-        lv_label_set_text(lbl_solar_day_pv,    s_day);
-
-        // Color grid: green = exporting, red = importing
-        lv_obj_set_style_text_color(lbl_solar_grid,
-          lv_color_hex(sol.grid_power_W < 0 ? 0x7ee787 : 0xff7b72), 0);
-        // Color battery power: blue = charging, orange = discharging
-        lv_obj_set_style_text_color(lbl_solar_batt_power,
-          lv_color_hex(sol.battery_power_W >= 0 ? 0x58a6ff : 0xffa657), 0);
       }
     }
 #endif
