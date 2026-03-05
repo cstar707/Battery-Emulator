@@ -292,9 +292,9 @@ void init_WiFi_AP() {
 
   WiFi.softAP(ssidAP.c_str(), passwordAP.c_str());
   
-  // Apply TX power setting from display UI
+  // Apply TX power setting from display UI (reduce interference)
   if (wifi_tx_power == 0) {
-    WiFi.setTxPower(WIFI_POWER_5dBm);  // Minimum power to reduce interference
+    WiFi.setTxPower(WIFI_POWER_5dBm);  // 5dBm minimum power
     DEBUG_PRINTF("WiFi TX power set to 5dBm (minimum)\n");
   }
   

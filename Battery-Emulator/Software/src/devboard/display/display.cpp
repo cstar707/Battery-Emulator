@@ -646,30 +646,15 @@ static void show_screen_alerts(lv_event_t* e) {
 
 #ifdef HW_WAVESHARE7B_DISPLAY_ONLY
 static void show_screen_solar(lv_event_t* e) {
-  DEBUG_PRINTF("show_screen_solar: entered\n");
-  // Defensive null checks to prevent crash
-  if (!screen_solar) {
-    DEBUG_PRINTF("show_screen_solar: screen_solar is NULL!\n");
-    return;
-  }
-  DEBUG_PRINTF("show_screen_solar: screen_solar OK\n");
-  if (!tab_btns[0] || !tab_btns[1] || !tab_btns[2] || !tab_btns[3]) {
-    DEBUG_PRINTF("show_screen_solar: tab_btns not initialized!\n");
-    return;
-  }
-  DEBUG_PRINTF("show_screen_solar: tab_btns OK, hiding other screens\n");
   if (screen_main) lv_obj_add_flag(screen_main, LV_OBJ_FLAG_HIDDEN);
   if (screen_cells) lv_obj_add_flag(screen_cells, LV_OBJ_FLAG_HIDDEN);
   if (screen_alerts) lv_obj_add_flag(screen_alerts, LV_OBJ_FLAG_HIDDEN);
-  DEBUG_PRINTF("show_screen_solar: clearing screen_solar hidden flag\n");
-  lv_obj_clear_flag(screen_solar, LV_OBJ_FLAG_HIDDEN);
+  if (screen_solar) lv_obj_clear_flag(screen_solar, LV_OBJ_FLAG_HIDDEN);
   current_screen = 3;
-  DEBUG_PRINTF("show_screen_solar: setting tab colors\n");
   lv_obj_set_style_bg_color(tab_btns[0], lv_color_hex(0x21262d), 0);
   lv_obj_set_style_bg_color(tab_btns[1], lv_color_hex(0x21262d), 0);
   lv_obj_set_style_bg_color(tab_btns[2], lv_color_hex(0x21262d), 0);
   lv_obj_set_style_bg_color(tab_btns[3], lv_color_hex(0x1f6feb), 0);
-  DEBUG_PRINTF("show_screen_solar: done\n");
 }
 #endif
 
@@ -2117,87 +2102,91 @@ void update_display() {
         lv_label_set_text(lbl_solark_day, "--");
       }
 
-      // Update Solis section
-      if (sol.solis_last_update_ms > 0) {
-        fmt_w(buf, sizeof(buf), sol.solis_pv_power_W);
-        lv_label_set_text(lbl_solis_pv, buf);
-        fmt_w(buf, sizeof(buf), sol.solis_load_power_W);
-        lv_label_set_text(lbl_solis_load, buf);
-        if (sol.solis_grid_power_W >= 0)
-          snprintf(buf, sizeof(buf), "+%.0f W", sol.solis_grid_power_W);
-        else
-          snprintf(buf, sizeof(buf), "%.0f W", sol.solis_grid_power_W);
-        lv_label_set_text(lbl_solis_grid, buf);
-        // Battery: flip sign so charging (negative in data) shows positive
-        float solis_batt = -sol.solis_battery_power_W;
-        if (solis_batt >= 0)
-          snprintf(buf, sizeof(buf), "+%.0f W", solis_batt);
-        else
-          snprintf(buf, sizeof(buf), "%.0f W", solis_batt);
-        lv_label_set_text(lbl_solis_batt, buf);
-        snprintf(buf, sizeof(buf), "%.1f %%", sol.solis_battery_soc_pct);
-        lv_label_set_text(lbl_solis_soc, buf);
-        snprintf(buf, sizeof(buf), "%.2f kWh", sol.solis_day_pv_energy_kWh);
-        lv_label_set_text(lbl_solis_day, buf);
-        // Color grid
-        lv_obj_set_style_text_color(lbl_solis_grid,
-          lv_color_hex(sol.solis_grid_power_W < 0 ? 0x7ee787 : 0xff7b72), 0);
-        // Color battery: blue=charging(+), orange=discharging(-)
-        lv_obj_set_style_text_color(lbl_solis_batt,
-          lv_color_hex(solis_batt >= 0 ? 0x58a6ff : 0xffa657), 0);
-      } else {
-        lv_label_set_text(lbl_solis_pv, "--");
-        lv_label_set_text(lbl_solis_load, "--");
-        lv_label_set_text(lbl_solis_grid, "--");
-        lv_label_set_text(lbl_solis_batt, "--");
-        lv_label_set_text(lbl_solis_soc, "--");
-        lv_label_set_text(lbl_solis_day, "--");
+      // Update Solis section (only if labels were created)
+      if (lbl_solis_pv != NULL) {
+        if (sol.solis_last_update_ms > 0) {
+          fmt_w(buf, sizeof(buf), sol.solis_pv_power_W);
+          lv_label_set_text(lbl_solis_pv, buf);
+          fmt_w(buf, sizeof(buf), sol.solis_load_power_W);
+          lv_label_set_text(lbl_solis_load, buf);
+          if (sol.solis_grid_power_W >= 0)
+            snprintf(buf, sizeof(buf), "+%.0f W", sol.solis_grid_power_W);
+          else
+            snprintf(buf, sizeof(buf), "%.0f W", sol.solis_grid_power_W);
+          lv_label_set_text(lbl_solis_grid, buf);
+          float solis_batt = -sol.solis_battery_power_W;
+          if (solis_batt >= 0)
+            snprintf(buf, sizeof(buf), "+%.0f W", solis_batt);
+          else
+            snprintf(buf, sizeof(buf), "%.0f W", solis_batt);
+          lv_label_set_text(lbl_solis_batt, buf);
+          snprintf(buf, sizeof(buf), "%.1f %%", sol.solis_battery_soc_pct);
+          lv_label_set_text(lbl_solis_soc, buf);
+          snprintf(buf, sizeof(buf), "%.2f kWh", sol.solis_day_pv_energy_kWh);
+          lv_label_set_text(lbl_solis_day, buf);
+          lv_obj_set_style_text_color(lbl_solis_grid,
+            lv_color_hex(sol.solis_grid_power_W < 0 ? 0x7ee787 : 0xff7b72), 0);
+          float solis_batt2 = -sol.solis_battery_power_W;
+          lv_obj_set_style_text_color(lbl_solis_batt,
+            lv_color_hex(solis_batt2 >= 0 ? 0x58a6ff : 0xffa657), 0);
+        } else {
+          lv_label_set_text(lbl_solis_pv, "--");
+          lv_label_set_text(lbl_solis_load, "--");
+          lv_label_set_text(lbl_solis_grid, "--");
+          lv_label_set_text(lbl_solis_batt, "--");
+          lv_label_set_text(lbl_solis_soc, "--");
+          lv_label_set_text(lbl_solis_day, "--");
+        }
       }
 
-      // Update Envoy section
-      if (sol.envoy1_last_update_ms > 0) {
-        fmt_w(buf, sizeof(buf), sol.envoy1_active_power_W);
-        lv_label_set_text(lbl_envoy1_power, buf);
-      } else {
-        lv_label_set_text(lbl_envoy1_power, "--");
+      // Update Envoy section (only if labels were created)
+      if (lbl_envoy1_power != NULL) {
+        if (sol.envoy1_last_update_ms > 0) {
+          fmt_w(buf, sizeof(buf), sol.envoy1_active_power_W);
+          lv_label_set_text(lbl_envoy1_power, buf);
+        } else {
+          lv_label_set_text(lbl_envoy1_power, "--");
+        }
       }
-      if (sol.envoy2_last_update_ms > 0) {
-        fmt_w(buf, sizeof(buf), sol.envoy2_active_power_W);
-        lv_label_set_text(lbl_envoy2_power, buf);
-      } else {
-        lv_label_set_text(lbl_envoy2_power, "--");
+      if (lbl_envoy2_power != NULL) {
+        if (sol.envoy2_last_update_ms > 0) {
+          fmt_w(buf, sizeof(buf), sol.envoy2_active_power_W);
+          lv_label_set_text(lbl_envoy2_power, buf);
+        } else {
+          lv_label_set_text(lbl_envoy2_power, "--");
+        }
       }
 
-      // Update Legacy section (mapped to Solark data)
-      if (sol.last_update_ms > 0) {
-        fmt_w(buf, sizeof(buf), sol.pv_power_W);
-        lv_label_set_text(lbl_solar_pv, buf);
-        fmt_w(buf, sizeof(buf), sol.load_power_W);
-        lv_label_set_text(lbl_solar_load, buf);
-        if (sol.grid_power_W >= 0)
-          snprintf(buf, sizeof(buf), "+%.0f W", sol.grid_power_W);
-        else
-          snprintf(buf, sizeof(buf), "%.0f W", sol.grid_power_W);
-        lv_label_set_text(lbl_solar_grid, buf);
-        fmt_w(buf, sizeof(buf), sol.battery_power_W);
-        lv_label_set_text(lbl_solar_batt_power, buf);
-        snprintf(buf, sizeof(buf), "%.1f %%", sol.battery_soc_pct);
-        lv_label_set_text(lbl_solar_batt_soc, buf);
-        snprintf(buf, sizeof(buf), "%.2f kWh", sol.day_pv_energy_kWh);
-        lv_label_set_text(lbl_solar_day_pv, buf);
-        // Color grid
-        lv_obj_set_style_text_color(lbl_solar_grid,
-          lv_color_hex(sol.grid_power_W < 0 ? 0x7ee787 : 0xff7b72), 0);
-        // Color battery
-        lv_obj_set_style_text_color(lbl_solar_batt_power,
-          lv_color_hex(sol.battery_power_W >= 0 ? 0x58a6ff : 0xffa657), 0);
-      } else {
-        lv_label_set_text(lbl_solar_pv, "--");
-        lv_label_set_text(lbl_solar_load, "--");
-        lv_label_set_text(lbl_solar_grid, "--");
-        lv_label_set_text(lbl_solar_batt_power, "--");
-        lv_label_set_text(lbl_solar_batt_soc, "--");
-        lv_label_set_text(lbl_solar_day_pv, "--");
+      // Update Legacy section (only if labels were created)
+      if (lbl_solar_pv != NULL) {
+        if (sol.last_update_ms > 0) {
+          fmt_w(buf, sizeof(buf), sol.pv_power_W);
+          lv_label_set_text(lbl_solar_pv, buf);
+          fmt_w(buf, sizeof(buf), sol.load_power_W);
+          lv_label_set_text(lbl_solar_load, buf);
+          if (sol.grid_power_W >= 0)
+            snprintf(buf, sizeof(buf), "+%.0f W", sol.grid_power_W);
+          else
+            snprintf(buf, sizeof(buf), "%.0f W", sol.grid_power_W);
+          lv_label_set_text(lbl_solar_grid, buf);
+          fmt_w(buf, sizeof(buf), sol.battery_power_W);
+          lv_label_set_text(lbl_solar_batt_power, buf);
+          snprintf(buf, sizeof(buf), "%.1f %%", sol.battery_soc_pct);
+          lv_label_set_text(lbl_solar_batt_soc, buf);
+          snprintf(buf, sizeof(buf), "%.2f kWh", sol.day_pv_energy_kWh);
+          lv_label_set_text(lbl_solar_day_pv, buf);
+          lv_obj_set_style_text_color(lbl_solar_grid,
+            lv_color_hex(sol.grid_power_W < 0 ? 0x7ee787 : 0xff7b72), 0);
+          lv_obj_set_style_text_color(lbl_solar_batt_power,
+            lv_color_hex(sol.battery_power_W >= 0 ? 0x58a6ff : 0xffa657), 0);
+        } else {
+          lv_label_set_text(lbl_solar_pv, "--");
+          lv_label_set_text(lbl_solar_load, "--");
+          lv_label_set_text(lbl_solar_grid, "--");
+          lv_label_set_text(lbl_solar_batt_power, "--");
+          lv_label_set_text(lbl_solar_batt_soc, "--");
+          lv_label_set_text(lbl_solar_day_pv, "--");
+        }
       }
     }
 #endif
