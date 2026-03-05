@@ -734,12 +734,7 @@ static void create_ui() {
   lv_obj_set_style_text_color(title_sub, lv_color_hex(0xc9d1d9), 0);
   lv_obj_set_pos(title_sub, tx + 125, ty + 4);
   
-  // Status indicator (right side)
-  lbl_status = lv_label_create(lv_scr_act());
-  lv_label_set_text(lbl_status, "STANDBY");
-  lv_obj_set_style_text_font(lbl_status, &lv_font_montserrat_16, 0);
-  lv_obj_set_style_text_color(lbl_status, lv_color_hex(0xffcc00), 0);
-  lv_obj_set_pos(lbl_status, 900, 12);
+  // Status indicator moved to system status card below
   
   // CAN status moved to system card - keep variable for updates
   lbl_can_status = lv_label_create(lv_scr_act());
@@ -940,9 +935,9 @@ static void create_ui() {
   // System info card (wider, split into System | CAN)
   lv_obj_t* sys_card = create_stat_card(lv_scr_act(), "SYSTEM / CAN STATUS", 20 + info_w + gap, row5_y, info_w, 115);
   
-  // Left side: System info
+  // Left side: System info with BMS status
   lbl_sys_info = lv_label_create(sys_card);
-  lv_label_set_text(lbl_sys_info, "Uptime: --\nHeap: -- KB");
+  lv_label_set_text(lbl_sys_info, "BMS: STANDBY\nUptime: --\nHeap: -- KB");
   lv_obj_set_style_text_font(lbl_sys_info, &lv_font_montserrat_14, 0);
   lv_obj_set_style_text_color(lbl_sys_info, lv_color_hex(0xc9d1d9), 0);
   lv_obj_set_pos(lbl_sys_info, 0, 22);
@@ -1763,18 +1758,6 @@ void update_display() {
     lv_label_set_text(lbl_temp_min, temp_min_text);
     lv_label_set_text(lbl_temp_max, temp_max_text);
     
-    // Update status
-    if (datalayer.battery.status.bms_status == ACTIVE) {
-      lv_label_set_text(lbl_status, "ACTIVE");
-      lv_obj_set_style_text_color(lbl_status, lv_color_hex(0x7ee787), 0);
-    } else if (datalayer.battery.status.bms_status == FAULT) {
-      lv_label_set_text(lbl_status, "FAULT");
-      lv_obj_set_style_text_color(lbl_status, lv_color_hex(0xff7b72), 0);
-    } else {
-      lv_label_set_text(lbl_status, "STANDBY");
-      lv_obj_set_style_text_color(lbl_status, lv_color_hex(0xffa657), 0);
-    }
-    
     // Update contactor status
     if (datalayer.system.status.contactors_engaged) {
       lv_label_set_text(lbl_contactor, "CLOSED");
@@ -1834,15 +1817,31 @@ void update_display() {
              datalayer.battery.status.soh_pptt / 100);
     lv_label_set_text(lbl_batt_info, batt_info);
     
-    // Update system info (left side of split card)
-    static char sys_info[64];
+    // Update system info (left side of split card) with BMS status
+    static char sys_info[96];
     unsigned long uptime_sec = millis() / 1000;
     unsigned long hours = uptime_sec / 3600;
     unsigned long mins = (uptime_sec % 3600) / 60;
-    snprintf(sys_info, sizeof(sys_info), "Uptime: %luh %lum\nHeap: %lu KB",
-             hours, mins,
+    
+    // Get BMS status text and color
+    const char* bms_status_text;
+    lv_color_t bms_status_color;
+    if (datalayer.battery.status.bms_status == ACTIVE) {
+      bms_status_text = "ACTIVE";
+      bms_status_color = lv_color_hex(0x7ee787);  // Green
+    } else if (datalayer.battery.status.bms_status == FAULT) {
+      bms_status_text = "FAULT";
+      bms_status_color = lv_color_hex(0xff7b72);  // Red
+    } else {
+      bms_status_text = "STANDBY";
+      bms_status_color = lv_color_hex(0xffa657);  // Yellow
+    }
+    
+    snprintf(sys_info, sizeof(sys_info), "BMS: %s\nUptime: %luh %lum\nHeap: %lu KB",
+             bms_status_text, hours, mins,
              (unsigned long)(ESP.getFreeHeap() / 1024));
     lv_label_set_text(lbl_sys_info, sys_info);
+    lv_obj_set_style_text_color(lbl_sys_info, bms_status_color, 0);
     
     // Update CAN status (detailed view in system card)
     bool can_batt_ok = datalayer.battery.status.CAN_battery_still_alive > 0;
