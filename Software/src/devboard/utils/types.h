@@ -53,6 +53,7 @@ enum BMSResetState {
 #define INTERVAL_50_MS 50
 #define INTERVAL_60_MS 60
 #define INTERVAL_70_MS 70
+#define INTERVAL_90_MS 90
 #define INTERVAL_100_MS 100
 #define INTERVAL_200_MS 200
 #define INTERVAL_250_MS 250

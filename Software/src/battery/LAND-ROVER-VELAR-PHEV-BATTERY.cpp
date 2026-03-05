@@ -3,6 +3,18 @@
 #include "../communication/can/comm_can.h"
 #include "../datalayer/datalayer.h"
 #include "../devboard/utils/events.h"
+#include "../devboard/utils/common_functions.h"
+
+#if VELAR_96_SEND_CHECKSUM
+static uint8_t velar_crc8_96(CAN_frame* f) {
+  // CRC8 over bytes 1-7, result for byte 0. JLR STJLR 18.036 style (SAE J1850 poly 0x1D).
+  uint8_t crc = 0xFF;
+  for (uint8_t j = 1; j < 8; j++) {
+    crc = crc8_table_SAE_J1850_ZER0[crc ^ f->data.u8[j]];
+  }
+  return crc ^ 0xFF;
+}
+#endif
 
 /* TODO
 */
@@ -264,29 +276,69 @@ void LandRoverVelarPhevBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
 }
 
 void LandRoverVelarPhevBattery::transmit_can(unsigned long currentMillis) {
-#if VELAR_SEND_FRAME_0x008
-  // GWM_PMZ_A (0x008) 10ms – gateway presence. Disabled by default (VELAR_SEND_FRAME_0x008 0) to avoid Stuff Error / conflict with vehicle 0x8.
+  // 10ms tick: GWM (0x008) + DCDC/Charger HVIL (0x96). Vehicle timing: 0x008 10ms, 0x96 per DBC.
   if (currentMillis - previousMillis10ms >= INTERVAL_10_MS) {
     previousMillis10ms = currentMillis;
+#if VELAR_SEND_FRAME_0x008
     VELAR_0x008_GWM.data.u8[7] = velar_counter_008 & 0x0F;
     velar_counter_008++;
     transmit_can_frame(&VELAR_0x008_GWM);
-  }
 #endif
+    // 0x96 BCCM_PMZ_DCDCOperatingMode: ChargerHVILStatus=0 (OK) at bit 33. DCDCOpModeGpCounter at bits 11-14.
+    VELAR_0x96_BCCM_DCDC.data.u8[1] = (VELAR_0x96_BCCM_DCDC.data.u8[1] & 0xC3) | ((velar_counter_96 & 0x0F) << 3);
+    velar_counter_96++;
+#if VELAR_96_SEND_CHECKSUM
+    VELAR_0x96_BCCM_DCDC.data.u8[0] = velar_crc8_96(&VELAR_0x96_BCCM_DCDC);
+#endif
+    transmit_can_frame(&VELAR_0x96_BCCM_DCDC);
+  }
 
-  // Inverter HVIL status (0xA4, 20ms). When no real inverter, emulator sends this so HVIL error stays cleared.
+  // Inverter HVIL (0xA4) 20ms – per DBC. Sending at 10ms may cause BMS rejection.
   if (currentMillis - previousMillis20ms >= INTERVAL_20_MS) {
     previousMillis20ms = currentMillis;
     transmit_can_frame(&VELAR_0xA4_InverterHVIL);
   }
 
-  // BCCM keep-alive (0x18B) 50ms – contactor demand + precharge. Byte 0 = 0x07 (trying bit2 in case BMS needs it).
+  // BCCM keep-alive (0x18B) + PCM (0xA2) 50ms – contactor demand. Vehicle uses 50ms.
+  // Phased: delay close for VELAR_CONTACTOR_DELAY_MS after boot, then wake-up (24 09) for VELAR_WAKEUP_PHASE_MS, then drive (20 01).
   if (currentMillis - previousMillis50ms >= INTERVAL_50_MS) {
     previousMillis50ms = currentMillis;
+    bool effective_close = userRequestContactorClose && (currentMillis >= VELAR_CONTACTOR_DELAY_MS);
+    if (effective_close && !velar_was_sending_close) {
+      velar_close_started_ms = currentMillis;
+    }
+    velar_was_sending_close = effective_close;
+
+    bool in_wakeup = effective_close && (currentMillis - velar_close_started_ms < VELAR_WAKEUP_PHASE_MS);
+
+    if (effective_close) {
+      VELAR_18B.data.u8[0] = VELAR_18B_BYTE0_CLOSED;
+      VELAR_18B.data.u8[1] = 0x01;  // precharge request
+      VELAR_0xA2_PCM_HVBatt.data.u8[0] = 0x21;  // vehicle closed
+      VELAR_0xA2_PCM_HVBatt.data.u8[1] = 0x03;
+      VELAR_0xA2_PCM_HVBatt.data.u8[5] = 0x00;  // HybridMode=0 (Standby)
+      if (in_wakeup) {
+        VELAR_0xA2_PCM_HVBatt.data.u8[6] = 0x24;  // wake-up pattern (Key Cycles, wake-up log)
+        VELAR_0xA2_PCM_HVBatt.data.u8[7] = 0x09;
+      } else {
+        VELAR_0xA2_PCM_HVBatt.data.u8[6] = 0x20;  // drive pattern (ShortDrive)
+        VELAR_0xA2_PCM_HVBatt.data.u8[7] = 0x01;
+      }
+    } else {
+      VELAR_18B.data.u8[0] = 0x01;  // alive only, no contactor demand
+      VELAR_18B.data.u8[1] = 0x00;  // no precharge
+      VELAR_0xA2_PCM_HVBatt.data.u8[0] = 0x72;  // vehicle open
+      VELAR_0xA2_PCM_HVBatt.data.u8[1] = 0x04;
+      VELAR_0xA2_PCM_HVBatt.data.u8[5] = 0x00;
+      VELAR_0xA2_PCM_HVBatt.data.u8[6] = 0x04;  // Key Cycles open
+      VELAR_0xA2_PCM_HVBatt.data.u8[7] = 0x06;
+    }
+    velar_counter_a2++;
     transmit_can_frame(&VELAR_18B);
+    transmit_can_frame(&VELAR_0xA2_PCM_HVBatt);
   }
 
-  // GWM_PMZ_V_HYBRID (0x18d) 60ms – hybrid vehicle state. Rolling counter in byte 7 (0–15).
+  // GWM_PMZ_V_HYBRID (0x18d) 60ms – hybrid vehicle state. Vehicle timing.
   if (currentMillis - previousMillis60ms >= INTERVAL_60_MS) {
     previousMillis60ms = currentMillis;
     VELAR_0x18d_GWM.data.u8[7] = velar_counter_18d & 0x0F;
@@ -294,8 +346,8 @@ void LandRoverVelarPhevBattery::transmit_can(unsigned long currentMillis) {
     transmit_can_frame(&VELAR_0x18d_GWM);
   }
 
-  // BCCMB_PMZ_A (0x224) 90ms – second BCCM-style message. Rolling counter in byte 7 (0–15).
-  if (currentMillis - previousMillis90ms >= 90) {
+  // BCCMB_PMZ_A (0x224) 90ms – second BCCM-style message. Vehicle timing.
+  if (currentMillis - previousMillis90ms >= INTERVAL_90_MS) {
     previousMillis90ms = currentMillis;
     VELAR_0x224_BCCMB.data.u8[7] = velar_counter_224 & 0x0F;
     velar_counter_224++;
