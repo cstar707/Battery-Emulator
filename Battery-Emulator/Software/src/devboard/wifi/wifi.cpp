@@ -290,30 +290,8 @@ void init_WiFi_AP() {
   DEBUG_PRINTF("Creating Access Point: %s\n", ssidAP.c_str());
   DEBUG_PRINTF("With password: %s\n", passwordAP.c_str());
 
-  // Create AP with interference mitigation settings
-  // Lower TX power and beacon interval reduce EMI coupling into display
   WiFi.softAP(ssidAP.c_str(), passwordAP.c_str());
-  
-  // Apply TX power setting from display UI (if available)
-  // Default to 8.5dBm (index 1) if not set
-  // Power values must match display.cpp wifi_power_values array
-  static const wifi_power_t wifi_power_values[] = {
-    WIFI_POWER_5dBm, WIFI_POWER_8_5dBm, WIFI_POWER_11dBm,
-    WIFI_POWER_13dBm, WIFI_POWER_15dBm, WIFI_POWER_17dBm, WIFI_POWER_19_5dBm
-  };
-  static const char* wifi_power_names[] = {
-    "5 dBm", "8.5 dBm", "11 dBm", "13 dBm", "15 dBm", "17 dBm", "19.5 dBm"
-  };
-  if (wifi_tx_power < 7) {
-    WiFi.setTxPower(wifi_power_values[wifi_tx_power]);
-    DEBUG_PRINTF("WiFi TX power set to %s (index %d)\n", wifi_power_names[wifi_tx_power], wifi_tx_power);
-  } else {
-    WiFi.setTxPower(WIFI_POWER_8_5dBm);  // Safe default
-    DEBUG_PRINTF("WiFi TX power set to default 8.5dBm\n");
-  }
-  
   IPAddress IP = WiFi.softAPIP();
 
   DEBUG_PRINTF("Access Point created.\nIP address: %s\n", IP.toString().c_str());
-  DEBUG_PRINTF("WiFi interference mitigation: TX power controlled via display UI, beacon interval default\n");
 }
