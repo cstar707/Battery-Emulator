@@ -71,6 +71,8 @@ class LandRoverVelarPhevBattery : public CanBattery {
   bool userRequestContactorClose = false;  // User must request close via web UI; PCM/BCCM demand only sent when true
   unsigned long velar_close_started_ms = 0;   // When we first started sending close (for phased 0xA2)
   bool velar_was_sending_close = false;       // Previous effective_close state
+  unsigned long velar_last_0x98_ms = 0;       // Last time we received 0x98 from BMS (for 12V reset detection)
+  bool velar_bms_was_silent = false;          // Tracks BMS CAN absence so we restart wakeup on return
 
   // BCCM_PMZ_A (0x18B) 50ms. Byte 0: bit0=alive, bit1=contactor demand; bit2=1 (0x07) when close. Byte 1: precharge request.
   // Set dynamically in transmit_can() based on userRequestContactorClose.

@@ -127,6 +127,7 @@ void LandRoverVelarPhevBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
       // byte 1 bit 4 is always-high when battery active (part of rolling counter), do NOT use for status
       HVBattContactorStatus = (rx_frame.data.u8[6] & 0x10) >> 4;  // byte6 bit4 — 0=open, 1=closed
       HVBattHVILStatus = (rx_frame.data.u8[1] & 0x80) >> 7;       // byte1 bit7
+      velar_last_0x98_ms = (unsigned long)millis64();  // timestamp for BMS 12V reset detection
       //HVBattWeldCheckStatus
       //HVBattStatusCAT7NowBPO
       //HVBattStatusCAT6DlyBPO
@@ -317,11 +318,18 @@ void LandRoverVelarPhevBattery::transmit_can(unsigned long currentMillis) {
     }
     velar_was_sending_close = effective_close;
 
-    // Send precharge (byte1=0x01) during the initial VELAR_WAKEUP_PHASE_MS window AND whenever
-    // BMS byte6 bit4 of 0x98 shows contactors not yet closed. This automatically restarts the
-    // wakeup sequence after a Velar BMS 12V reset mid-session without needing explicit reset detection.
-    bool in_wakeup = effective_close && (!HVBattContactorStatus ||
-                                         (currentMillis - velar_close_started_ms < VELAR_WAKEUP_PHASE_MS));
+    // Detect BMS 12V reset: if we were receiving 0x98 and it went silent >2s then came back,
+    // restart the wakeup timer so the precharge sequence re-runs from the beginning.
+    bool bms_now_silent = (currentMillis - velar_last_0x98_ms) > 2000;
+    if (!bms_now_silent && velar_bms_was_silent && effective_close) {
+      velar_close_started_ms = currentMillis;  // BMS returned from 12V reset → restart wakeup
+    }
+    velar_bms_was_silent = bms_now_silent;
+
+    // Wake-up phase: hold precharge request (byte1=0x01) for VELAR_WAKEUP_PHASE_MS, then switch to
+    // drive mode (byte1=0x00). BMS closes main contactors after precharge drops — confirmed from logs.
+    // Timer resets on: new close request, OR BMS 12V reset detected above.
+    bool in_wakeup = effective_close && (currentMillis - velar_close_started_ms < VELAR_WAKEUP_PHASE_MS);
 
     if (effective_close) {
       VELAR_18B.data.u8[0] = VELAR_18B_BYTE0_CLOSED;
