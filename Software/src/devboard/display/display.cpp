@@ -1595,29 +1595,42 @@ static void create_ui() {
     return lbl;
   };
 
-  // Minimal solar display - just Solark data to save memory
-  int sol_card_w = 160, sol_card_h = 60, sol_gap = 15;
-  int sol_col1 = 20, sol_col2 = 220, sol_col3 = 420;
-  int sol_row1 = 50, sol_row2 = 130;
-  
-  make_section_title(sol_col1, 25, "SOLAR DATA");
-  
-  // Row 1
-  make_solar_card(sol_col1, sol_row1, sol_card_w, sol_card_h, "PV Power", &lbl_solark_pv);
-  make_solar_card(sol_col2, sol_row1, sol_card_w, sol_card_h, "Load", &lbl_solark_load);
-  make_solar_card(sol_col3, sol_row1, sol_card_w, sol_card_h, "Grid", &lbl_solark_grid);
-  
-  // Row 2
-  make_solar_card(sol_col1, sol_row2, sol_card_w, sol_card_h, "Battery", &lbl_solark_batt);
-  make_solar_card(sol_col2, sol_row2, sol_card_w, sol_card_h, "SOC", &lbl_solark_soc);
-  make_solar_card(sol_col3, sol_row2, sol_card_w, sol_card_h, "Today", &lbl_solark_day);
-  
-  // Status label at bottom
-  lbl_solar_status = lv_label_create(screen_solar);
-  lv_label_set_text(lbl_solar_status, "Solar: --");
-  lv_obj_set_style_text_font(lbl_solar_status, &lv_font_montserrat_12, 0);
-  lv_obj_set_style_text_color(lbl_solar_status, lv_color_hex(0x8b949e), 0);
-  lv_obj_set_pos(lbl_solar_status, 20, 220);
+  // Layout constants — two 3-col groups side by side, Envoys below
+  const int cw = 140, ch = 60, cg = 10;   // card w / h / gap
+
+  // Left group: SolArk (x: 10–450)
+  const int sk1 = 10, sk2 = sk1 + cw + cg, sk3 = sk2 + cw + cg;
+  // Right group: Solis S6 (x: 500–940)
+  const int sl1 = 500, sl2 = sl1 + cw + cg, sl3 = sl2 + cw + cg;
+  // Row y positions (shared by both groups)
+  const int r1 = 55, r2 = r1 + ch + cg;
+  // Envoy row
+  const int ey = r2 + ch + 28;
+  const int ecw = 200, ech = 58;
+
+  // ── SolArk section ─────────────────────────────────────────
+  make_section_title(sk1, 30, "SolArk");
+  make_solar_card(sk1, r1, cw, ch, "PV Power",  &lbl_solark_pv);
+  make_solar_card(sk2, r1, cw, ch, "Load",      &lbl_solark_load);
+  make_solar_card(sk3, r1, cw, ch, "Grid",      &lbl_solark_grid);
+  make_solar_card(sk1, r2, cw, ch, "Battery",   &lbl_solark_batt);
+  make_solar_card(sk2, r2, cw, ch, "SOC",       &lbl_solark_soc);
+  make_solar_card(sk3, r2, cw, ch, "Today",     &lbl_solark_day);
+
+  // ── Solis S6 section ───────────────────────────────────────
+  make_section_title(sl1, 30, "Solis S6");
+  make_solar_card(sl1, r1, cw, ch, "PV Power",  &lbl_solis_pv);
+  make_solar_card(sl2, r1, cw, ch, "Load",      &lbl_solis_load);
+  make_solar_card(sl3, r1, cw, ch, "Grid",      &lbl_solis_grid);
+  make_solar_card(sl1, r2, cw, ch, "Battery",   &lbl_solis_batt);
+  make_solar_card(sl2, r2, cw, ch, "SOC",       &lbl_solis_soc);
+  make_solar_card(sl3, r2, cw, ch, "Today",     &lbl_solis_day);
+
+  // ── Envoy 1 & 2 section ────────────────────────────────────
+  make_section_title(sk1, ey - 22, "Envoy 1");
+  make_solar_card(sk1, ey, ecw, ech, "Production", &lbl_envoy1_power);
+  make_section_title(sl1, ey - 22, "Envoy 2");
+  make_solar_card(sl1, ey, ecw, ech, "Production", &lbl_envoy2_power);
 #endif
 }
 
