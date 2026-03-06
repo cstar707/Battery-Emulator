@@ -316,9 +316,10 @@ void LandRoverVelarPhevBattery::transmit_can(unsigned long currentMillis) {
     }
     velar_was_sending_close = effective_close;
 
-    // Stay in wake-up pattern until BMS confirms closed, or fall through after timeout
-    bool in_wakeup = effective_close && !HVBattContactorStatus &&
-                     (currentMillis - velar_close_started_ms < VELAR_WAKEUP_PHASE_MS);
+    // Wake-up phase: hold precharge request active for VELAR_WAKEUP_PHASE_MS after close request.
+    // Do NOT gate on HVBattContactorStatus — bit4 of 0x98 byte1 appears always-high when the
+    // battery is active, so feedback-based gating would suppress precharge from the first cycle.
+    bool in_wakeup = effective_close && (currentMillis - velar_close_started_ms < VELAR_WAKEUP_PHASE_MS);
 
     if (effective_close) {
       VELAR_18B.data.u8[0] = VELAR_18B_BYTE0_CLOSED;
