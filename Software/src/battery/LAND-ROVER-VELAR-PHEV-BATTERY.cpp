@@ -303,41 +303,28 @@ void LandRoverVelarPhevBattery::transmit_can(unsigned long currentMillis) {
 
   // BCCM keep-alive (0x18B) + PCM (0xA2) 50ms – contactor demand. Vehicle uses 50ms.
   // State machine:
-  //   IDLE     – no close request, or within boot delay        → alive-only / open demand
-  //   WAKEUP   – close requested, contactors not yet confirmed → wake-up pattern (0x24 0x09)
-  //   CLOSED   – BMS confirms contactors closed               → drive/hold pattern (0x20 0x01)
-  // Transition WAKEUP→CLOSED is driven by HVBattContactorStatus feedback, not a fixed timer.
-  // This prevents chatter caused by the BMS re-opening on a mid-cycle byte change.
+  //   IDLE   – no close request, or within boot delay  → alive-only / open demand (0x01 / 0x72)
+  //   CLOSED – close requested                         → close demand (0x07 byte0, 0x21 byte0, 0x20 byte6)
+  // 0x18B byte1 = HVBattBusTestRequest — vehicle log confirms this is always 0x00 on close request.
+  // Sending 0x01 (bus test) blocks contactor closure; BMS handles precharge internally without it.
   if (currentMillis - previousMillis50ms >= INTERVAL_50_MS) {
     previousMillis50ms = currentMillis;
     bool effective_close = userRequestContactorClose && (currentMillis >= VELAR_CONTACTOR_DELAY_MS);
 
-    // Record the moment we first assert close (for timeout fallback)
-    if (effective_close && !velar_was_sending_close) {
-      velar_close_started_ms = currentMillis;
-    }
     velar_was_sending_close = effective_close;
 
-    // Detect BMS 12V reset: if we were receiving 0x98 and it went silent >2s then came back,
-    // restart the wakeup timer so the precharge sequence re-runs from the beginning.
+    // Detect BMS 12V reset: if 0x98 goes silent >2s then returns, note it (no timer to reset now,
+    // but kept for potential future use and BMS-came-back detection logic below).
     bool bms_now_silent = (currentMillis - velar_last_0x98_ms) > 2000;
-    if (!bms_now_silent && velar_bms_was_silent && effective_close) {
-      velar_close_started_ms = currentMillis;  // BMS returned from 12V reset → restart wakeup
-    }
     velar_bms_was_silent = bms_now_silent;
-
-    // Wake-up phase: hold precharge request (byte1=0x01) for VELAR_WAKEUP_PHASE_MS, then switch to
-    // drive mode (byte1=0x00). BMS closes main contactors after precharge drops — confirmed from logs.
-    // Timer resets on: new close request, OR BMS 12V reset detected above.
-    bool in_wakeup = effective_close && (currentMillis - velar_close_started_ms < VELAR_WAKEUP_PHASE_MS);
 
     if (effective_close) {
       VELAR_18B.data.u8[0] = VELAR_18B_BYTE0_CLOSED;
-      VELAR_18B.data.u8[1] = in_wakeup ? 0x01 : 0x00;  // precharge request only during wake-up
+      VELAR_18B.data.u8[1] = 0x00;  // HVBattBusTestRequest = 0; bus test blocks contactor closure
       VELAR_0xA2_PCM_HVBatt.data.u8[0] = 0x21;
       VELAR_0xA2_PCM_HVBatt.data.u8[1] = 0x03;
       VELAR_0xA2_PCM_HVBatt.data.u8[5] = 0x00;
-      VELAR_0xA2_PCM_HVBatt.data.u8[6] = 0x20;  // ShortDrive throughout; 0x24 (KeyCycles) holds main contactors open
+      VELAR_0xA2_PCM_HVBatt.data.u8[6] = 0x20;  // ShortDrive; 0x24 (KeyCycles) holds main contactors open
     } else {
       VELAR_18B.data.u8[0] = 0x01;  // alive only, no contactor demand
       VELAR_18B.data.u8[1] = 0x00;
