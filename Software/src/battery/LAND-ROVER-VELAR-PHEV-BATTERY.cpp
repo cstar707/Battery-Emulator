@@ -327,7 +327,7 @@ void LandRoverVelarPhevBattery::transmit_can(unsigned long currentMillis) {
       VELAR_0xA2_PCM_HVBatt.data.u8[0] = 0x21;
       VELAR_0xA2_PCM_HVBatt.data.u8[1] = 0x03;
       VELAR_0xA2_PCM_HVBatt.data.u8[5] = 0x00;
-      VELAR_0xA2_PCM_HVBatt.data.u8[6] = in_wakeup ? 0x24 : 0x20;  // wake-up vs drive/hold
+      VELAR_0xA2_PCM_HVBatt.data.u8[6] = 0x20;  // ShortDrive throughout; 0x24 (KeyCycles) holds main contactors open
     } else {
       VELAR_18B.data.u8[0] = 0x01;  // alive only, no contactor demand
       VELAR_18B.data.u8[1] = 0x00;
