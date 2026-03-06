@@ -319,14 +319,17 @@ void LandRoverVelarPhevBattery::transmit_can(unsigned long currentMillis) {
     velar_bms_was_silent = bms_now_silent;
 
     if (effective_close) {
-      VELAR_18B.data.u8[0] = VELAR_18B_BYTE0_CLOSED;
-      VELAR_18B.data.u8[1] = 0x00;  // HVBattBusTestRequest = 0; bus test blocks contactor closure
-      VELAR_0xA2_PCM_HVBatt.data.u8[0] = 0x21;
-      VELAR_0xA2_PCM_HVBatt.data.u8[1] = 0x03;
+      // "Vehicle operational / drive" pattern — confirmed from CAN replay to close contactors.
+      // 18B byte0=0x01 + A2 byte0=0x72 is what the vehicle sends in normal EV drive with contactors closed.
+      VELAR_18B.data.u8[0] = VELAR_18B_BYTE0_CLOSED;  // 0x01 = drive/operational
+      VELAR_18B.data.u8[1] = 0x00;
+      VELAR_0xA2_PCM_HVBatt.data.u8[0] = 0x72;
+      VELAR_0xA2_PCM_HVBatt.data.u8[1] = 0x04;
       VELAR_0xA2_PCM_HVBatt.data.u8[5] = 0x00;
-      VELAR_0xA2_PCM_HVBatt.data.u8[6] = 0x20;  // ShortDrive; 0x24 (KeyCycles) holds main contactors open
+      VELAR_0xA2_PCM_HVBatt.data.u8[6] = 0x04;
     } else {
-      VELAR_18B.data.u8[0] = 0x01;  // alive only, no contactor demand
+      // "System off / key off" — 18B byte0=0x00 signals BMS to open contactors
+      VELAR_18B.data.u8[0] = 0x00;
       VELAR_18B.data.u8[1] = 0x00;
       VELAR_0xA2_PCM_HVBatt.data.u8[0] = 0x72;
       VELAR_0xA2_PCM_HVBatt.data.u8[1] = 0x04;

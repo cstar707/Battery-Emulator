@@ -6,8 +6,8 @@
 // Set to 0 to stop sending ID 0x008 (avoids conflict if vehicle also sends 0x8). Set to 1 to send.
 #define VELAR_SEND_FRAME_0x008 1
 
-// Tuning: 0x03 = alive+contactor only, 0x07 = +bit2 (HV enable). Try 0x07 if contactors chatter.
-#define VELAR_18B_BYTE0_CLOSED 0x07
+// Tuning: 0x01 = vehicle operational / drive (closes contactors). Confirmed from CAN replay.
+#define VELAR_18B_BYTE0_CLOSED 0x01
 
 // 0xA2 byte 7 when closed: 0 = rolling counter|0x10, 1 = fixed 0x09 (matches vehicle BLF).
 #define VELAR_A2_BYTE7_FIXED_09 1
