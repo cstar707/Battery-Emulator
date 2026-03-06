@@ -322,27 +322,22 @@ void LandRoverVelarPhevBattery::transmit_can(unsigned long currentMillis) {
 
     if (effective_close) {
       VELAR_18B.data.u8[0] = VELAR_18B_BYTE0_CLOSED;
-      VELAR_18B.data.u8[1] = in_wakeup ? 0x01 : 0x00;  // precharge request only during wake-up; clear once drive/closed
-      VELAR_0xA2_PCM_HVBatt.data.u8[0] = 0x21;  // vehicle closed
+      VELAR_18B.data.u8[1] = in_wakeup ? 0x01 : 0x00;  // precharge request only during wake-up
+      VELAR_0xA2_PCM_HVBatt.data.u8[0] = 0x21;
       VELAR_0xA2_PCM_HVBatt.data.u8[1] = 0x03;
-      VELAR_0xA2_PCM_HVBatt.data.u8[5] = 0x00;  // HybridMode=0 (Standby)
-      if (in_wakeup) {
-        VELAR_0xA2_PCM_HVBatt.data.u8[6] = 0x24;  // wake-up pattern (Key Cycles)
-        VELAR_0xA2_PCM_HVBatt.data.u8[7] = 0x09;
-      } else {
-        VELAR_0xA2_PCM_HVBatt.data.u8[6] = 0x20;  // drive/hold pattern (ShortDrive)
-        VELAR_0xA2_PCM_HVBatt.data.u8[7] = 0x01;
-      }
+      VELAR_0xA2_PCM_HVBatt.data.u8[5] = 0x00;
+      VELAR_0xA2_PCM_HVBatt.data.u8[6] = in_wakeup ? 0x24 : 0x20;  // wake-up vs drive/hold
     } else {
       VELAR_18B.data.u8[0] = 0x01;  // alive only, no contactor demand
-      VELAR_18B.data.u8[1] = 0x00;  // no precharge
-      VELAR_0xA2_PCM_HVBatt.data.u8[0] = 0x72;  // vehicle open
+      VELAR_18B.data.u8[1] = 0x00;
+      VELAR_0xA2_PCM_HVBatt.data.u8[0] = 0x72;
       VELAR_0xA2_PCM_HVBatt.data.u8[1] = 0x04;
       VELAR_0xA2_PCM_HVBatt.data.u8[5] = 0x00;
-      VELAR_0xA2_PCM_HVBatt.data.u8[6] = 0x04;  // Key Cycles open
-      VELAR_0xA2_PCM_HVBatt.data.u8[7] = 0x06;
+      VELAR_0xA2_PCM_HVBatt.data.u8[6] = 0x04;
     }
+    // Apply rolling counter to byte7 every cycle so the BMS never sees a stale/duplicate message
     velar_counter_a2++;
+    VELAR_0xA2_PCM_HVBatt.data.u8[7] = velar_counter_a2 & 0x0F;
     transmit_can_frame(&VELAR_18B);
     transmit_can_frame(&VELAR_0xA2_PCM_HVBatt);
   }
