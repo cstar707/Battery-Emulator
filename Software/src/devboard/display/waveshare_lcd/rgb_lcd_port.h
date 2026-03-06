@@ -43,7 +43,7 @@
 #define EXAMPLE_RGB_BIT_PER_PIXEL       (16)   ///< RGB interface color depth
 #define EXAMPLE_RGB_DATA_WIDTH          (16)   ///< Data width for RGB interface
 #define EXAMPLE_LCD_RGB_BUFFER_NUMS     (2)    ///< Number of frame buffers for double buffering
-#define EXAMPLE_RGB_BOUNCE_BUFFER_SIZE  (EXAMPLE_LCD_H_RES * 10) ///< Size of bounce buffer for RGB data
+#define EXAMPLE_RGB_BOUNCE_BUFFER_SIZE  (EXAMPLE_LCD_H_RES * 20) ///< Size of bounce buffer for RGB data (larger = fewer DMA transfers)
 
 /**
  * @brief GPIO Pins for RGB LCD Signals
@@ -125,5 +125,11 @@ void wavesahre_rgb_lcd_display(uint8_t *Image);
  * @param buf2 Pointer to hold the address of the second frame buffer.
  */
 void waveshare_get_frame_buffer(void **buf1, void **buf2);
+
+/**
+ * @brief Fill all panel framebuffers with black (0).
+ * Call after panel init to avoid white/garbage at edges before LVGL draws.
+ */
+void waveshare_rgb_lcd_clear_framebuffers_black();
 
 #endif // _RGB_LCD_H_
