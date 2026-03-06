@@ -122,9 +122,10 @@ void LandRoverVelarPhevBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
     case 0x098:
       datalayer.battery.status.CAN_battery_still_alive = CAN_STILL_ALIVE;
       // byte 0 = HVBattStatusGpCS (CRC8 checksum) — do NOT use for status
-      // byte 1 lower nibble = HVBattStatusGpCounter (4-bit rolling counter)
-      // byte 1 bit 4 = contactor status (only changing status bit in bytes 1-7 per log)
-      HVBattContactorStatus = (rx_frame.data.u8[1] & 0x10) >> 4;  // byte1 bit4 (TODO: verify against DBC)
+      // byte 1 lower nibble = HVBattStatusGpCounter (4-bit rolling counter) — NOT contactor status
+      // byte 6 bit 4 = contactor status: confirmed from logs (bytes 6-7 = 00 00 open → 28 28 closed)
+      // byte 1 bit 4 is always-high when battery active (part of rolling counter), do NOT use for status
+      HVBattContactorStatus = (rx_frame.data.u8[6] & 0x10) >> 4;  // byte6 bit4 — 0=open, 1=closed
       HVBattHVILStatus = (rx_frame.data.u8[1] & 0x80) >> 7;       // byte1 bit7
       //HVBattWeldCheckStatus
       //HVBattStatusCAT7NowBPO
@@ -316,10 +317,11 @@ void LandRoverVelarPhevBattery::transmit_can(unsigned long currentMillis) {
     }
     velar_was_sending_close = effective_close;
 
-    // Wake-up phase: hold precharge request active for VELAR_WAKEUP_PHASE_MS after close request.
-    // Do NOT gate on HVBattContactorStatus — bit4 of 0x98 byte1 appears always-high when the
-    // battery is active, so feedback-based gating would suppress precharge from the first cycle.
-    bool in_wakeup = effective_close && (currentMillis - velar_close_started_ms < VELAR_WAKEUP_PHASE_MS);
+    // Send precharge (byte1=0x01) during the initial VELAR_WAKEUP_PHASE_MS window AND whenever
+    // BMS byte6 bit4 of 0x98 shows contactors not yet closed. This automatically restarts the
+    // wakeup sequence after a Velar BMS 12V reset mid-session without needing explicit reset detection.
+    bool in_wakeup = effective_close && (!HVBattContactorStatus ||
+                                         (currentMillis - velar_close_started_ms < VELAR_WAKEUP_PHASE_MS));
 
     if (effective_close) {
       VELAR_18B.data.u8[0] = VELAR_18B_BYTE0_CLOSED;
