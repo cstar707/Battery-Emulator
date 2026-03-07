@@ -1,0 +1,22 @@
+// ===== CELLS TAB LCD CODE - SAVED FOR FUTURE USE =====
+// This code was removed from display.cpp to reduce RAM usage (192 LVGL objects).
+// The web UI cells page is still active and works without this.
+// To restore: paste this back into display.cpp at the appropriate locations.
+
+// === DECLARATIONS (near top of file) ===
+// #define MAX_CELLS 108
+// #define CELL_COLS 9
+// static lv_obj_t* cell_labels[MAX_CELLS];
+// static lv_obj_t* cell_bars[MAX_CELLS];
+// static lv_obj_t* screen_cells;
+
+// === INIT CODE (in setup_display function) ===
+// See git history for the full cell grid + bar chart initialization
+// (lines 1415-1493 before removal)
+
+// === UPDATE CODE (in display update loop) ===
+// See git history for cell voltage grid + bar chart update
+// (lines 2078-2129 before removal)
+
+// === TAB BUTTON ===
+// lv_obj_add_event_cb(tab_btns[1], show_screen_cells, LV_EVENT_CLICKED, NULL);

@@ -476,6 +476,9 @@ static void set_event(EVENTS_ENUM_TYPE event, uint8_t data, bool latched) {
 }
 
 static void update_bms_status(void) {
+#ifdef HW_WAVESHARE7B_DISPLAY_ONLY
+  return;
+#endif
   switch (events.level) {
     case EVENT_LEVEL_INFO:
     case EVENT_LEVEL_WARNING:

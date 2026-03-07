@@ -743,6 +743,8 @@ bool init_mqtt(void) {
   mqtt_cfg.session.last_will.msg = "offline";
   mqtt_cfg.session.last_will.msg_len = strlen(mqtt_cfg.session.last_will.msg);
   mqtt_cfg.network.timeout_ms = mqtt_timeout_ms;
+  mqtt_cfg.task.stack_size = 8192;
+  mqtt_cfg.buffer.size = 2048;
   client = esp_mqtt_client_init(&mqtt_cfg);
 
   if (client == nullptr) {

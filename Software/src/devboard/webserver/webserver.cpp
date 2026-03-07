@@ -63,26 +63,35 @@ body{background:#0d1117;color:#c9d1d9;font-family:-apple-system,BlinkMacSystemFo
 .sys-line{font-size:13px;margin:3px 0}
 .sys-lbl{color:#8b949e}
 .grn{color:#7ee787}.red{color:#ff7b72}.yel{color:#ffa657}.blu{color:#58a6ff}.pur{color:#a371f7}.cyn{color:#79c0ff}
-.cell-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:2px;font-size:11px}
+.cell-grid{display:grid;grid-template-columns:repeat(9,1fr);gap:2px;font-size:11px}
 .cell{background:#161b22;border:1px solid #21262d;border-radius:4px;padding:4px;text-align:center}
+.cell.outlier{border-color:#ff4444;color:#ff7b72}
+.cell .cn{color:#8b949e;font-size:9px}.cell .cv{font-size:12px;font-weight:700}
+.bar-chart{display:flex;align-items:flex-end;gap:1px;height:100px;margin-top:8px;background:#0d1117;padding:4px;border-radius:4px}
+.bar-chart .bar{flex:1;min-width:2px;background:#3b82f6;border-radius:1px 1px 0 0}
+.bar-chart .bar.out{background:#ff4444}
 .alert-item{padding:4px 0;border-bottom:1px solid #21262d}
 .solar-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.solar-split{display:flex;gap:16px}
+.solar-half{flex:1}
+.solar-section-title{color:#58a6ff;font-size:16px;font-weight:700;margin-bottom:6px}
+.solar-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 .solar-card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:14px}
 .solar-title{color:#58a6ff;font-size:14px;font-weight:600;margin-bottom:10px;border-bottom:1px solid #30363d;padding-bottom:6px}
 .solar-row{display:flex;justify-content:space-between;padding:3px 0;font-size:13px}
 .solar-lbl{color:#8b949e}
 .ota-btn{display:inline-block;background:#238636;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;font-size:14px;margin-top:8px}
-@media(max-width:700px){.grid{grid-template-columns:repeat(2,1fr)}.cell-grid{grid-template-columns:repeat(6,1fr)}.solar-grid{grid-template-columns:1fr}}
+@media(max-width:700px){.grid{grid-template-columns:repeat(2,1fr)}.cell-grid{grid-template-columns:repeat(4,1fr)}.solar-split{flex-direction:column}.solar-cards{grid-template-columns:repeat(2,1fr)}.bar-chart{height:60px}}
 </style></head><body>
 <div class="hdr"><span class="logo">TESLA</span><span class="sub">Battery Monitor</span></div>
 <div class="tabs">
-<div class="tab active" onclick="showTab(0)">Main</div>
+<div class="tab active" onclick="showTab(3)">Solar</div>
+<div class="tab" onclick="showTab(0)">Tesla</div>
 <div class="tab" onclick="showTab(1)">Cells</div>
 <div class="tab" onclick="showTab(2)">Alerts</div>
-<div class="tab" onclick="showTab(3)">Solar</div>
 </div>
 
-<div id="p0" class="page active">
+<div id="p0" class="page">
 <div class="soc-wrap">
 <div class="soc-lbl">STATE OF CHARGE</div>
 <div class="soc-top"><span id="soc" class="soc-pct grn">--%</span>
@@ -124,6 +133,7 @@ body{background:#0d1117;color:#c9d1d9;font-family:-apple-system,BlinkMacSystemFo
 <span id="mmc">Cell V: Min -- / Max --</span>
 </div>
 <div id="cells" class="cell-grid"></div>
+<div id="cell_bars" class="bar-chart"></div>
 </div>
 
 <div id="p2" class="page">
@@ -131,12 +141,49 @@ body{background:#0d1117;color:#c9d1d9;font-family:-apple-system,BlinkMacSystemFo
 <div><div class="card-title" style="color:#00d4ff;font-size:16px;margin-bottom:10px">EVENT LOG</div><div id="events" style="font-size:13px;color:#8b949e">(no events)</div></div>
 </div>
 
-<div id="p3" class="page">
-<div class="solar-grid">
-<div class="solar-card"><div class="solar-title">SolArk Inverter</div><div id="solark">No data</div></div>
-<div class="solar-card"><div class="solar-title">Solis S6 Inverter</div><div id="solis">No data</div></div>
-<div class="solar-card"><div class="solar-title">Envoy 1</div><div id="env1">No data</div></div>
-<div class="solar-card"><div class="solar-title">Envoy 2</div><div id="env2">No data</div></div>
+<div id="p3" class="page active">
+<div style="color:#f0a500;font-size:18px;font-weight:700;margin-bottom:20px;text-align:center">STREETSRIDGE MICRO GRID</div>
+<div class="soc-wrap" style="padding:10px 14px;margin-bottom:12px">
+<div style="display:flex;align-items:center;gap:10px">
+<span id="ms_soc_pct" style="font-size:24px;font-weight:700;min-width:55px" class="grn">-- %</span>
+<div class="bar-bg" style="flex:1;height:36px"><div id="ms_soc_bar" class="bar-fg" style="width:0%;height:100%;background:linear-gradient(90deg,#22cc44,#00ff88)"></div></div>
+</div></div>
+<div class="solar-split">
+<div class="solar-half">
+<div class="solar-section-title"><img src="data:image/png;base64,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" style="height:26px"> <span style="color:#8b949e;font-size:12px;margin-left:6px">12K-2P</span></div>
+<div class="soc-wrap" style="padding:10px 14px;margin-bottom:8px">
+<div style="display:flex;align-items:center;gap:10px">
+<span id="sk_soc_pct" style="font-size:24px;font-weight:700;min-width:55px" class="grn">-- %</span>
+<div class="bar-bg" style="flex:1;height:44px"><div id="sk_soc_bar" class="bar-fg" style="width:0%;height:100%;background:linear-gradient(90deg,#22cc44,#00ff88)"></div></div>
+</div></div>
+<div class="solar-cards"><div class="solar-card"><div class="solar-title">PV Power</div><div id="sk_pv">--</div></div>
+<div class="solar-card"><div class="solar-title">Load</div><div id="sk_load">--</div></div>
+<div class="solar-card"><div class="solar-title">Grid</div><div id="sk_grid">--</div></div>
+<div class="solar-card"><div class="solar-title">Battery</div><div id="sk_batt">--</div></div>
+<div class="solar-card"><div class="solar-title">SOC</div><div id="sk_soc">--</div></div>
+<div class="solar-card"><div class="solar-title">Today</div><div id="sk_day">--</div></div></div>
+</div>
+<div class="solar-half">
+<div class="solar-section-title"><img src="data:image/png;base64,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" style="height:26px"> <span style="color:#8b949e;font-size:12px;margin-left:6px">S6-EH1P(11.4)K-H-US</span></div>
+<div class="soc-wrap" style="padding:10px 14px;margin-bottom:8px">
+<div style="display:flex;align-items:center;gap:10px">
+<span id="sl_soc_pct" style="font-size:24px;font-weight:700;min-width:55px" class="grn">-- %</span>
+<div class="bar-bg" style="flex:1;height:44px"><div id="sl_soc_bar" class="bar-fg" style="width:0%;height:100%;background:linear-gradient(90deg,#22cc44,#00ff88)"></div></div>
+</div></div>
+<div class="solar-cards"><div class="solar-card"><div class="solar-title">PV Power</div><div id="sl_pv">--</div></div>
+<div class="solar-card"><div class="solar-title">Load</div><div id="sl_load">--</div></div>
+<div class="solar-card"><div class="solar-title">Grid</div><div id="sl_grid">--</div></div>
+<div class="solar-card"><div class="solar-title">Battery</div><div id="sl_batt">--</div></div>
+<div class="solar-card"><div class="solar-title">SOC</div><div id="sl_soc">--</div></div>
+<div class="solar-card"><div class="solar-title">Today</div><div id="sl_day">--</div></div></div>
+</div>
+</div>
+<div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
+<div class="solar-card" style="flex:1;min-width:120px"><div class="solar-title">Total Live</div><div id="env_total_live">--</div></div>
+<div class="solar-card" style="flex:1;min-width:120px"><div class="solar-title">Total Today</div><div id="env_total_today">--</div></div>
+<div class="solar-card" style="flex:1;min-width:120px"><div class="solar-title">House Today</div><div id="env_house">--</div></div>
+<div class="solar-card" style="flex:1;min-width:120px"><div class="solar-title">Shed Today</div><div id="env_shed">--</div></div>
+<div class="solar-card" style="flex:1;min-width:120px"><div class="solar-title">Trailer Today</div><div id="env_trailer">--</div></div>
 </div>
 </div>
 
@@ -171,25 +218,52 @@ document.getElementById('binfo').innerHTML='Total: '+(d.total_kwh).toFixed(1)+' 
 var sc=d.bms==1?'#7ee787':d.bms==2?'#ff7b72':'#ffa657';var st=d.bms==1?'ACTIVE':d.bms==2?'FAULT':'STANDBY';
 document.getElementById('sys').innerHTML='<span style="color:'+sc+'">BMS: '+st+'</span><br>'+'<span style="color:'+(d.mqtt_ok?'#7ee787':'#ff7b72')+'">MQTT: '+(d.mqtt_ok?'OK':'OFF')+'</span><br>Uptime: '+d.uptime+'<br>Heap: '+d.heap+' KB';
 document.getElementById('can').innerHTML='<span class="sys-lbl">CAN Bus</span><br>'+'<span style="color:'+(d.can_batt?'#7ee787':'#8b949e')+'">BATT: '+(d.can_batt?'OK':'--')+'</span><br>'+'<span style="color:'+(d.can_inv?'#7ee787':'#8b949e')+'">INV: '+(d.can_inv?'OK':'--')+'</span>';
-if(d.cells){var cg=document.getElementById('cells');if(cg.children.length!=d.cells.length){cg.innerHTML='';
-for(var i=0;i<d.cells.length;i++){var ce=document.createElement('div');ce.className='cell';ce.id='c'+i;cg.appendChild(ce)}}
-for(var i=0;i<d.cells.length;i++){var cv=d.cells[i]/1000;var el=document.getElementById('c'+i);
-el.textContent=cv>0?cv.toFixed(3):'--';el.style.color=cv<3?'#ff7b72':cv<3.2?'#ffa657':'#7ee787'}
+if(d.cells){var cg=document.getElementById('cells');var bg=document.getElementById('cell_bars');
+var nc=d.cells.length;if(cg.children.length!=nc){cg.innerHTML='';bg.innerHTML='';
+for(var i=0;i<nc;i++){var ce=document.createElement('div');ce.className='cell';ce.id='c'+i;ce.innerHTML='<div class="cn">Cell '+(i+1)+'</div><div class="cv">--</div>';cg.appendChild(ce);
+var br=document.createElement('div');br.className='bar';br.id='b'+i;bg.appendChild(br)}}
+var vmin=99999,vmax=0;for(var i=0;i<nc;i++){var mv=d.cells[i];if(mv>0&&mv<vmin)vmin=mv;if(mv>vmax)vmax=mv}
+var vfloor=vmin>100?vmin-100:0;var vspan=vmax-vfloor;if(vspan<1)vspan=1;var vrange=vmax-vmin;
+for(var i=0;i<nc;i++){var mv=d.cells[i];var el=document.getElementById('c'+i);var br=document.getElementById('b'+i);
+var out=vrange>50&&(mv==vmin||mv==vmax);el.querySelector('.cv').textContent=mv>0?mv+' mV':'--';
+el.className=out?'cell outlier':'cell';el.querySelector('.cv').style.color=out?'#ff7b72':'#c9d1d9';
+var pct=mv>0?((mv-vfloor)/vspan*100):0;if(pct<2)pct=2;br.style.height=pct+'%';br.className=out?'bar out':'bar'}
 document.getElementById('ctitle').textContent='CELL VOLTAGES ('+d.num_cells+' cells)'}
-document.getElementById('mmv').textContent='Pack V: Min '+d.v_min_ever.toFixed(1)+' / Max '+d.v_max_ever.toFixed(1);
-document.getElementById('mmt').textContent='Temp: Min '+d.t_min_ever.toFixed(1)+' / Max '+d.t_max_ever.toFixed(1)+' C';
-document.getElementById('mmc').textContent='Cell V: Min '+d.c_min_ever.toFixed(3)+' / Max '+d.c_max_ever.toFixed(3);
+document.getElementById('mmv').textContent='Pack: '+d.v_min_ever.toFixed(1)+' / '+d.v_max_ever.toFixed(1)+' V';
+document.getElementById('mmt').textContent='Temp: '+d.t_min_ever.toFixed(0)+' / '+d.t_max_ever.toFixed(0)+' C';
+document.getElementById('mmc').textContent='Cell: '+d.c_min_ever.toFixed(3)+' / '+d.c_max_ever.toFixed(3)+' V';
 if(d.alert_count>0){var ah='<div class="card-title" style="color:#ff7b72;font-size:16px;margin-bottom:10px">ACTIVE ALERTS ('+d.alert_count+')</div>';
 d.alerts.forEach(function(a){ah+='<div class="alert-item red">! '+a+'</div>'});document.getElementById('alerts').innerHTML=ah}
 else{document.getElementById('alerts').innerHTML='<div class="card-title" style="color:#00d4ff;font-size:16px;margin-bottom:10px">ACTIVE ALERTS</div><div class="grn">No active alerts</div>'}
 if(d.events)document.getElementById('events').innerHTML=d.events.join('<br>')||'(no events)';
 var sk=d.solar;if(sk){
+function usb(id,soc){var b=document.getElementById(id+'_soc_bar'),p=document.getElementById(id+'_soc_pct');if(!b||!p)return;
+var v=Math.max(0,Math.min(100,Math.round(soc)));b.style.width=v+'%';p.textContent=v+' %';
+var bg=v<20?'linear-gradient(90deg,#ff4444,#ff8844)':v<50?'linear-gradient(90deg,#ff6622,#ffcc00)':'linear-gradient(90deg,#22cc44,#00ff88)';
+b.style.background=bg;p.className=v<20?'red':v<50?'yel':'grn'}
+function sval(id,v){var e=document.getElementById(id);if(e)e.innerHTML=v}
 if(sk.solark_ts>0){var sg=sk.solark_grid>=0?'+'+sk.solark_grid.toFixed(0):sk.solark_grid.toFixed(0);var sb=-sk.solark_batt;
-document.getElementById('solark').innerHTML=srow('PV Power',fmt(sk.solark_pv),'#ffa657')+srow('Load',fmt(sk.solark_load))+srow('Grid',sg+' W',sk.solark_grid<0?'#7ee787':'#ff7b72')+srow('Battery',(sb>=0?'+':'')+sb.toFixed(0)+' W',sb>=0?'#58a6ff':'#ffa657')+srow('SOC',sk.solark_soc.toFixed(1)+' %')+srow('Today',sk.solark_day.toFixed(2)+' kWh','#ffa657')}
+usb('sk',sk.solark_soc);
+sval('sk_pv','<span style="color:#ffa657;font-size:18px;font-weight:600">'+fmt(sk.solark_pv)+'</span>');
+sval('sk_load','<span style="font-size:18px;font-weight:600">'+fmt(sk.solark_load)+'</span>');
+sval('sk_grid','<span style="color:'+(sk.solark_grid<0?'#7ee787':'#ff7b72')+';font-size:18px;font-weight:600">'+sg+' W</span>');
+sval('sk_batt','<span style="color:'+(sb>=0?'#58a6ff':'#ffa657')+';font-size:18px;font-weight:600">'+(sb>=0?'+':'')+sb.toFixed(0)+' W</span>');
+sval('sk_soc','<span style="font-size:18px;font-weight:600">'+sk.solark_soc.toFixed(1)+' %</span>');
+sval('sk_day','<span style="color:#ffa657;font-size:18px;font-weight:600">'+sk.solark_day.toFixed(2)+' kWh</span>')}
 if(sk.solis_ts>0){var sg2=sk.solis_grid>=0?'+'+sk.solis_grid.toFixed(0):sk.solis_grid.toFixed(0);var sb2=-sk.solis_batt;
-document.getElementById('solis').innerHTML=srow('PV Power',fmt(sk.solis_pv),'#ffa657')+srow('Load',fmt(sk.solis_load))+srow('Grid',sg2+' W',sk.solis_grid<0?'#7ee787':'#ff7b72')+srow('Battery',(sb2>=0?'+':'')+sb2.toFixed(0)+' W',sb2>=0?'#58a6ff':'#ffa657')+srow('SOC',sk.solis_soc.toFixed(1)+' %')+srow('Today',sk.solis_day.toFixed(2)+' kWh','#ffa657')}
-if(sk.env1_ts>0)document.getElementById('env1').innerHTML=srow('Active Power',fmt(sk.env1_power),'#7ee787');
-if(sk.env2_ts>0)document.getElementById('env2').innerHTML=srow('Active Power',fmt(sk.env2_power),'#7ee787');
+usb('sl',sk.solis_soc);
+sval('sl_pv','<span style="color:#ffa657;font-size:18px;font-weight:600">'+fmt(sk.solis_pv)+'</span>');
+sval('sl_load','<span style="font-size:18px;font-weight:600">'+fmt(sk.solis_load)+'</span>');
+sval('sl_grid','<span style="color:'+(sk.solis_grid<0?'#7ee787':'#ff7b72')+';font-size:18px;font-weight:600">'+sg2+' W</span>');
+sval('sl_batt','<span style="color:'+(sb2>=0?'#58a6ff':'#ffa657')+';font-size:18px;font-weight:600">'+(sb2>=0?'+':'')+sb2.toFixed(0)+' W</span>');
+sval('sl_soc','<span style="font-size:18px;font-weight:600">'+sk.solis_soc.toFixed(1)+' %</span>');
+sval('sl_day','<span style="color:#ffa657;font-size:18px;font-weight:600">'+sk.solis_day.toFixed(2)+' kWh</span>')}
+usb('ms',((sk.solark_ts>0?sk.solark_soc:0)+(sk.solis_ts>0?sk.solis_soc:0))/((sk.solark_ts>0?1:0)+(sk.solis_ts>0?1:0)||1));
+if(sk.env_ts>0){sval('env_total_live','<span style="color:#7ee787;font-size:18px;font-weight:600">'+fmt(sk.env_total_live)+'</span>');
+sval('env_total_today','<span style="color:#ffa657;font-size:18px;font-weight:600">'+sk.env_total_today.toFixed(1)+' kWh</span>');
+sval('env_house','<span style="color:#58a6ff;font-size:18px;font-weight:600">'+sk.env_house.toFixed(1)+' kWh</span>');
+sval('env_shed','<span style="color:#58a6ff;font-size:18px;font-weight:600">'+sk.env_shed.toFixed(1)+' kWh</span>');
+sval('env_trailer','<span style="color:#58a6ff;font-size:18px;font-weight:600">'+sk.env_trailer.toFixed(1)+' kWh</span>')}
 }}).catch(function(){})}
 setInterval(upd,2000);upd();
 </script></body></html>)rawliteral";
@@ -290,12 +364,12 @@ void init_webserver() {
 
     uint8_t alert_count = 0;
     String alerts = ",\"alerts\":[";
-    uint16_t cell_delta = cell_max - cell_min;
-    if (soc < 10) { if (alert_count) alerts += ","; alerts += "\"LOW SOC (<10%)\""; alert_count++; }
+    uint16_t cell_delta = (cell_min > 0) ? (cell_max - cell_min) : 0;
+    if (soc < 10 && soc > 0) { if (alert_count) alerts += ","; alerts += "\"LOW SOC (<10%)\""; alert_count++; }
     if (t_max_f > 45.0f) { if (alert_count) alerts += ","; alerts += "\"HIGH TEMP (>45C)\""; alert_count++; }
-    if (t_min_f < 0.0f) { if (alert_count) alerts += ","; alerts += "\"LOW TEMP (<0C)\""; alert_count++; }
-    if (cell_delta > 100) { if (alert_count) alerts += ","; alerts += "\"CELL IMBALANCE (>100mV)\""; alert_count++; }
-    if (c_min_f < 2.8f && c_min_f > 0) { if (alert_count) alerts += ","; alerts += "\"CELL UNDERVOLTAGE\""; alert_count++; }
+    if (t_min_f < 0.0f && t_min_f > -40.0f) { if (alert_count) alerts += ","; alerts += "\"LOW TEMP (<0C)\""; alert_count++; }
+    if (cell_delta > 100 && cell_min > 0) { if (alert_count) alerts += ","; alerts += "\"CELL IMBALANCE (>100mV)\""; alert_count++; }
+    if (c_min_f < 2.8f && c_min_f > 0.1f) { if (alert_count) alerts += ","; alerts += "\"CELL UNDERVOLTAGE\""; alert_count++; }
     if (c_max_f > 4.25f) { if (alert_count) alerts += ","; alerts += "\"CELL OVERVOLTAGE\""; alert_count++; }
     if (!can_batt) { if (alert_count) alerts += ","; alerts += "\"NO BATTERY CAN\""; alert_count++; }
     alerts += "],\"alert_count\":" + String(alert_count);
@@ -326,10 +400,12 @@ void init_webserver() {
     json += ",\"solis_soc\":" + String(sol.solis_battery_soc_pct, 1);
     json += ",\"solis_day\":" + String(sol.solis_day_pv_energy_kWh, 2);
     json += ",\"solis_ts\":" + String(sol.solis_last_update_ms);
-    json += ",\"env1_power\":" + String(sol.envoy1_active_power_W, 0);
-    json += ",\"env1_ts\":" + String(sol.envoy1_last_update_ms);
-    json += ",\"env2_power\":" + String(sol.envoy2_active_power_W, 0);
-    json += ",\"env2_ts\":" + String(sol.envoy2_last_update_ms);
+    json += ",\"env_total_live\":" + String(sol.envoy_total_live_W, 0);
+    json += ",\"env_total_today\":" + String(sol.envoy_total_today_kWh, 1);
+    json += ",\"env_house\":" + String(sol.envoy_house_today_kWh, 1);
+    json += ",\"env_shed\":" + String(sol.envoy_shed_today_kWh, 1);
+    json += ",\"env_trailer\":" + String(sol.envoy_trailer_today_kWh, 1);
+    json += ",\"env_ts\":" + String(sol.envoy_last_update_ms);
     json += "}}";
 
     request->send(200, "application/json", json);

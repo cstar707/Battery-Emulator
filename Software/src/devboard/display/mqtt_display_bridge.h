@@ -23,11 +23,13 @@ struct SolarData {
   float solis_day_pv_energy_kWh = 0.0f;
   unsigned long solis_last_update_ms = 0;
   
-  // Envoy device data
-  float envoy1_active_power_W = 0.0f;
-  unsigned long envoy1_last_update_ms = 0;
-  float envoy2_active_power_W = 0.0f;
-  unsigned long envoy2_last_update_ms = 0;
+  // Envoy summary data (pre-computed by server)
+  float envoy_total_live_W = 0.0f;
+  float envoy_total_today_kWh = 0.0f;
+  float envoy_house_today_kWh = 0.0f;
+  float envoy_shed_today_kWh = 0.0f;
+  float envoy_trailer_today_kWh = 0.0f;
+  unsigned long envoy_last_update_ms = 0;
   
   // Legacy compatibility fields (mapped to Solark data)
   float pv_power_W = 0.0f;
