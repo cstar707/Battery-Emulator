@@ -53,6 +53,7 @@ char mqtt_msg[MQTT_MSG_BUFFER_SIZE];
 MyTimer publish_global_timer(0);  // Will be configured with mqtt_publish_interval_ms on first use
 MyTimer check_global_timer(800);  // check timmer - low-priority MQTT checks, where responsiveness is not critical.
 bool client_started = false;
+static bool wifi_was_connected = false;
 static String lwt_topic = "";
 
 static String topic_name = "";
@@ -756,11 +757,20 @@ bool init_mqtt(void) {
 }
 
 void mqtt_client_loop(void) {
-  // Only attempt to publish/reconnect MQTT if Wi-Fi is connected and checkTimmer is elapsed
-  if (check_global_timer.elapsed() && WiFi.status() == WL_CONNECTED) {
+  bool wifi_connected = (WiFi.status() == WL_CONNECTED);
+
+  if (client_started && wifi_was_connected && !wifi_connected) {
+    esp_mqtt_client_stop(client);
+    client_started = false;
+    wifi_was_connected = false;
+    logging.println("MQTT stopped (WiFi lost)");
+    return;
+  }
+  wifi_was_connected = wifi_connected;
+
+  if (check_global_timer.elapsed() && wifi_connected) {
 
     if (client_started == false) {
-      // Configure timer with the loaded interval on first use
       publish_global_timer = MyTimer(mqtt_publish_interval_ms);
       esp_mqtt_client_start(client);
       client_started = true;
@@ -768,7 +778,6 @@ void mqtt_client_loop(void) {
       return;
     }
 
-    // Skip publishing if OTA update is in progress to avoid interference
 #ifndef HW_WAVESHARE7B_DISPLAY_ONLY
     if (publish_global_timer.elapsed() && !ota_active) {
       publish_values();

@@ -34,7 +34,7 @@
  */
 #define EXAMPLE_LCD_H_RES               (1024)  ///< Horizontal resolution in pixels
 #define EXAMPLE_LCD_V_RES               (600)  ///< Vertical resolution in pixels
-#define EXAMPLE_LCD_PIXEL_CLOCK_HZ      (30 * 1000 * 1000) ///< Pixel clock frequency in Hz
+#define EXAMPLE_LCD_PIXEL_CLOCK_HZ      (21 * 1000 * 1000) ///< Pixel clock frequency in Hz (lowered from 30MHz to reduce DMA/WiFi contention)
 
 /**
  * @brief Color and Pixel Configuration
@@ -43,7 +43,7 @@
 #define EXAMPLE_RGB_BIT_PER_PIXEL       (16)   ///< RGB interface color depth
 #define EXAMPLE_RGB_DATA_WIDTH          (16)   ///< Data width for RGB interface
 #define EXAMPLE_LCD_RGB_BUFFER_NUMS     (2)    ///< Number of frame buffers for double buffering
-#define EXAMPLE_RGB_BOUNCE_BUFFER_SIZE  (EXAMPLE_LCD_H_RES * 20) ///< Size of bounce buffer for RGB data (larger = fewer DMA transfers)
+#define EXAMPLE_RGB_BOUNCE_BUFFER_SIZE  (EXAMPLE_LCD_H_RES * 10) ///< Size of bounce buffer for RGB data (reduced from 20 to ease DMA/WiFi contention)
 
 /**
  * @brief GPIO Pins for RGB LCD Signals

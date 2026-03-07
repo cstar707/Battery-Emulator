@@ -72,6 +72,7 @@ void init_WiFi() {
 
   // Set WiFi to auto reconnect
   WiFi.setAutoReconnect(true);
+  WiFi.setSleep(false);
 
   if (static_IP_enabled) {
     // Set static IP
