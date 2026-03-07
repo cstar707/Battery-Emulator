@@ -1,3 +1,9 @@
+#ifdef HW_WAVESHARE7B_DISPLAY_ONLY
+#include "webserver.h"
+bool ota_active = false;
+void init_webserver() {}
+void ota_monitor() {}
+#else
 #include "webserver.h"
 #include <Preferences.h>
 #include <ctime>
@@ -1576,3 +1582,4 @@ String formatPowerValue(T value, String unit, int precision) {
   result += unit;
   return result;
 }
+#endif  // !HW_WAVESHARE7B_DISPLAY_ONLY

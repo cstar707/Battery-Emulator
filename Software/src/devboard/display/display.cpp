@@ -767,16 +767,20 @@ static void create_ui() {
   lv_obj_set_style_text_color(lbl_soc, lv_color_hex(0x00ff00), 0);
   lv_obj_set_pos(lbl_soc, 10, 25);
   
-  // SOC bar (wide)
+  // SOC bar (wide) with gradient
   bar_soc = lv_bar_create(soc_card);
   lv_obj_set_size(bar_soc, 820, 30);
   lv_obj_set_pos(bar_soc, 130, 30);
   lv_bar_set_range(bar_soc, 0, 100);
   lv_bar_set_value(bar_soc, 0, LV_ANIM_OFF);
-  lv_obj_set_style_bg_color(bar_soc, lv_color_hex(0x333333), LV_PART_MAIN);
-  lv_obj_set_style_bg_color(bar_soc, lv_color_hex(0x00ff00), LV_PART_INDICATOR);
-  lv_obj_set_style_radius(bar_soc, 4, LV_PART_MAIN);
-  lv_obj_set_style_radius(bar_soc, 4, LV_PART_INDICATOR);
+  lv_obj_set_style_bg_color(bar_soc, lv_color_hex(0x1a1a2e), LV_PART_MAIN);
+  lv_obj_set_style_bg_opa(bar_soc, LV_OPA_COVER, LV_PART_MAIN);
+  lv_obj_set_style_bg_color(bar_soc, lv_color_hex(0xff4444), LV_PART_INDICATOR);
+  lv_obj_set_style_bg_grad_color(bar_soc, lv_color_hex(0x00ff88), LV_PART_INDICATOR);
+  lv_obj_set_style_bg_grad_dir(bar_soc, LV_GRAD_DIR_HOR, LV_PART_INDICATOR);
+  lv_obj_set_style_bg_opa(bar_soc, LV_OPA_COVER, LV_PART_INDICATOR);
+  lv_obj_set_style_radius(bar_soc, 6, LV_PART_MAIN);
+  lv_obj_set_style_radius(bar_soc, 6, LV_PART_INDICATOR);
   
   // ===== MIDDLE ROW: Power Stats (4 cards) =====
   int card_w = 235;
@@ -1748,10 +1752,19 @@ void update_display() {
     lv_label_set_text(lbl_soc, soc_text);
     lv_bar_set_value(bar_soc, soc, LV_ANIM_OFF);
     
-    // Color SOC bar and text based on level
-    uint32_t soc_color = (soc < 20) ? 0xff7b72 : (soc < 50) ? 0xffa657 : 0x7ee787;
-    lv_obj_set_style_bg_color(bar_soc, lv_color_hex(soc_color), LV_PART_INDICATOR);
-    lv_obj_set_style_text_color(lbl_soc, lv_color_hex(soc_color), 0);
+    // Color SOC text based on level, keep gradient on bar
+    uint32_t soc_text_color = (soc < 20) ? 0xff7b72 : (soc < 50) ? 0xffa657 : 0x7ee787;
+    lv_obj_set_style_text_color(lbl_soc, lv_color_hex(soc_text_color), 0);
+    if (soc < 20) {
+      lv_obj_set_style_bg_color(bar_soc, lv_color_hex(0xff4444), LV_PART_INDICATOR);
+      lv_obj_set_style_bg_grad_color(bar_soc, lv_color_hex(0xff8844), LV_PART_INDICATOR);
+    } else if (soc < 50) {
+      lv_obj_set_style_bg_color(bar_soc, lv_color_hex(0xff6622), LV_PART_INDICATOR);
+      lv_obj_set_style_bg_grad_color(bar_soc, lv_color_hex(0xffcc00), LV_PART_INDICATOR);
+    } else {
+      lv_obj_set_style_bg_color(bar_soc, lv_color_hex(0x22cc44), LV_PART_INDICATOR);
+      lv_obj_set_style_bg_grad_color(bar_soc, lv_color_hex(0x00ff88), LV_PART_INDICATOR);
+    }
     
     // Update voltage
     float voltage = datalayer.battery.status.voltage_dV / 10.0f;

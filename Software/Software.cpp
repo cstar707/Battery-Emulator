@@ -94,17 +94,36 @@ void init_serial() {
 void connectivity_loop(void*) {
   esp_task_wdt_add(NULL);  // Register this task with WDT
   
-  // Init display FIRST before WiFi (on same core as update_display for thread safety)
-  init_display();
-
-  // Init wifi
+#ifdef HW_WAVESHARE7B_DISPLAY_ONLY
+  Serial.println("[CONN] WiFi init starting...");
   init_WiFi();
+  unsigned long wifiStart = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - wifiStart < 15000) {
+    delay(100);
+    esp_task_wdt_reset();
+  }
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.print("[CONN] WiFi connected! IP: ");
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println("[CONN] WiFi not connected after 15s, continuing...");
+  }
+  Serial.println("[CONN] Display init starting...");
+  init_display();
+#else
+  init_display();
+  init_WiFi();
+#endif
 
+  Serial.println("[CONN] Webserver init starting...");
   init_webserver();
+  Serial.println("[CONN] Webserver started on port 80");
 
+#ifndef HW_WAVESHARE7B_DISPLAY_ONLY
   if (mdns_enabled) {
     init_mDNS();
   }
+#endif
 
   while (true) {
     START_TIME_MEASUREMENT(wifi);
@@ -627,8 +646,13 @@ void setup() {
   init_stored_settings();
 
   if (wifi_enabled) {
+#ifdef HW_WAVESHARE7B_DISPLAY_ONLY
+    xTaskCreatePinnedToCore((TaskFunction_t)&connectivity_loop, "connectivity_loop", 8192, NULL, TASK_CONNECTIVITY_PRIO,
+                            &connectivity_loop_task, esp32hal->WIFICORE());
+#else
     xTaskCreatePinnedToCore((TaskFunction_t)&connectivity_loop, "connectivity_loop", 4096, NULL, TASK_CONNECTIVITY_PRIO,
                             &connectivity_loop_task, esp32hal->WIFICORE());
+#endif
   }
 
   led_init();

@@ -15,6 +15,9 @@
 #include "../webserver/webserver.h"
 #include "mqtt.h"
 #include "mqtt_client.h"
+#ifdef HW_WAVESHARE7B_DISPLAY_ONLY
+#include "../display/mqtt_display_bridge.h"
+#endif
 
 bool mqtt_enabled = false;
 bool ha_autodiscovery_enabled = false;
@@ -563,7 +566,11 @@ static bool publish_buttons_discovery(void) {
 }
 
 static void subscribe() {
+#ifdef HW_WAVESHARE7B_DISPLAY_ONLY
+  mqtt_display_bridge::subscribe_topics((void*)client);
+#else
   esp_mqtt_client_subscribe(client, (topic_name + "/command/+").c_str(), 1);
+#endif
 }
 
 void mqtt_message_received(char* topic_raw, int topic_len, char* data, int data_len) {
@@ -639,7 +646,9 @@ static void mqtt_event_handler(void* handler_args, esp_event_base_t base, int32_
       clear_event(EVENT_MQTT_DISCONNECT);
       set_event(EVENT_MQTT_CONNECT, 0);
 
+#ifndef HW_WAVESHARE7B_DISPLAY_ONLY
       publish_buttons_discovery();
+#endif
       subscribe();
       logging.println("MQTT connected");
       break;
@@ -648,7 +657,11 @@ static void mqtt_event_handler(void* handler_args, esp_event_base_t base, int32_
       logging.println("MQTT disconnected!");
       break;
     case MQTT_EVENT_DATA:
+#ifdef HW_WAVESHARE7B_DISPLAY_ONLY
+      mqtt_display_bridge::on_mqtt_message(event->topic, event->topic_len, event->data, event->data_len);
+#else
       mqtt_message_received(event->topic, event->topic_len, event->data, event->data_len);
+#endif
       break;
     case MQTT_EVENT_ERROR:
       logging.println("MQTT_ERROR");
@@ -756,9 +769,11 @@ void mqtt_client_loop(void) {
     }
 
     // Skip publishing if OTA update is in progress to avoid interference
+#ifndef HW_WAVESHARE7B_DISPLAY_ONLY
     if (publish_global_timer.elapsed() && !ota_active) {
       publish_values();
     }
+#endif
   }
 }
 
