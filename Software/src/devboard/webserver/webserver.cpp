@@ -4,6 +4,7 @@
 #include "../../datalayer/datalayer.h"
 #include "../utils/events.h"
 #include "../utils/timer.h"
+#include "../display/mqtt_display_bridge.h"
 
 bool ota_active = false;
 static AsyncWebServer server(80);
@@ -33,29 +34,305 @@ String processor(const String& var) { return String(); }
 String get_firmware_info_processor(const String& var) { return String(); }
 void init_ElegantOTA() {}
 
+static const char INDEX_HTML[] PROGMEM = R"rawliteral(<!DOCTYPE html>
+<html><head><title>Tesla Battery Monitor</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{background:#0d1117;color:#c9d1d9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:12px}
+.hdr{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+.logo{color:#e82127;font-weight:900;font-size:28px;letter-spacing:6px}
+.sub{color:#8b949e;font-size:16px}
+.tabs{display:flex;gap:6px;margin-bottom:12px}
+.tab{background:#161b22;border:1px solid #30363d;color:#8b949e;padding:8px 18px;border-radius:8px 8px 0 0;cursor:pointer;font-size:14px}
+.tab.active{background:#0d1117;border-bottom-color:#0d1117;color:#58a6ff}
+.page{display:none}.page.active{display:block}
+.soc-wrap{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:14px 18px;margin-bottom:12px}
+.soc-top{display:flex;align-items:center;gap:16px;margin-bottom:8px}
+.soc-pct{font-size:32px;font-weight:700;min-width:90px}
+.soc-lbl{color:#8b949e;font-size:12px;text-transform:uppercase;letter-spacing:1px}
+.bar-bg{background:#1a1a2e;border-radius:6px;height:28px;flex:1;overflow:hidden}
+.bar-fg{height:100%;border-radius:6px;transition:width .5s}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px}
+.card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:12px}
+.card-title{color:#8b949e;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px}
+.card-val{font-size:22px;font-weight:600}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px}
+.sys-split{display:grid;grid-template-columns:1fr 1px 1fr;gap:12px}
+.sys-div{background:#30363d}
+.sys-line{font-size:13px;margin:3px 0}
+.sys-lbl{color:#8b949e}
+.grn{color:#7ee787}.red{color:#ff7b72}.yel{color:#ffa657}.blu{color:#58a6ff}.pur{color:#a371f7}.cyn{color:#79c0ff}
+.cell-grid{display:grid;grid-template-columns:repeat(12,1fr);gap:2px;font-size:11px}
+.cell{background:#161b22;border:1px solid #21262d;border-radius:4px;padding:4px;text-align:center}
+.alert-item{padding:4px 0;border-bottom:1px solid #21262d}
+.solar-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.solar-card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:14px}
+.solar-title{color:#58a6ff;font-size:14px;font-weight:600;margin-bottom:10px;border-bottom:1px solid #30363d;padding-bottom:6px}
+.solar-row{display:flex;justify-content:space-between;padding:3px 0;font-size:13px}
+.solar-lbl{color:#8b949e}
+.ota-btn{display:inline-block;background:#238636;color:#fff;padding:10px 20px;border-radius:6px;text-decoration:none;font-size:14px;margin-top:8px}
+@media(max-width:700px){.grid{grid-template-columns:repeat(2,1fr)}.cell-grid{grid-template-columns:repeat(6,1fr)}.solar-grid{grid-template-columns:1fr}}
+</style></head><body>
+<div class="hdr"><span class="logo">TESLA</span><span class="sub">Battery Monitor</span></div>
+<div class="tabs">
+<div class="tab active" onclick="showTab(0)">Main</div>
+<div class="tab" onclick="showTab(1)">Cells</div>
+<div class="tab" onclick="showTab(2)">Alerts</div>
+<div class="tab" onclick="showTab(3)">Solar</div>
+</div>
+
+<div id="p0" class="page active">
+<div class="soc-wrap">
+<div class="soc-lbl">STATE OF CHARGE</div>
+<div class="soc-top"><span id="soc" class="soc-pct grn">--%</span>
+<div class="bar-bg"><div id="socbar" class="bar-fg" style="width:0%;background:linear-gradient(90deg,#22cc44,#00ff88)"></div></div>
+</div></div>
+<div class="grid">
+<div class="card"><div class="card-title">Voltage</div><div id="v" class="card-val blu">---.- V</div></div>
+<div class="card"><div class="card-title">Current</div><div id="a" class="card-val" style="color:#f0883e">---.- A</div></div>
+<div class="card"><div class="card-title">Power</div><div id="w" class="card-val pur">---- W</div></div>
+<div class="card"><div class="card-title">Capacity</div><div id="kwh" class="card-val grn">-- kWh</div></div>
+</div>
+<div class="grid">
+<div class="card"><div class="card-title">Cell Min</div><div id="cmin" class="card-val red">-.--- V</div></div>
+<div class="card"><div class="card-title">Cell Max</div><div id="cmax" class="card-val grn">-.--- V</div></div>
+<div class="card"><div class="card-title">Cell Delta</div><div id="cdelta" class="card-val yel">--- mV</div></div>
+<div class="card"><div class="card-title">Temperature</div><div id="temp" class="card-val cyn">--.- C</div></div>
+</div>
+<div class="grid">
+<div class="card"><div class="card-title">Temp Min</div><div id="tmin" class="card-val cyn">--.- C</div></div>
+<div class="card"><div class="card-title">Temp Max</div><div id="tmax" class="card-val red">--.- C</div></div>
+<div class="card"><div class="card-title">Contactor</div><div id="cont" class="card-val red">OPEN</div></div>
+<div class="card"><div class="card-title">Network</div><div id="net" class="card-val" style="font-size:14px">--</div></div>
+</div>
+<div class="grid2">
+<div class="card"><div class="card-title">Battery Info</div>
+<div id="binfo" style="font-size:14px">Total: -- kWh<br>Remaining: -- kWh<br>SOH: -- %</div></div>
+<div class="card"><div class="card-title">System / CAN Status</div>
+<div class="sys-split"><div id="sys" style="font-size:13px">BMS: --<br>MQTT: --<br>Uptime: --<br>Heap: --</div>
+<div class="sys-div"></div><div id="can" style="font-size:13px">CAN Bus<br>BATT: --<br>INV: --</div></div></div>
+</div>
+<a class="ota-btn" href="/update">Firmware Update (OTA)</a>
+</div>
+
+<div id="p1" class="page">
+<div style="margin-bottom:10px"><span id="ctitle" class="card-title" style="color:#00d4ff;font-size:16px">CELL VOLTAGES (0 cells)</span></div>
+<div style="display:flex;gap:20px;margin-bottom:10px;font-size:13px;color:#8b949e">
+<span id="mmv">Pack V: Min -- / Max --</span>
+<span id="mmt">Temp: Min -- / Max --</span>
+<span id="mmc">Cell V: Min -- / Max --</span>
+</div>
+<div id="cells" class="cell-grid"></div>
+</div>
+
+<div id="p2" class="page">
+<div id="alerts" style="margin-bottom:16px"><div class="card-title" style="color:#00d4ff;font-size:16px;margin-bottom:10px">ACTIVE ALERTS</div><div class="grn">No active alerts</div></div>
+<div><div class="card-title" style="color:#00d4ff;font-size:16px;margin-bottom:10px">EVENT LOG</div><div id="events" style="font-size:13px;color:#8b949e">(no events)</div></div>
+</div>
+
+<div id="p3" class="page">
+<div class="solar-grid">
+<div class="solar-card"><div class="solar-title">SolArk Inverter</div><div id="solark">No data</div></div>
+<div class="solar-card"><div class="solar-title">Solis S6 Inverter</div><div id="solis">No data</div></div>
+<div class="solar-card"><div class="solar-title">Envoy 1</div><div id="env1">No data</div></div>
+<div class="solar-card"><div class="solar-title">Envoy 2</div><div id="env2">No data</div></div>
+</div>
+</div>
+
+<script>
+var tabs=document.querySelectorAll('.tab');
+function showTab(n){tabs.forEach(function(t,i){t.classList.toggle('active',i==n)});
+for(var i=0;i<4;i++)document.getElementById('p'+i).classList.toggle('active',i==n)}
+
+function fmt(w){return Math.abs(w)>=1000?(w/1000).toFixed(2)+' kW':w.toFixed(0)+' W'}
+function srow(l,v,c){return '<div class="solar-row"><span class="solar-lbl">'+l+'</span><span style="color:'+(c||'#c9d1d9')+'">'+v+'</span></div>'}
+
+function upd(){fetch('/api/data').then(function(r){return r.json()}).then(function(d){
+var s=d.soc;document.getElementById('soc').textContent=s+'%';
+document.getElementById('soc').className='soc-pct '+(s<20?'red':s<50?'yel':'grn');
+var bg=s<20?'linear-gradient(90deg,#ff4444,#ff8844)':s<50?'linear-gradient(90deg,#ff6622,#ffcc00)':'linear-gradient(90deg,#22cc44,#00ff88)';
+var b=document.getElementById('socbar');b.style.width=s+'%';b.style.background=bg;
+document.getElementById('v').textContent=d.voltage.toFixed(1)+' V';
+document.getElementById('a').textContent=d.current.toFixed(1)+' A';
+var p=d.voltage*d.current;document.getElementById('w').textContent=Math.abs(p)>=1000?(p/1000).toFixed(1)+' kW':p.toFixed(0)+' W';
+document.getElementById('kwh').textContent=(d.remaining_kwh).toFixed(1)+' kWh';
+document.getElementById('cmin').textContent=(d.cell_min/1000).toFixed(3)+' V';
+document.getElementById('cmax').textContent=(d.cell_max/1000).toFixed(3)+' V';
+var dl=d.cell_max-d.cell_min;document.getElementById('cdelta').textContent=dl+' mV';
+document.getElementById('cdelta').className='card-val '+(dl<50?'grn':dl<100?'yel':'red');
+document.getElementById('temp').textContent=((d.temp_min+d.temp_max)/20).toFixed(1)+' C';
+document.getElementById('tmin').textContent=(d.temp_min/10).toFixed(1)+' C';
+document.getElementById('tmax').textContent=(d.temp_max/10).toFixed(1)+' C';
+document.getElementById('cont').textContent=d.contactors?'CLOSED':'OPEN';
+document.getElementById('cont').className='card-val '+(d.contactors?'grn':'red');
+document.getElementById('net').innerHTML=d.wifi;document.getElementById('net').style.color=d.wifi_ok?'#7ee787':'#8b949e';
+document.getElementById('binfo').innerHTML='Total: '+(d.total_kwh).toFixed(1)+' kWh<br>Remaining: '+(d.remaining_kwh).toFixed(1)+' kWh<br>SOH: '+d.soh+' %';
+var sc=d.bms==1?'#7ee787':d.bms==2?'#ff7b72':'#ffa657';var st=d.bms==1?'ACTIVE':d.bms==2?'FAULT':'STANDBY';
+document.getElementById('sys').innerHTML='<span style="color:'+sc+'">BMS: '+st+'</span><br>'+'<span style="color:'+(d.mqtt_ok?'#7ee787':'#ff7b72')+'">MQTT: '+(d.mqtt_ok?'OK':'OFF')+'</span><br>Uptime: '+d.uptime+'<br>Heap: '+d.heap+' KB';
+document.getElementById('can').innerHTML='<span class="sys-lbl">CAN Bus</span><br>'+'<span style="color:'+(d.can_batt?'#7ee787':'#8b949e')+'">BATT: '+(d.can_batt?'OK':'--')+'</span><br>'+'<span style="color:'+(d.can_inv?'#7ee787':'#8b949e')+'">INV: '+(d.can_inv?'OK':'--')+'</span>';
+if(d.cells){var cg=document.getElementById('cells');if(cg.children.length!=d.cells.length){cg.innerHTML='';
+for(var i=0;i<d.cells.length;i++){var ce=document.createElement('div');ce.className='cell';ce.id='c'+i;cg.appendChild(ce)}}
+for(var i=0;i<d.cells.length;i++){var cv=d.cells[i]/1000;var el=document.getElementById('c'+i);
+el.textContent=cv>0?cv.toFixed(3):'--';el.style.color=cv<3?'#ff7b72':cv<3.2?'#ffa657':'#7ee787'}
+document.getElementById('ctitle').textContent='CELL VOLTAGES ('+d.num_cells+' cells)'}
+document.getElementById('mmv').textContent='Pack V: Min '+d.v_min_ever.toFixed(1)+' / Max '+d.v_max_ever.toFixed(1);
+document.getElementById('mmt').textContent='Temp: Min '+d.t_min_ever.toFixed(1)+' / Max '+d.t_max_ever.toFixed(1)+' C';
+document.getElementById('mmc').textContent='Cell V: Min '+d.c_min_ever.toFixed(3)+' / Max '+d.c_max_ever.toFixed(3);
+if(d.alert_count>0){var ah='<div class="card-title" style="color:#ff7b72;font-size:16px;margin-bottom:10px">ACTIVE ALERTS ('+d.alert_count+')</div>';
+d.alerts.forEach(function(a){ah+='<div class="alert-item red">! '+a+'</div>'});document.getElementById('alerts').innerHTML=ah}
+else{document.getElementById('alerts').innerHTML='<div class="card-title" style="color:#00d4ff;font-size:16px;margin-bottom:10px">ACTIVE ALERTS</div><div class="grn">No active alerts</div>'}
+if(d.events)document.getElementById('events').innerHTML=d.events.join('<br>')||'(no events)';
+var sk=d.solar;if(sk){
+if(sk.solark_ts>0){var sg=sk.solark_grid>=0?'+'+sk.solark_grid.toFixed(0):sk.solark_grid.toFixed(0);var sb=-sk.solark_batt;
+document.getElementById('solark').innerHTML=srow('PV Power',fmt(sk.solark_pv),'#ffa657')+srow('Load',fmt(sk.solark_load))+srow('Grid',sg+' W',sk.solark_grid<0?'#7ee787':'#ff7b72')+srow('Battery',(sb>=0?'+':'')+sb.toFixed(0)+' W',sb>=0?'#58a6ff':'#ffa657')+srow('SOC',sk.solark_soc.toFixed(1)+' %')+srow('Today',sk.solark_day.toFixed(2)+' kWh','#ffa657')}
+if(sk.solis_ts>0){var sg2=sk.solis_grid>=0?'+'+sk.solis_grid.toFixed(0):sk.solis_grid.toFixed(0);var sb2=-sk.solis_batt;
+document.getElementById('solis').innerHTML=srow('PV Power',fmt(sk.solis_pv),'#ffa657')+srow('Load',fmt(sk.solis_load))+srow('Grid',sg2+' W',sk.solis_grid<0?'#7ee787':'#ff7b72')+srow('Battery',(sb2>=0?'+':'')+sb2.toFixed(0)+' W',sb2>=0?'#58a6ff':'#ffa657')+srow('SOC',sk.solis_soc.toFixed(1)+' %')+srow('Today',sk.solis_day.toFixed(2)+' kWh','#ffa657')}
+if(sk.env1_ts>0)document.getElementById('env1').innerHTML=srow('Active Power',fmt(sk.env1_power),'#7ee787');
+if(sk.env2_ts>0)document.getElementById('env2').innerHTML=srow('Active Power',fmt(sk.env2_power),'#7ee787');
+}}).catch(function(){})}
+setInterval(upd,2000);upd();
+</script></body></html>)rawliteral";
+
+static const uint8_t WEB_MAX_EVENTS = 20;
+static char web_event_log[WEB_MAX_EVENTS][80];
+static uint8_t web_event_count = 0;
+
+void web_add_event(const char* msg) {
+  for (int i = WEB_MAX_EVENTS - 1; i > 0; i--)
+    strncpy(web_event_log[i], web_event_log[i-1], 79);
+  unsigned long secs = millis() / 1000;
+  snprintf(web_event_log[0], 79, "[%lus] %s", secs, msg);
+  if (web_event_count < WEB_MAX_EVENTS) web_event_count++;
+}
+
 void init_webserver() {
   server.on("/", HTTP_GET, [](AsyncWebServerRequest* request) {
+    request->send(200, "text/html", INDEX_HTML);
+  });
+
+  server.on("/api/data", HTTP_GET, [](AsyncWebServerRequest* request) {
     unsigned long up = millis() / 1000;
-    String html = "<html><head><title>Tesla Battery Monitor</title>"
-      "<meta name='viewport' content='width=device-width,initial-scale=1'>"
-      "<style>body{background:#0d1117;color:#c9d1d9;font-family:sans-serif;padding:20px}"
-      "h1{color:#58a6ff}table{border-collapse:collapse;width:100%}"
-      "td,th{border:1px solid #30363d;padding:8px;text-align:left}"
-      "th{background:#161b22}.ok{color:#7ee787}.err{color:#ff7b72}"
-      ".btn{background:#238636;color:#fff;padding:12px 24px;border:none;border-radius:6px;"
-      "font-size:16px;cursor:pointer;margin-top:20px;display:inline-block;text-decoration:none}"
-      "</style></head><body><h1>Tesla Battery Monitor</h1>"
-      "<table><tr><th>Parameter</th><th>Value</th></tr>"
-      "<tr><td>WiFi RSSI</td><td>" + String(WiFi.RSSI()) + " dBm</td></tr>"
-      "<tr><td>IP Address</td><td>" + WiFi.localIP().toString() + "</td></tr>"
-      "<tr><td>Free Heap</td><td>" + String(ESP.getFreeHeap() / 1024) + " KB</td></tr>"
-      "<tr><td>PSRAM Free</td><td>" + String(ESP.getFreePsram() / 1024) + " KB</td></tr>"
-      "<tr><td>Uptime</td><td>" + String(up/3600) + "h " + String((up%3600)/60) + "m</td></tr>"
-      "<tr><td>SOC</td><td>" + String(datalayer.battery.status.reported_soc / 100.0, 1) + "%</td></tr>"
-      "</table>"
-      "<a class='btn' href='/update'>Firmware Update (OTA)</a>"
-      "</body></html>";
-    request->send(200, "text/html", html);
+    uint8_t soc = datalayer.battery.status.reported_soc / 100;
+    float voltage = datalayer.battery.status.voltage_dV / 10.0f;
+    float current = datalayer.battery.status.current_dA / 10.0f;
+    float remaining_kwh = datalayer.battery.status.remaining_capacity_Wh / 1000.0f;
+    float total_kwh = datalayer.battery.info.total_capacity_Wh / 1000.0f;
+    uint16_t cell_min = datalayer.battery.status.cell_min_voltage_mV;
+    uint16_t cell_max = datalayer.battery.status.cell_max_voltage_mV;
+    int16_t temp_min = datalayer.battery.status.temperature_min_dC;
+    int16_t temp_max = datalayer.battery.status.temperature_max_dC;
+    bool contactors = datalayer.system.status.contactors_engaged;
+    bool can_batt = datalayer.battery.status.CAN_battery_still_alive > 0;
+    bool can_inv = datalayer.system.status.CAN_inverter_still_alive > 0;
+    bool mqtt_ok = (get_event_pointer(EVENT_MQTT_CONNECT)->state == EVENT_STATE_ACTIVE);
+    uint8_t bms = (datalayer.battery.status.bms_status == ACTIVE) ? 1 :
+                  (datalayer.battery.status.bms_status == FAULT) ? 2 : 0;
+    int soh = datalayer.battery.status.soh_pptt / 100;
+    uint16_t num_cells = datalayer.battery.info.number_of_cells;
+
+    static float v_min_ever = 9999.0f, v_max_ever = 0.0f;
+    static float t_min_ever = 999.0f, t_max_ever = -999.0f;
+    static float c_min_ever = 9.999f, c_max_ever = 0.0f;
+    if (voltage > 0 && voltage < v_min_ever) v_min_ever = voltage;
+    if (voltage > v_max_ever) v_max_ever = voltage;
+    float t_min_f = temp_min / 10.0f, t_max_f = temp_max / 10.0f;
+    if (t_min_f > -40 && t_min_f < t_min_ever) t_min_ever = t_min_f;
+    if (t_max_f > t_max_ever) t_max_ever = t_max_f;
+    float c_min_f = cell_min / 1000.0f, c_max_f = cell_max / 1000.0f;
+    if (c_min_f > 0 && c_min_f < c_min_ever) c_min_ever = c_min_f;
+    if (c_max_f > c_max_ever) c_max_ever = c_max_f;
+
+    String wifi_info;
+    bool wifi_ok = WiFi.status() == WL_CONNECTED;
+    if (wifi_ok) {
+      wifi_info = String(WiFi.SSID()) + "<br>" + WiFi.localIP().toString() + "<br>RSSI: " + String(WiFi.RSSI()) + " dBm";
+    } else {
+      wifi_info = "Disconnected";
+    }
+
+    char uptime_buf[16];
+    snprintf(uptime_buf, sizeof(uptime_buf), "%luh %lum", up / 3600, (up % 3600) / 60);
+
+    String json = "{\"soc\":" + String(soc) +
+      ",\"voltage\":" + String(voltage, 1) +
+      ",\"current\":" + String(current, 1) +
+      ",\"remaining_kwh\":" + String(remaining_kwh, 1) +
+      ",\"total_kwh\":" + String(total_kwh, 1) +
+      ",\"cell_min\":" + String(cell_min) +
+      ",\"cell_max\":" + String(cell_max) +
+      ",\"temp_min\":" + String(temp_min) +
+      ",\"temp_max\":" + String(temp_max) +
+      ",\"contactors\":" + String(contactors ? "true" : "false") +
+      ",\"can_batt\":" + String(can_batt ? "true" : "false") +
+      ",\"can_inv\":" + String(can_inv ? "true" : "false") +
+      ",\"mqtt_ok\":" + String(mqtt_ok ? "true" : "false") +
+      ",\"bms\":" + String(bms) +
+      ",\"soh\":" + String(soh) +
+      ",\"heap\":" + String(ESP.getFreeHeap() / 1024) +
+      ",\"uptime\":\"" + String(uptime_buf) + "\"" +
+      ",\"wifi\":\"" + wifi_info + "\"" +
+      ",\"wifi_ok\":" + String(wifi_ok ? "true" : "false") +
+      ",\"num_cells\":" + String(num_cells) +
+      ",\"v_min_ever\":" + String(v_min_ever, 1) +
+      ",\"v_max_ever\":" + String(v_max_ever, 1) +
+      ",\"t_min_ever\":" + String(t_min_ever, 1) +
+      ",\"t_max_ever\":" + String(t_max_ever, 1) +
+      ",\"c_min_ever\":" + String(c_min_ever, 3) +
+      ",\"c_max_ever\":" + String(c_max_ever, 3);
+
+    json += ",\"cells\":[";
+    for (uint16_t i = 0; i < num_cells && i < 108; i++) {
+      if (i > 0) json += ",";
+      json += String(datalayer.battery.status.cell_voltages_mV[i]);
+    }
+    json += "]";
+
+    uint8_t alert_count = 0;
+    String alerts = ",\"alerts\":[";
+    uint16_t cell_delta = cell_max - cell_min;
+    if (soc < 10) { if (alert_count) alerts += ","; alerts += "\"LOW SOC (<10%)\""; alert_count++; }
+    if (t_max_f > 45.0f) { if (alert_count) alerts += ","; alerts += "\"HIGH TEMP (>45C)\""; alert_count++; }
+    if (t_min_f < 0.0f) { if (alert_count) alerts += ","; alerts += "\"LOW TEMP (<0C)\""; alert_count++; }
+    if (cell_delta > 100) { if (alert_count) alerts += ","; alerts += "\"CELL IMBALANCE (>100mV)\""; alert_count++; }
+    if (c_min_f < 2.8f && c_min_f > 0) { if (alert_count) alerts += ","; alerts += "\"CELL UNDERVOLTAGE\""; alert_count++; }
+    if (c_max_f > 4.25f) { if (alert_count) alerts += ","; alerts += "\"CELL OVERVOLTAGE\""; alert_count++; }
+    if (!can_batt) { if (alert_count) alerts += ","; alerts += "\"NO BATTERY CAN\""; alert_count++; }
+    alerts += "],\"alert_count\":" + String(alert_count);
+    json += alerts;
+
+    json += ",\"events\":[";
+    for (int i = 0; i < web_event_count && i < WEB_MAX_EVENTS; i++) {
+      if (i > 0) json += ",";
+      String ev = String(web_event_log[i]);
+      ev.replace("\"", "\\\"");
+      json += "\"" + ev + "\"";
+    }
+    json += "]";
+
+    const SolarData& sol = mqtt_display_bridge::get_solar_data();
+    json += ",\"solar\":{";
+    json += "\"solark_pv\":" + String(sol.solark_pv_power_W, 0);
+    json += ",\"solark_load\":" + String(sol.solark_load_power_W, 0);
+    json += ",\"solark_grid\":" + String(sol.solark_grid_power_W, 0);
+    json += ",\"solark_batt\":" + String(sol.solark_battery_power_W, 0);
+    json += ",\"solark_soc\":" + String(sol.solark_battery_soc_pct, 1);
+    json += ",\"solark_day\":" + String(sol.solark_day_pv_energy_kWh, 2);
+    json += ",\"solark_ts\":" + String(sol.solark_last_update_ms);
+    json += ",\"solis_pv\":" + String(sol.solis_pv_power_W, 0);
+    json += ",\"solis_load\":" + String(sol.solis_load_power_W, 0);
+    json += ",\"solis_grid\":" + String(sol.solis_grid_power_W, 0);
+    json += ",\"solis_batt\":" + String(sol.solis_battery_power_W, 0);
+    json += ",\"solis_soc\":" + String(sol.solis_battery_soc_pct, 1);
+    json += ",\"solis_day\":" + String(sol.solis_day_pv_energy_kWh, 2);
+    json += ",\"solis_ts\":" + String(sol.solis_last_update_ms);
+    json += ",\"env1_power\":" + String(sol.envoy1_active_power_W, 0);
+    json += ",\"env1_ts\":" + String(sol.envoy1_last_update_ms);
+    json += ",\"env2_power\":" + String(sol.envoy2_active_power_W, 0);
+    json += ",\"env2_ts\":" + String(sol.envoy2_last_update_ms);
+    json += "}}";
+
+    request->send(200, "application/json", json);
   });
 
   ElegantOTA.begin(&server);
@@ -64,12 +341,41 @@ void init_webserver() {
   ElegantOTA.onEnd(onOTAEnd);
 
   server.begin();
+  Serial.printf("[%lus] Webserver started on port 80\n", millis()/1000);
+  web_add_event("Webserver started");
 }
 
 void ota_monitor() {
   if (ota_active && ota_timeout_timer.elapsed()) {
     ota_active = false;
     Serial.printf("[%lus] OTA timeout\n", millis()/1000);
+    web_add_event("OTA timeout");
+  }
+
+  static bool prev_wifi = false;
+  static bool prev_mqtt = false;
+  static uint8_t prev_bms = 255;
+  static unsigned long last_check = 0;
+  if (millis() - last_check < 2000) return;
+  last_check = millis();
+
+  bool wifi_ok = WiFi.status() == WL_CONNECTED;
+  if (wifi_ok != prev_wifi) {
+    prev_wifi = wifi_ok;
+    web_add_event(wifi_ok ? "WiFi connected" : "WiFi disconnected");
+  }
+  bool mqtt_ok = (get_event_pointer(EVENT_MQTT_CONNECT)->state == EVENT_STATE_ACTIVE);
+  if (mqtt_ok != prev_mqtt) {
+    prev_mqtt = mqtt_ok;
+    web_add_event(mqtt_ok ? "MQTT connected" : "MQTT disconnected");
+  }
+  uint8_t bms = datalayer.battery.status.bms_status;
+  if (bms != prev_bms) {
+    prev_bms = bms;
+    const char* names[] = {"STANDBY","INACTIVE","DARKSTART","ACTIVE","FAULT","UPDATING"};
+    char buf[40];
+    snprintf(buf, sizeof(buf), "BMS: %s", bms < 6 ? names[bms] : "UNKNOWN");
+    web_add_event(buf);
   }
 }
 #else
