@@ -397,7 +397,7 @@ void init_webserver() {
     json += ",\"solis_load\":" + String(sol.solis_load_power_W, 0);
     json += ",\"solis_grid\":" + String(sol.solis_grid_power_W, 0);
     json += ",\"solis_batt\":" + String(sol.solis_battery_power_W, 0);
-    json += ",\"solis_soc\":" + String(sol.solis_battery_soc_pct, 1);
+    json += ",\"solis_soc\":" + String((float)(datalayer.battery.status.reported_soc / 100), 1);
     json += ",\"solis_day\":" + String(sol.solis_day_pv_energy_kWh, 2);
     json += ",\"solis_ts\":" + String(sol.solis_last_update_ms);
     json += ",\"env_total_live\":" + String(sol.envoy_total_live_W, 0);
