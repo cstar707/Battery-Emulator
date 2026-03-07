@@ -1,8 +1,77 @@
 #ifdef HW_WAVESHARE7B_DISPLAY_ONLY
 #include "webserver.h"
+#include <WiFi.h>
+#include "../../datalayer/datalayer.h"
+#include "../utils/events.h"
+#include "../utils/timer.h"
+
 bool ota_active = false;
-void init_webserver() {}
-void ota_monitor() {}
+static AsyncWebServer server(80);
+static MyTimer ota_timeout_timer(600000);
+
+void onOTAStart() {
+  ota_active = true;
+  ota_timeout_timer.reset();
+  Serial.printf("[%lus] OTA update started\n", millis()/1000);
+}
+
+void onOTAProgress(size_t current, size_t final_size) {
+  static int last_pct = -1;
+  int pct = (current * 100) / final_size;
+  if (pct != last_pct && pct % 10 == 0) {
+    Serial.printf("[%lus] OTA: %d%%\n", millis()/1000, pct);
+    last_pct = pct;
+  }
+}
+
+void onOTAEnd(bool success) {
+  ota_active = false;
+  Serial.printf("[%lus] OTA %s\n", millis()/1000, success ? "SUCCESS - rebooting" : "FAILED");
+}
+
+String processor(const String& var) { return String(); }
+String get_firmware_info_processor(const String& var) { return String(); }
+void init_ElegantOTA() {}
+
+void init_webserver() {
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest* request) {
+    unsigned long up = millis() / 1000;
+    String html = "<html><head><title>Tesla Battery Monitor</title>"
+      "<meta name='viewport' content='width=device-width,initial-scale=1'>"
+      "<style>body{background:#0d1117;color:#c9d1d9;font-family:sans-serif;padding:20px}"
+      "h1{color:#58a6ff}table{border-collapse:collapse;width:100%}"
+      "td,th{border:1px solid #30363d;padding:8px;text-align:left}"
+      "th{background:#161b22}.ok{color:#7ee787}.err{color:#ff7b72}"
+      ".btn{background:#238636;color:#fff;padding:12px 24px;border:none;border-radius:6px;"
+      "font-size:16px;cursor:pointer;margin-top:20px;display:inline-block;text-decoration:none}"
+      "</style></head><body><h1>Tesla Battery Monitor</h1>"
+      "<table><tr><th>Parameter</th><th>Value</th></tr>"
+      "<tr><td>WiFi RSSI</td><td>" + String(WiFi.RSSI()) + " dBm</td></tr>"
+      "<tr><td>IP Address</td><td>" + WiFi.localIP().toString() + "</td></tr>"
+      "<tr><td>Free Heap</td><td>" + String(ESP.getFreeHeap() / 1024) + " KB</td></tr>"
+      "<tr><td>PSRAM Free</td><td>" + String(ESP.getFreePsram() / 1024) + " KB</td></tr>"
+      "<tr><td>Uptime</td><td>" + String(up/3600) + "h " + String((up%3600)/60) + "m</td></tr>"
+      "<tr><td>SOC</td><td>" + String(datalayer.battery.status.reported_soc / 100.0, 1) + "%</td></tr>"
+      "</table>"
+      "<a class='btn' href='/update'>Firmware Update (OTA)</a>"
+      "</body></html>";
+    request->send(200, "text/html", html);
+  });
+
+  ElegantOTA.begin(&server);
+  ElegantOTA.onStart(onOTAStart);
+  ElegantOTA.onProgress(onOTAProgress);
+  ElegantOTA.onEnd(onOTAEnd);
+
+  server.begin();
+}
+
+void ota_monitor() {
+  if (ota_active && ota_timeout_timer.elapsed()) {
+    ota_active = false;
+    Serial.printf("[%lus] OTA timeout\n", millis()/1000);
+  }
+}
 #else
 #include "webserver.h"
 #include <Preferences.h>
