@@ -651,11 +651,11 @@ static void mqtt_event_handler(void* handler_args, esp_event_base_t base, int32_
       publish_buttons_discovery();
 #endif
       subscribe();
-      logging.println("MQTT connected");
+      Serial.printf("[%lus] MQTT CONNECTED\n", millis()/1000);
       break;
     case MQTT_EVENT_DISCONNECTED:
       set_event(EVENT_MQTT_DISCONNECT, 0);
-      logging.println("MQTT disconnected!");
+      Serial.printf("[%lus] MQTT DISCONNECTED\n", millis()/1000);
       break;
     case MQTT_EVENT_DATA:
 #ifdef HW_WAVESHARE7B_DISPLAY_ONLY
@@ -763,7 +763,7 @@ void mqtt_client_loop(void) {
     esp_mqtt_client_stop(client);
     client_started = false;
     wifi_was_connected = false;
-    logging.println("MQTT stopped (WiFi lost)");
+    Serial.printf("[%lus] MQTT STOPPED (WiFi lost)\n", millis()/1000);
     return;
   }
   wifi_was_connected = wifi_connected;
@@ -774,7 +774,7 @@ void mqtt_client_loop(void) {
       publish_global_timer = MyTimer(mqtt_publish_interval_ms);
       esp_mqtt_client_start(client);
       client_started = true;
-      logging.println("MQTT initialized");
+      Serial.printf("[%lus] MQTT STARTED\n", millis()/1000);
       return;
     }
 

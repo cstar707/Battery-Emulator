@@ -193,12 +193,11 @@ void onWifiConnect(WiFiEvent_t event, WiFiEventInfo_t info) {
   clear_event(EVENT_WIFI_DISCONNECT);
   set_event(EVENT_WIFI_CONNECT, 0);
   connected_once = true;
-  DEBUG_PRINTF("Wi-Fi connected. status: %d, RSSI: %d dBm, IP address: %s, SSID: %s\n", WiFi.status(), -WiFi.RSSI(),
-               WiFi.localIP().toString().c_str(), WiFi.SSID().c_str());
-  hasConnectedBefore = true;                                            // Mark as successfully connected at least once
-  reconnectAttempts = 0;                                                // Reset the attempt counter
-  current_full_reconnect_interval = INIT_WIFI_FULL_RECONNECT_INTERVAL;  // Reset the full reconnect interval
-  current_check_interval = WIFI_CHECK_INTERVAL;                         // Reset the full reconnect interval
+  Serial.printf("[%lus] WiFi CONNECTED RSSI:%d IP:%s\n", millis()/1000, -WiFi.RSSI(), WiFi.localIP().toString().c_str());
+  hasConnectedBefore = true;
+  reconnectAttempts = 0;
+  current_full_reconnect_interval = INIT_WIFI_FULL_RECONNECT_INTERVAL;
+  current_check_interval = WIFI_CHECK_INTERVAL;
   clear_event(EVENT_WIFI_CONNECT);
 }
 
@@ -217,10 +216,7 @@ void onWifiDisconnect(WiFiEvent_t event, WiFiEventInfo_t info) {
   if (connected_once) {
     set_event(EVENT_WIFI_DISCONNECT, 0);
   }
-  logging.println("Wi-Fi disconnected.");
-  //we dont do anything here, the reconnect will be handled by the monitor
-  //too many events received when the connection is lost
-  //normal reconnect retry start at first 2 seconds
+  Serial.printf("[%lus] WiFi DISCONNECTED reason:%d\n", millis()/1000, info.wifi_sta_disconnected.reason);
 }
 
 // Initialise mDNS (Only available on devices with )

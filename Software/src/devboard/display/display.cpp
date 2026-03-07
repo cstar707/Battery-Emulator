@@ -1885,7 +1885,7 @@ void update_display() {
     lv_label_set_text(lbl_batt_info, batt_info);
     
     // Update system info (left side of split card) with BMS status
-    static char sys_info[96];
+    static char sys_info[128];
     unsigned long uptime_sec = millis() / 1000;
     unsigned long hours = uptime_sec / 3600;
     unsigned long mins = (uptime_sec % 3600) / 60;
@@ -1903,12 +1903,20 @@ void update_display() {
       bms_status_text = "STANDBY";
       bms_status_color = lv_color_hex(0xffa657);  // Yellow
     }
+
+    bool mqtt_ok = (get_event_pointer(EVENT_MQTT_CONNECT)->state == EVENT_STATE_ACTIVE);
     
-    snprintf(sys_info, sizeof(sys_info), "BMS: %s\nUptime: %luh %lum\nHeap: %lu KB",
-             bms_status_text, hours, mins,
+    snprintf(sys_info, sizeof(sys_info), "BMS: %s\nMQTT: %s\nUptime: %luh %lum\nHeap: %lu KB",
+             bms_status_text,
+             mqtt_ok ? "OK" : "OFF",
+             hours, mins,
              (unsigned long)(ESP.getFreeHeap() / 1024));
     lv_label_set_text(lbl_sys_info, sys_info);
-    lv_obj_set_style_text_color(lbl_sys_info, bms_status_color, 0);
+    if (!mqtt_ok) {
+      lv_obj_set_style_text_color(lbl_sys_info, lv_color_hex(0xff7b72), 0);  // Red if MQTT down
+    } else {
+      lv_obj_set_style_text_color(lbl_sys_info, bms_status_color, 0);
+    }
     
     // Update CAN status (detailed view in system card)
     bool can_batt_ok = datalayer.battery.status.CAN_battery_still_alive > 0;
