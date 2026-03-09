@@ -17,6 +17,9 @@
 #include "src/communication/rs485/comm_rs485.h"
 #include "src/datalayer/datalayer.h"
 #include "src/devboard/display/display.h"
+#ifdef HW_WAVESHARE7B_DISPLAY_ONLY
+#include "src/devboard/display/mqtt_display_bridge.h"
+#endif
 #include "src/devboard/mqtt/mqtt.h"
 #include "src/devboard/sdcard/sdcard.h"
 #include "src/devboard/utils/events.h"
@@ -533,6 +536,10 @@ void core_loop(void*) {
         START_TIME_MEASUREMENT(values);
       }
       update_pause_state();  // Check if we are OK to send CAN or need to pause
+
+#ifdef HW_WAVESHARE7B_DISPLAY_ONLY
+      mqtt_display_bridge::tick_alive_counter();
+#endif
 
       // Fetch battery values
       if (battery) {

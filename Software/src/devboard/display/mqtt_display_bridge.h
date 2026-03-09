@@ -3,18 +3,21 @@
 
 #include <stdint.h>
 
-// Solar/inverter data received from ESPHome solar/solark/sensors/#
+// Solar/inverter data used by the display-only solar tab
 struct SolarData {
   // Solark inverter data
   float solark_pv_power_W = 0.0f;
   float solark_load_power_W = 0.0f;
   float solark_grid_power_W = 0.0f;
   float solark_battery_power_W = 0.0f;
+  float solark_battery_voltage_V = 0.0f;
+  float solark_battery_temp_C = 0.0f;
+  float solark_total_battery_current_A = 0.0f;
   float solark_battery_soc_pct = 0.0f;
   float solark_day_pv_energy_kWh = 0.0f;
   unsigned long solark_last_update_ms = 0;
   
-  // Solis inverter data
+  // Solis inverter-side data (battery-side truth comes from BE/info via datalayer)
   float solis_pv_power_W = 0.0f;
   float solis_load_power_W = 0.0f;
   float solis_grid_power_W = 0.0f;
@@ -30,6 +33,11 @@ struct SolarData {
   float envoy_shed_today_kWh = 0.0f;
   float envoy_trailer_today_kWh = 0.0f;
   unsigned long envoy_last_update_ms = 0;
+
+  // Overall-system summary data following the grid-status total semantics
+  float root_day_pv_energy_kWh = 0.0f;
+  float total_day_pv_energy_kWh = 0.0f;
+  unsigned long total_day_pv_last_update_ms = 0;
   
   // Legacy compatibility fields (mapped to Solark data)
   float pv_power_W = 0.0f;

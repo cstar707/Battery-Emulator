@@ -75,7 +75,7 @@ body{background:#0d1117;color:#c9d1d9;font-family:-apple-system,BlinkMacSystemFo
 .solar-split{display:flex;gap:16px}
 .solar-half{flex:1}
 .solar-section-title{color:#58a6ff;font-size:16px;font-weight:700;margin-bottom:6px}
-.solar-cards{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.solar-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
 .solar-card{background:#161b22;border:1px solid #30363d;border-radius:10px;padding:14px}
 .solar-title{color:#58a6ff;font-size:14px;font-weight:600;margin-bottom:10px;border-bottom:1px solid #30363d;padding-bottom:6px}
 .solar-row{display:flex;justify-content:space-between;padding:3px 0;font-size:13px}
@@ -148,6 +148,7 @@ body{background:#0d1117;color:#c9d1d9;font-family:-apple-system,BlinkMacSystemFo
 <span id="ms_soc_pct" style="font-size:24px;font-weight:700;min-width:55px" class="grn">-- %</span>
 <div class="bar-bg" style="flex:1;height:36px"><div id="ms_soc_bar" class="bar-fg" style="width:0%;height:100%;background:linear-gradient(90deg,#22cc44,#00ff88)"></div></div>
 </div></div>
+<div class="solar-card" style="max-width:250px;margin:0 auto 12px auto"><div class="solar-title">TOTAL DAY PV ENERGY</div><div id="total_day_pv">--</div></div>
 <div class="solar-split">
 <div class="solar-half">
 <div class="solar-section-title"><img src="data:image/png;base64,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" style="height:26px"> <span style="color:#8b949e;font-size:12px;margin-left:6px">12K-2P</span></div>
@@ -156,12 +157,14 @@ body{background:#0d1117;color:#c9d1d9;font-family:-apple-system,BlinkMacSystemFo
 <span id="sk_soc_pct" style="font-size:24px;font-weight:700;min-width:55px" class="grn">-- %</span>
 <div class="bar-bg" style="flex:1;height:44px"><div id="sk_soc_bar" class="bar-fg" style="width:0%;height:100%;background:linear-gradient(90deg,#22cc44,#00ff88)"></div></div>
 </div></div>
-<div class="solar-cards"><div class="solar-card"><div class="solar-title">PV Power</div><div id="sk_pv">--</div></div>
+<div class="solar-cards"><div class="solar-card"><div class="solar-title">Battery Power</div><div id="sk_batt">--</div></div>
+<div class="solar-card"><div class="solar-title">Battery V</div><div id="sk_volt">--</div></div>
+<div class="solar-card"><div class="solar-title">Battery Temp</div><div id="sk_temp">--</div></div>
+<div class="solar-card"><div class="solar-title">Battery I</div><div id="sk_curr">--</div></div>
+<div class="solar-card"><div class="solar-title">Solar Power</div><div id="sk_solar">--</div></div>
 <div class="solar-card"><div class="solar-title">Load</div><div id="sk_load">--</div></div>
 <div class="solar-card"><div class="solar-title">Grid</div><div id="sk_grid">--</div></div>
-<div class="solar-card"><div class="solar-title">Battery</div><div id="sk_batt">--</div></div>
-<div class="solar-card"><div class="solar-title">SOC</div><div id="sk_soc">--</div></div>
-<div class="solar-card"><div class="solar-title">Today</div><div id="sk_day">--</div></div></div>
+<div class="solar-card"><div class="solar-title">Total Day PV Energy</div><div id="sk_day">--</div></div></div>
 </div>
 <div class="solar-half">
 <div class="solar-section-title"><img src="data:image/png;base64,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" style="height:26px"> <span style="color:#8b949e;font-size:12px;margin-left:6px">S6-EH1P(11.4)K-H-US</span></div>
@@ -170,12 +173,14 @@ body{background:#0d1117;color:#c9d1d9;font-family:-apple-system,BlinkMacSystemFo
 <span id="sl_soc_pct" style="font-size:24px;font-weight:700;min-width:55px" class="grn">-- %</span>
 <div class="bar-bg" style="flex:1;height:44px"><div id="sl_soc_bar" class="bar-fg" style="width:0%;height:100%;background:linear-gradient(90deg,#22cc44,#00ff88)"></div></div>
 </div></div>
-<div class="solar-cards"><div class="solar-card"><div class="solar-title">PV Power</div><div id="sl_pv">--</div></div>
+<div class="solar-cards"><div class="solar-card"><div class="solar-title">Battery Power</div><div id="sl_batt">--</div></div>
+<div class="solar-card"><div class="solar-title">Battery V</div><div id="sl_volt">--</div></div>
+<div class="solar-card"><div class="solar-title">Battery Temp</div><div id="sl_temp">--</div></div>
+<div class="solar-card"><div class="solar-title">Battery I</div><div id="sl_curr">--</div></div>
+<div class="solar-card"><div class="solar-title">Solar Power</div><div id="sl_solar">--</div></div>
 <div class="solar-card"><div class="solar-title">Load</div><div id="sl_load">--</div></div>
 <div class="solar-card"><div class="solar-title">Grid</div><div id="sl_grid">--</div></div>
-<div class="solar-card"><div class="solar-title">Battery</div><div id="sl_batt">--</div></div>
-<div class="solar-card"><div class="solar-title">SOC</div><div id="sl_soc">--</div></div>
-<div class="solar-card"><div class="solar-title">Today</div><div id="sl_day">--</div></div></div>
+<div class="solar-card"><div class="solar-title">Today PV Energy</div><div id="sl_day">--</div></div></div>
 </div>
 </div>
 <div style="display:flex;gap:10px;margin-top:12px;flex-wrap:wrap">
@@ -193,6 +198,7 @@ function showTab(n){tabs.forEach(function(t,i){t.classList.toggle('active',i==n)
 for(var i=0;i<4;i++)document.getElementById('p'+i).classList.toggle('active',i==n)}
 
 function fmt(w){return Math.abs(w)>=1000?(w/1000).toFixed(2)+' kW':w.toFixed(0)+' W'}
+function fmtSignedW(w){var a=Math.abs(w);var v=a>=1000?(a/1000).toFixed(2)+' kW':a.toFixed(0)+' W';return (w>=0?'+':'-')+v}
 function srow(l,v,c){return '<div class="solar-row"><span class="solar-lbl">'+l+'</span><span style="color:'+(c||'#c9d1d9')+'">'+v+'</span></div>'}
 
 function upd(){fetch('/api/data').then(function(r){return r.json()}).then(function(d){
@@ -242,23 +248,39 @@ var v=Math.max(0,Math.min(100,Math.round(soc)));b.style.width=v+'%';p.textConten
 var bg=v<20?'linear-gradient(90deg,#ff4444,#ff8844)':v<50?'linear-gradient(90deg,#ff6622,#ffcc00)':'linear-gradient(90deg,#22cc44,#00ff88)';
 b.style.background=bg;p.className=v<20?'red':v<50?'yel':'grn'}
 function sval(id,v){var e=document.getElementById(id);if(e)e.innerHTML=v}
-if(sk.solark_ts>0){var sg=sk.solark_grid>=0?'+'+sk.solark_grid.toFixed(0):sk.solark_grid.toFixed(0);var sb=-sk.solark_batt;
+	if(sk.solark_ts>0){var sg=sk.solark_grid>=0?'+'+sk.solark_grid.toFixed(0):sk.solark_grid.toFixed(0);var sb=sk.solark_batt;
 usb('sk',sk.solark_soc);
-sval('sk_pv','<span style="color:#ffa657;font-size:18px;font-weight:600">'+fmt(sk.solark_pv)+'</span>');
+	sval('sk_batt','<span style="color:'+(sb>=0?'#58a6ff':'#ffa657')+';font-size:18px;font-weight:600">'+fmtSignedW(sb)+'</span>');
+	sval('sk_volt','<span style="font-size:18px;font-weight:600">'+sk.solark_voltage.toFixed(2)+' V</span>');
+	sval('sk_temp','<span style="font-size:18px;font-weight:600">'+sk.solark_temp.toFixed(1)+' C</span>');
+	sval('sk_curr','<span style="font-size:18px;font-weight:600">'+sk.solark_current.toFixed(1)+' A</span>');
+	sval('sk_solar','<span style="color:#ffa657;font-size:18px;font-weight:600">'+fmt(sk.solark_pv)+'</span>');
 sval('sk_load','<span style="font-size:18px;font-weight:600">'+fmt(sk.solark_load)+'</span>');
 sval('sk_grid','<span style="color:'+(sk.solark_grid<0?'#7ee787':'#ff7b72')+';font-size:18px;font-weight:600">'+sg+' W</span>');
-sval('sk_batt','<span style="color:'+(sb>=0?'#58a6ff':'#ffa657')+';font-size:18px;font-weight:600">'+(sb>=0?'+':'')+sb.toFixed(0)+' W</span>');
-sval('sk_soc','<span style="font-size:18px;font-weight:600">'+sk.solark_soc.toFixed(1)+' %</span>');
-sval('sk_day','<span style="color:#ffa657;font-size:18px;font-weight:600">'+sk.solark_day.toFixed(2)+' kWh</span>')}
-if(sk.solis_ts>0){var sg2=sk.solis_grid>=0?'+'+sk.solis_grid.toFixed(0):sk.solis_grid.toFixed(0);var sb2=-sk.solis_batt;
-usb('sl',sk.solis_soc);
-sval('sl_pv','<span style="color:#ffa657;font-size:18px;font-weight:600">'+fmt(sk.solis_pv)+'</span>');
+		sval('sk_day','<span style="font-size:18px;font-weight:600">'+sk.solark_day.toFixed(2)+' kWh</span>');
+	}
+	var sg2=sk.solis_grid>=0?'+'+sk.solis_grid.toFixed(0):sk.solis_grid.toFixed(0);var sb2=sk.solis_batt;
+	usb('sl',sk.solis_soc);
+	sval('sl_batt','<span style="color:'+(sb2>=0?'#58a6ff':'#ffa657')+';font-size:18px;font-weight:600">'+fmtSignedW(sb2)+'</span>');
+	sval('sl_volt','<span style="font-size:18px;font-weight:600">'+sk.solis_voltage.toFixed(2)+' V</span>');
+	sval('sl_temp','<span style="font-size:18px;font-weight:600">'+sk.solis_temp_min.toFixed(1)+'/'+sk.solis_temp_max.toFixed(1)+' C</span>');
+	sval('sl_curr','<span style="font-size:18px;font-weight:600">'+sk.solis_current.toFixed(1)+' A</span>');
+	if(sk.solis_ts>0){
+	sval('sl_solar','<span style="color:#ffa657;font-size:18px;font-weight:600">'+fmt(sk.solis_pv)+'</span>');
 sval('sl_load','<span style="font-size:18px;font-weight:600">'+fmt(sk.solis_load)+'</span>');
 sval('sl_grid','<span style="color:'+(sk.solis_grid<0?'#7ee787':'#ff7b72')+';font-size:18px;font-weight:600">'+sg2+' W</span>');
-sval('sl_batt','<span style="color:'+(sb2>=0?'#58a6ff':'#ffa657')+';font-size:18px;font-weight:600">'+(sb2>=0?'+':'')+sb2.toFixed(0)+' W</span>');
-sval('sl_soc','<span style="font-size:18px;font-weight:600">'+sk.solis_soc.toFixed(1)+' %</span>');
-sval('sl_day','<span style="color:#ffa657;font-size:18px;font-weight:600">'+sk.solis_day.toFixed(2)+' kWh</span>')}
-usb('ms',((sk.solark_ts>0?sk.solark_soc:0)+(sk.solis_ts>0?sk.solis_soc:0))/((sk.solark_ts>0?1:0)+(sk.solis_ts>0?1:0)||1));
+		sval('sl_day','<span style="font-size:18px;font-weight:600">'+sk.solis_day.toFixed(2)+' kWh</span>');
+	}else{
+	sval('sl_solar','--');
+	sval('sl_load','--');
+		sval('sl_grid','--');
+		sval('sl_day','--')}
+	var solisCount=d.can_batt?1:0;
+	usb('ms',((sk.solark_ts>0?sk.solark_soc:0)+(solisCount?sk.solis_soc:0))/((sk.solark_ts>0?1:0)+solisCount||1));
+		if(sk.total_day_pv_ts>0){
+			sval('total_day_pv','<span style="font-size:18px;font-weight:600">'+sk.total_day_pv.toFixed(2)+' kWh</span>');
+		}else{
+			sval('total_day_pv','--')}
 if(sk.env_ts>0){sval('env_total_live','<span style="color:#7ee787;font-size:18px;font-weight:600">'+fmt(sk.env_total_live)+'</span>');
 sval('env_total_today','<span style="color:#ffa657;font-size:18px;font-weight:600">'+sk.env_total_today.toFixed(1)+' kWh</span>');
 sval('env_house','<span style="color:#58a6ff;font-size:18px;font-weight:600">'+sk.env_house.toFixed(1)+' kWh</span>');
@@ -390,16 +412,25 @@ void init_webserver() {
     json += ",\"solark_load\":" + String(sol.solark_load_power_W, 0);
     json += ",\"solark_grid\":" + String(sol.solark_grid_power_W, 0);
     json += ",\"solark_batt\":" + String(sol.solark_battery_power_W, 0);
+	json += ",\"solark_voltage\":" + String(sol.solark_battery_voltage_V, 2);
+	json += ",\"solark_temp\":" + String(sol.solark_battery_temp_C, 1);
+	json += ",\"solark_current\":" + String(sol.solark_total_battery_current_A, 1);
     json += ",\"solark_soc\":" + String(sol.solark_battery_soc_pct, 1);
     json += ",\"solark_day\":" + String(sol.solark_day_pv_energy_kWh, 2);
     json += ",\"solark_ts\":" + String(sol.solark_last_update_ms);
     json += ",\"solis_pv\":" + String(sol.solis_pv_power_W, 0);
     json += ",\"solis_load\":" + String(sol.solis_load_power_W, 0);
     json += ",\"solis_grid\":" + String(sol.solis_grid_power_W, 0);
-    json += ",\"solis_batt\":" + String(sol.solis_battery_power_W, 0);
+	json += ",\"solis_batt\":" + String((float)datalayer.battery.status.active_power_W, 0);
+	json += ",\"solis_voltage\":" + String(datalayer.battery.status.voltage_dV / 10.0f, 2);
+	json += ",\"solis_current\":" + String(datalayer.battery.status.current_dA / 10.0f, 1);
+	json += ",\"solis_temp_min\":" + String(datalayer.battery.status.temperature_min_dC / 10.0f, 1);
+	json += ",\"solis_temp_max\":" + String(datalayer.battery.status.temperature_max_dC / 10.0f, 1);
     json += ",\"solis_soc\":" + String((float)(datalayer.battery.status.reported_soc / 100), 1);
     json += ",\"solis_day\":" + String(sol.solis_day_pv_energy_kWh, 2);
     json += ",\"solis_ts\":" + String(sol.solis_last_update_ms);
+    json += ",\"total_day_pv\":" + String(sol.total_day_pv_energy_kWh, 2);
+    json += ",\"total_day_pv_ts\":" + String(sol.total_day_pv_last_update_ms);
     json += ",\"env_total_live\":" + String(sol.envoy_total_live_W, 0);
     json += ",\"env_total_today\":" + String(sol.envoy_total_today_kWh, 1);
     json += ",\"env_house\":" + String(sol.envoy_house_today_kWh, 1);

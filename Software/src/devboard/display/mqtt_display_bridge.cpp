@@ -16,14 +16,16 @@
 #define TOPIC_BE_SPEC_DATA "BE/spec_data"
 #define TOPIC_BE_EVENTS "BE/events"
 #define TOPIC_SOLARK_PREFIX "solar/solark/sensors/"
-#define TOPIC_SOLIS_PREFIX "solis/sensors/"
 
-// Envoy HTTP polling
+// Remote HTTP polling
+#define ROOT_SENSORS_API_URL "http://10.10.53.92:3008/api/sensors/latest"
+#define ROOT_SENSORS_POLL_INTERVAL_MS 5000UL
 #define ENVOY_API_URL "http://10.10.53.92:3008/api/envoy/data"
 #define ENVOY_POLL_INTERVAL_MS 60000UL
 
 // House inverter serial numbers (envoy1)
 static const char* HOUSE_SERIALS[] = { "121138031474", "121138032402", "121138031483", nullptr };
+static const char* SHED_FROM_ENVOY2_SERIAL = "542442025779";
 
 namespace mqtt_display_bridge {
 
@@ -31,7 +33,18 @@ static SolarData solar_data;
 static MqttLogEntry mqtt_log[MQTT_LOG_SIZE];
 static int mqtt_log_head = 0;
 static int mqtt_log_count = 0;
+static unsigned long root_sensors_last_poll_ms = 0;
 static unsigned long envoy_last_poll_ms = 0;
+static constexpr float GRID_STATUS_TUBUCHI_DAY_PV_KWH = 15.0f;
+
+static void recompute_total_day_pv_energy() {
+  solar_data.total_day_pv_energy_kWh =
+    solar_data.solis_day_pv_energy_kWh +
+    solar_data.root_day_pv_energy_kWh +
+    GRID_STATUS_TUBUCHI_DAY_PV_KWH +
+    solar_data.envoy_total_today_kWh;
+  solar_data.total_day_pv_last_update_ms = millis();
+}
 
 // ── Envoy HTTP poll ───────────────────────────────────────────────────────────
 
@@ -40,6 +53,69 @@ static bool is_house_serial(const char* serial) {
     if (strcmp(serial, HOUSE_SERIALS[i]) == 0) return true;
   }
   return false;
+}
+
+static bool is_shed_from_envoy2_serial(const char* serial) {
+  return strcmp(serial, SHED_FROM_ENVOY2_SERIAL) == 0;
+}
+
+static bool read_sensor_value(JsonVariantConst values, const char* key, float* out) {
+  JsonVariantConst sensor = values[key];
+  if (sensor.isNull()) return false;
+  JsonVariantConst value = sensor["value"];
+  if (value.isNull()) return false;
+  *out = value.as<float>();
+  return true;
+}
+
+static void fetch_root_sensors_http() {
+  if (WiFi.status() != WL_CONNECTED) return;
+  HTTPClient http;
+  http.begin(ROOT_SENSORS_API_URL);
+  http.setTimeout(8000);
+  int code = http.GET();
+  if (code == 200) {
+    String body = http.getString();
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, body);
+    if (!err && doc["ok"].as<bool>()) {
+      JsonVariantConst values = doc["values"];
+      bool updated = false;
+      bool total_day_updated = false;
+      float val = 0.0f;
+      if (read_sensor_value(values, "tesla_pv", &val)) {
+        solar_data.solis_pv_power_W = val;
+        updated = true;
+      }
+      if (read_sensor_value(values, "tesla_load", &val)) {
+        solar_data.solis_load_power_W = val;
+        updated = true;
+      }
+      if (read_sensor_value(values, "tesla_grid", &val)) {
+        solar_data.solis_grid_power_W = val;
+        updated = true;
+      }
+      if (read_sensor_value(values, "tesla_today_pv", &val)) {
+        solar_data.solis_day_pv_energy_kWh = val;
+        total_day_updated = true;
+      }
+      if (read_sensor_value(values, "day_pv_energy", &val)) {
+        solar_data.root_day_pv_energy_kWh = val;
+        total_day_updated = true;
+      }
+      if (total_day_updated) {
+        recompute_total_day_pv_energy();
+      }
+      if (updated) {
+        solar_data.solis_last_update_ms = millis();
+        Serial.printf("[ROOT-SENSORS] tesla pv=%.0fW load=%.0fW grid=%.0fW\n",
+          solar_data.solis_pv_power_W, solar_data.solis_load_power_W, solar_data.solis_grid_power_W);
+      }
+    }
+  } else {
+    Serial.printf("[ROOT-SENSORS] HTTP GET failed: %d\n", code);
+  }
+  http.end();
 }
 
 static void fetch_envoy_http() {
@@ -65,6 +141,8 @@ static void fetch_envoy_http() {
         if (strcmp(envoy_id, "envoy1") == 0) {
           if (is_house_serial(serial)) house_today += daily;
           else                         shed_today  += daily;
+        } else if (is_shed_from_envoy2_serial(serial)) {
+          shed_today += daily;
         } else {
           trailer_today += daily;
         }
@@ -75,6 +153,7 @@ static void fetch_envoy_http() {
       solar_data.envoy_shed_today_kWh    = shed_today;
       solar_data.envoy_trailer_today_kWh = trailer_today;
       solar_data.envoy_last_update_ms    = millis();
+      recompute_total_day_pv_energy();
       Serial.printf("[ENVOY] live=%.0fW today=%.2f house=%.2f shed=%.2f trailer=%.2f kWh\n",
         total_live, total_today, house_today, shed_today, trailer_today);
     }
@@ -256,6 +335,12 @@ static void handle_solark_sensor(const char* suffix, const char* payload, int pa
   } else if (strcmp(suffix, "battery_power") == 0 || strcmp(suffix, "total_battery_power") == 0) {
     solar_data.solark_battery_power_W = val;
     solar_data.battery_power_W = val;
+  } else if (strcmp(suffix, "battery_voltage") == 0 || strcmp(suffix, "voltage") == 0) {
+    solar_data.solark_battery_voltage_V = val;
+  } else if (strcmp(suffix, "battery_temperature") == 0 || strcmp(suffix, "battery_temp") == 0) {
+    solar_data.solark_battery_temp_C = val;
+  } else if (strcmp(suffix, "total_battery_current") == 0 || strcmp(suffix, "battery_current") == 0) {
+    solar_data.solark_total_battery_current_A = val;
   } else if (strcmp(suffix, "battery_soc") == 0) {
     solar_data.solark_battery_soc_pct = val;
     solar_data.battery_soc_pct = val;
@@ -272,33 +357,6 @@ static void handle_solark_sensor(const char* suffix, const char* payload, int pa
   solar_data.last_update_ms = millis();
 }
 
-// ── solar/solis/sensors/<suffix> handler ──────────────────────────────────────
-
-static void handle_solis_sensor(const char* suffix, const char* payload, int payload_len) {
-  char val_buf[32];
-  int copy_len = (payload_len < (int)(sizeof(val_buf) - 1)) ? payload_len : (int)(sizeof(val_buf) - 1);
-  memcpy(val_buf, payload, copy_len);
-  val_buf[copy_len] = '\0';
-
-  float val = atof(val_buf);
-
-  if (strcmp(suffix, "pv_power_W") == 0 || strcmp(suffix, "solar_power") == 0 || strcmp(suffix, "total_solar_power") == 0) {
-    solar_data.solis_pv_power_W = val;
-  } else if (strcmp(suffix, "load_power_W") == 0 || strcmp(suffix, "load_power") == 0) {
-    solar_data.solis_load_power_W = val;
-  } else if (strcmp(suffix, "grid_power_W") == 0 || strcmp(suffix, "grid_power") == 0) {
-    solar_data.solis_grid_power_W = val;
-  } else if (strcmp(suffix, "battery_power_W") == 0 || strcmp(suffix, "battery_power") == 0 || strcmp(suffix, "total_battery_power") == 0) {
-    solar_data.solis_battery_power_W = val;
-  } else if (strcmp(suffix, "battery_soc_pct") == 0 || strcmp(suffix, "battery_soc") == 0) {
-    solar_data.solis_battery_soc_pct = val;
-  } else if (strcmp(suffix, "energy_today_pv_kWh") == 0 || strcmp(suffix, "day_pv_energy") == 0) {
-    solar_data.solis_day_pv_energy_kWh = val;
-  }
-
-  solar_data.solis_last_update_ms = millis();
-}
-
 // ── envoy/summary/* handler (simple numeric values from server) ─────────────
 
 static void handle_envoy_summary(const char* topic, const char* payload, int payload_len) {
@@ -309,10 +367,12 @@ static void handle_envoy_summary(const char* topic, const char* payload, int pay
   float val = atof(val_buf);
 
   const char* suffix = topic + strlen("envoy/summary/");
+  bool total_day_updated = false;
   if (strcmp(suffix, "total_live") == 0) {
     solar_data.envoy_total_live_W = val;
   } else if (strcmp(suffix, "total_today") == 0) {
     solar_data.envoy_total_today_kWh = val;
+    total_day_updated = true;
   } else if (strcmp(suffix, "house_today") == 0) {
     solar_data.envoy_house_today_kWh = val;
   } else if (strcmp(suffix, "shed_today") == 0) {
@@ -321,6 +381,9 @@ static void handle_envoy_summary(const char* topic, const char* payload, int pay
     solar_data.envoy_trailer_today_kWh = val;
   }
   solar_data.envoy_last_update_ms = millis();
+  if (total_day_updated) {
+    recompute_total_day_pv_energy();
+  }
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -347,9 +410,6 @@ void on_mqtt_message(const char* topic_raw, int topic_len, const char* data, int
   } else if (strncmp(topic, TOPIC_SOLARK_PREFIX, strlen(TOPIC_SOLARK_PREFIX)) == 0) {
     const char* suffix = topic + strlen(TOPIC_SOLARK_PREFIX);
     handle_solark_sensor(suffix, data, data_len);
-  } else if (strncmp(topic, TOPIC_SOLIS_PREFIX, strlen(TOPIC_SOLIS_PREFIX)) == 0) {
-    const char* suffix = topic + strlen(TOPIC_SOLIS_PREFIX);
-    handle_solis_sensor(suffix, data, data_len);
   } else if (strncmp(topic, "envoy/summary/", 14) == 0) {
     handle_envoy_summary(topic, data, data_len);
   }
@@ -365,26 +425,34 @@ void subscribe_topics(void* client_handle) {
   esp_mqtt_client_subscribe(client, TOPIC_BE_SPEC_DATA, 0);
   esp_mqtt_client_subscribe(client, TOPIC_BE_EVENTS, 0);
   esp_mqtt_client_subscribe(client, "solar/solark/sensors/solar_power", 0);
+  esp_mqtt_client_subscribe(client, "solar/solark/sensors/total_solar_power", 0);
   esp_mqtt_client_subscribe(client, "solar/solark/sensors/load_power", 0);
   esp_mqtt_client_subscribe(client, "solar/solark/sensors/grid_power", 0);
   esp_mqtt_client_subscribe(client, "solar/solark/sensors/battery_power", 0);
+  esp_mqtt_client_subscribe(client, "solar/solark/sensors/battery_voltage", 0);
+  esp_mqtt_client_subscribe(client, "solar/solark/sensors/battery_temperature", 0);
+  esp_mqtt_client_subscribe(client, "solar/solark/sensors/total_battery_current", 0);
   esp_mqtt_client_subscribe(client, "solar/solark/sensors/battery_soc", 0);
   esp_mqtt_client_subscribe(client, "solar/solark/sensors/day_pv_energy", 0);
-  esp_mqtt_client_subscribe(client, "solis/sensors/pv_power_W", 0);
-  esp_mqtt_client_subscribe(client, "solis/sensors/load_power_W", 0);
-  esp_mqtt_client_subscribe(client, "solis/sensors/grid_power_W", 0);
-  esp_mqtt_client_subscribe(client, "solis/sensors/battery_power_W", 0);
-  esp_mqtt_client_subscribe(client, "solis/sensors/battery_soc_pct", 0);
-  esp_mqtt_client_subscribe(client, "solis/sensors/energy_today_pv_kWh", 0);
-  Serial.println("[MQTT-BRIDGE] Subscribed to 15 topics; envoy via HTTP poll");
+  Serial.println("[MQTT-BRIDGE] Subscribed to 13 MQTT topics; tesla/envoy via HTTP poll");
 }
 
 void tick_alive_counter() {
   if (datalayer.battery.status.CAN_battery_still_alive > 0) {
     datalayer.battery.status.CAN_battery_still_alive--;
   }
-  // Poll envoy HTTP API every 60s (staggered: first poll at 10s after boot)
+  // Poll remote root sensors frequently for Tesla/Solis inverter-side values
   unsigned long now = millis();
+  if (root_sensors_last_poll_ms == 0) {
+    if (now >= 5000UL) {
+      root_sensors_last_poll_ms = now;
+      fetch_root_sensors_http();
+    }
+  } else if ((now - root_sensors_last_poll_ms) >= ROOT_SENSORS_POLL_INTERVAL_MS) {
+    root_sensors_last_poll_ms = now;
+    fetch_root_sensors_http();
+  }
+  // Poll envoy HTTP API every 60s (staggered: first poll at 10s after boot)
   if (envoy_last_poll_ms == 0) {
     if (now >= 10000UL) {
       envoy_last_poll_ms = now;
