@@ -22,6 +22,17 @@
 #define ROOT_SENSORS_POLL_INTERVAL_MS 5000UL
 #define ENVOY_API_URL "http://10.10.53.92:3008/api/envoy/data"
 #define ENVOY_POLL_INTERVAL_MS 60000UL
+#define STORAGE_BITS_API_URL "http://10.10.53.92:3007/api/storage_bits"
+#define STORAGE_BITS_POLL_INTERVAL_MS 5000UL
+#define CURTAILMENT_API_URL "http://10.10.53.92:3007/api/curtailment"
+#define CURTAILMENT_POLL_INTERVAL_MS 5000UL
+#define SOLIS_CONTROL_API_URL "http://10.10.53.92:3007/api/control"
+#define CURTAILMENT_TABUCHI_API_URL "http://10.10.53.92:3007/api/curtailment/tabuchi"
+#define CURTAILMENT_MSERIES_API_URL "http://10.10.53.92:3007/api/curtailment/mseries"
+#define CURTAILMENT_IQ8_API_URL "http://10.10.53.92:3007/api/curtailment/iq8"
+#define CONTROL_STATUS_HTTP_TIMEOUT_MS 2000
+#define REMOTE_STATUS_HTTP_TIMEOUT_MS 8000
+#define ACTION_HTTP_TIMEOUT_MS 2000
 
 // House inverter serial numbers (envoy1)
 static const char* HOUSE_SERIALS[] = { "121138031474", "121138032402", "121138031483", nullptr };
@@ -29,12 +40,27 @@ static const char* SHED_FROM_ENVOY2_SERIAL = "542442025779";
 
 namespace mqtt_display_bridge {
 
+enum class PendingSolarAction : uint8_t {
+  None = 0,
+  SolisSelfUse,
+  SolisFeedInPriority,
+  TabuchiOn,
+  TabuchiOff,
+  ShedOn,
+  ShedOff,
+  Iq8On,
+  Iq8Off,
+};
+
 static SolarData solar_data;
 static MqttLogEntry mqtt_log[MQTT_LOG_SIZE];
 static int mqtt_log_head = 0;
 static int mqtt_log_count = 0;
 static unsigned long root_sensors_last_poll_ms = 0;
 static unsigned long envoy_last_poll_ms = 0;
+static unsigned long storage_bits_last_poll_ms = 0;
+static unsigned long curtailment_last_poll_ms = 0;
+static volatile PendingSolarAction pending_solar_action = PendingSolarAction::None;
 static constexpr float GRID_STATUS_TUBUCHI_DAY_PV_KWH = 15.0f;
 
 static void recompute_total_day_pv_energy() {
@@ -68,11 +94,162 @@ static bool read_sensor_value(JsonVariantConst values, const char* key, float* o
   return true;
 }
 
+static bool read_bool_value(JsonVariantConst object, const char* key, bool* out) {
+  JsonVariantConst value = object[key];
+  if (value.isNull()) return false;
+  *out = value.as<bool>();
+  return true;
+}
+
+static bool read_float_value(JsonVariantConst object, const char* key, float* out) {
+  JsonVariantConst value = object[key];
+  if (value.isNull()) return false;
+  *out = value.as<float>();
+  return true;
+}
+
+static bool read_switch_enabled(JsonVariantConst switches, const char* key, bool* out) {
+  JsonVariantConst state = switches[key]["state"];
+  if (state.isNull()) return false;
+  const char* state_str = state.as<const char*>();
+  if (state_str == nullptr) return false;
+  *out = strcmp(state_str, "on") == 0;
+  return true;
+}
+
+static bool post_remote_json(const char* url, const char* payload) {
+  if (WiFi.status() != WL_CONNECTED) return false;
+  HTTPClient http;
+  http.begin(url);
+  http.setTimeout(ACTION_HTTP_TIMEOUT_MS);
+  http.addHeader("Content-Type", "application/json");
+  int code = http.POST(String(payload));
+  bool ok = (code >= 200 && code < 300);
+  if (!ok) {
+    Serial.printf("[3007] HTTP POST failed: %s -> %d\n", url, code);
+  }
+  http.end();
+  return ok;
+}
+
+static bool post_remote_empty(const char* url) {
+  if (WiFi.status() != WL_CONNECTED) return false;
+  HTTPClient http;
+  http.begin(url);
+  http.setTimeout(ACTION_HTTP_TIMEOUT_MS);
+  int code = http.POST(String(""));
+  bool ok = (code >= 200 && code < 300);
+  if (!ok) {
+    Serial.printf("[3007] HTTP POST failed: %s -> %d\n", url, code);
+  }
+  http.end();
+  return ok;
+}
+
+static void fetch_storage_bits_http() {
+  if (WiFi.status() != WL_CONNECTED) return;
+  HTTPClient http;
+  http.begin(STORAGE_BITS_API_URL);
+  http.setTimeout(CONTROL_STATUS_HTTP_TIMEOUT_MS);
+  int code = http.GET();
+  if (code == 200) {
+    String body = http.getString();
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, body);
+    if (!err) {
+      bool updated = false;
+      bool value = false;
+      if (read_bool_value(doc.as<JsonVariantConst>(), "self_use", &value)) {
+        solar_data.solis_mode_self_use = value;
+        updated = true;
+      }
+      if (read_bool_value(doc.as<JsonVariantConst>(), "feed_in_priority", &value)) {
+        solar_data.solis_mode_feed_in_priority = value;
+        updated = true;
+      }
+      if (updated) {
+        solar_data.solis_mode_last_update_ms = millis();
+      }
+    }
+  } else {
+    Serial.printf("[3007] storage_bits GET failed: %d\n", code);
+  }
+  http.end();
+}
+
+static void fetch_curtailment_http() {
+  if (WiFi.status() != WL_CONNECTED) return;
+  HTTPClient http;
+  http.begin(CURTAILMENT_API_URL);
+  http.setTimeout(CONTROL_STATUS_HTTP_TIMEOUT_MS);
+  int code = http.GET();
+  if (code == 200) {
+    String body = http.getString();
+    JsonDocument doc;
+    DeserializationError err = deserializeJson(doc, body);
+    if (!err) {
+      JsonVariantConst root = doc.as<JsonVariantConst>();
+      if (!root["auth_ok"].isNull() && !root["auth_ok"].as<bool>()) {
+        Serial.println("[3007] curtailment GET auth not ok");
+      } else {
+        bool updated = false;
+        JsonVariantConst auto_state = root["auto"];
+        JsonVariantConst switches = root["switches"];
+        bool bool_value = false;
+        float float_value = 0.0f;
+
+        if (read_bool_value(auto_state, "enabled", &bool_value)) {
+          solar_data.curtail_auto_enabled = bool_value;
+          updated = true;
+        }
+        if (read_bool_value(auto_state, "curtail_active", &bool_value)) {
+          solar_data.curtail_auto_active = bool_value;
+          updated = true;
+        }
+        if (read_bool_value(auto_state, "solis_active", &bool_value)) {
+          solar_data.curtail_solis_active = bool_value;
+          updated = true;
+        }
+        if (read_float_value(auto_state, "soc_pct", &float_value)) {
+          solar_data.curtail_soc_pct = float_value;
+          updated = true;
+        }
+        if (read_float_value(auto_state, "threshold_pct", &float_value)) {
+          solar_data.curtail_threshold_pct = float_value;
+          updated = true;
+        }
+        if (read_float_value(auto_state, "restore_pct", &float_value)) {
+          solar_data.curtail_restore_pct = float_value;
+          updated = true;
+        }
+        if (read_switch_enabled(switches, "tabuchi", &bool_value)) {
+          solar_data.tabuchi_export_enabled = bool_value;
+          updated = true;
+        }
+        if (read_switch_enabled(switches, "mseries", &bool_value)) {
+          solar_data.shed_micros_enabled = bool_value;
+          updated = true;
+        }
+        if (read_switch_enabled(switches, "iq8", &bool_value)) {
+          solar_data.iq8_micros_enabled = bool_value;
+          updated = true;
+        }
+        if (updated) {
+          solar_data.curtailment_last_update_ms = millis();
+        }
+      }
+    }
+  } else {
+    Serial.printf("[3007] curtailment GET failed: %d\n", code);
+  }
+  http.end();
+}
+
 static void fetch_root_sensors_http() {
   if (WiFi.status() != WL_CONNECTED) return;
   HTTPClient http;
   http.begin(ROOT_SENSORS_API_URL);
-  http.setTimeout(8000);
+  http.setTimeout(REMOTE_STATUS_HTTP_TIMEOUT_MS);
   int code = http.GET();
   if (code == 200) {
     String body = http.getString();
@@ -122,7 +299,7 @@ static void fetch_envoy_http() {
   if (WiFi.status() != WL_CONNECTED) return;
   HTTPClient http;
   http.begin(ENVOY_API_URL);
-  http.setTimeout(8000);
+  http.setTimeout(REMOTE_STATUS_HTTP_TIMEOUT_MS);
   int code = http.GET();
   if (code == 200) {
     String body = http.getString();
@@ -175,6 +352,72 @@ static void log_message(const char* topic, const char* payload) {
   mqtt_log_head = (mqtt_log_head + 1) % MQTT_LOG_SIZE;
   if (mqtt_log_count < MQTT_LOG_SIZE)
     mqtt_log_count++;
+}
+
+static bool queue_solar_action(PendingSolarAction action) {
+  if (WiFi.status() != WL_CONNECTED) return false;
+  if (pending_solar_action != PendingSolarAction::None) return false;
+  pending_solar_action = action;
+  return true;
+}
+
+static bool process_pending_solar_action() {
+  if (pending_solar_action == PendingSolarAction::None) {
+    return false;
+  }
+
+  bool ok = false;
+  bool needs_storage_refresh = false;
+  bool needs_curtailment_refresh = false;
+
+  switch (pending_solar_action) {
+    case PendingSolarAction::SolisSelfUse:
+      ok = post_remote_json(SOLIS_CONTROL_API_URL, "{\"register\":\"storage\",\"bit_index\":0,\"on\":true}");
+      needs_storage_refresh = ok;
+      break;
+    case PendingSolarAction::SolisFeedInPriority:
+      ok = post_remote_json(SOLIS_CONTROL_API_URL, "{\"register\":\"storage\",\"bit_index\":6,\"on\":true}");
+      needs_storage_refresh = ok;
+      break;
+    case PendingSolarAction::TabuchiOn:
+      ok = post_remote_empty(CURTAILMENT_TABUCHI_API_URL "/on");
+      needs_curtailment_refresh = ok;
+      break;
+    case PendingSolarAction::TabuchiOff:
+      ok = post_remote_empty(CURTAILMENT_TABUCHI_API_URL "/off");
+      needs_curtailment_refresh = ok;
+      break;
+    case PendingSolarAction::ShedOn:
+      ok = post_remote_empty(CURTAILMENT_MSERIES_API_URL "/on");
+      needs_curtailment_refresh = ok;
+      break;
+    case PendingSolarAction::ShedOff:
+      ok = post_remote_empty(CURTAILMENT_MSERIES_API_URL "/off");
+      needs_curtailment_refresh = ok;
+      break;
+    case PendingSolarAction::Iq8On:
+      ok = post_remote_empty(CURTAILMENT_IQ8_API_URL "/on");
+      needs_curtailment_refresh = ok;
+      break;
+    case PendingSolarAction::Iq8Off:
+      ok = post_remote_empty(CURTAILMENT_IQ8_API_URL "/off");
+      needs_curtailment_refresh = ok;
+      break;
+    case PendingSolarAction::None:
+    default:
+      break;
+  }
+
+  pending_solar_action = PendingSolarAction::None;
+
+  if (needs_storage_refresh) {
+    storage_bits_last_poll_ms = 0;
+  }
+  if (needs_curtailment_refresh) {
+    curtailment_last_poll_ms = 0;
+  }
+
+  return true;
 }
 
 static bms_status_enum parse_bms_status(const char* s) {
@@ -441,31 +684,85 @@ void tick_alive_counter() {
   if (datalayer.battery.status.CAN_battery_still_alive > 0) {
     datalayer.battery.status.CAN_battery_still_alive--;
   }
-  // Poll remote root sensors frequently for Tesla/Solis inverter-side values
+
+  if (process_pending_solar_action()) {
+    return;
+  }
+
   unsigned long now = millis();
+
+  if (storage_bits_last_poll_ms == 0) {
+    if (now >= 3000UL) {
+      storage_bits_last_poll_ms = now;
+      fetch_storage_bits_http();
+      return;
+    }
+  } else if ((now - storage_bits_last_poll_ms) >= STORAGE_BITS_POLL_INTERVAL_MS) {
+    storage_bits_last_poll_ms = now;
+    fetch_storage_bits_http();
+    return;
+  }
+
+  if (curtailment_last_poll_ms == 0) {
+    if (now >= 3500UL) {
+      curtailment_last_poll_ms = now;
+      fetch_curtailment_http();
+      return;
+    }
+  } else if ((now - curtailment_last_poll_ms) >= CURTAILMENT_POLL_INTERVAL_MS) {
+    curtailment_last_poll_ms = now;
+    fetch_curtailment_http();
+    return;
+  }
+
+  // Poll remote root sensors frequently for Tesla/Solis inverter-side values
   if (root_sensors_last_poll_ms == 0) {
     if (now >= 5000UL) {
       root_sensors_last_poll_ms = now;
       fetch_root_sensors_http();
+      return;
     }
   } else if ((now - root_sensors_last_poll_ms) >= ROOT_SENSORS_POLL_INTERVAL_MS) {
     root_sensors_last_poll_ms = now;
     fetch_root_sensors_http();
+    return;
   }
   // Poll envoy HTTP API every 60s (staggered: first poll at 10s after boot)
   if (envoy_last_poll_ms == 0) {
     if (now >= 10000UL) {
       envoy_last_poll_ms = now;
       fetch_envoy_http();
+      return;
     }
   } else if ((now - envoy_last_poll_ms) >= ENVOY_POLL_INTERVAL_MS) {
     envoy_last_poll_ms = now;
     fetch_envoy_http();
+    return;
   }
 }
 
 const SolarData& get_solar_data() {
   return solar_data;
+}
+
+bool set_solis_mode_self_use() {
+  return queue_solar_action(PendingSolarAction::SolisSelfUse);
+}
+
+bool set_solis_mode_feed_in_priority() {
+  return queue_solar_action(PendingSolarAction::SolisFeedInPriority);
+}
+
+bool set_tabuchi_export_enabled(bool enabled) {
+  return queue_solar_action(enabled ? PendingSolarAction::TabuchiOn : PendingSolarAction::TabuchiOff);
+}
+
+bool set_shed_micros_enabled(bool enabled) {
+  return queue_solar_action(enabled ? PendingSolarAction::ShedOn : PendingSolarAction::ShedOff);
+}
+
+bool set_iq8_micros_enabled(bool enabled) {
+  return queue_solar_action(enabled ? PendingSolarAction::Iq8On : PendingSolarAction::Iq8Off);
 }
 
 const MqttLogEntry* get_mqtt_log() {

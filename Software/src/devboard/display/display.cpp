@@ -4,6 +4,7 @@
 
 void init_display() {}
 void update_display() {}
+const char* get_display_ui_version() { return ""; }
 
 #elif defined(HW_WAVESHARE7B)
 
@@ -25,9 +26,12 @@ void update_display() {}
 #endif
 
 #include <Arduino.h>
+#include <cstring>
 #include <WiFi.h>
 #include <esp_wifi.h>
 #include <lvgl.h>
+
+extern const char* version_number;
 
 // Include Waveshare native LCD drivers
 #include "waveshare_lcd/i2c.h"
@@ -39,7 +43,9 @@ void update_display() {}
 #define SCREEN_HEIGHT 600
 
 // UI Version - increment with each UI change
-#define UI_VERSION "2.3.0"
+#define UI_VERSION "2.3.1"
+
+const char* get_display_ui_version() { return UI_VERSION; }
 
 // GT911 Touch pins
 #define TOUCH_INT 4
@@ -71,6 +77,8 @@ static lv_obj_t* lbl_contactor;
 static lv_obj_t* lbl_wifi;
 static lv_obj_t* lbl_batt_info;
 static lv_obj_t* lbl_sys_info;
+static lv_obj_t* card_batt_info;
+static lv_obj_t* card_system_status;
 static lv_obj_t* bar_soc;
 
 static bool display_initialized = false;
@@ -99,6 +107,7 @@ static lv_obj_t* lbl_wifi_conf_msg;
 static lv_obj_t* brightness_slider;
 static lv_obj_t* lbl_brightness;
 static lv_obj_t* lbl_backup_battery;
+static lv_obj_t* lbl_ui_build_marker = NULL;
 static bool wifi_ap_enabled = false;  // Synced with wifiap_enabled after init_WiFi()
 static uint8_t brightness_level = 70;  // 0-100% (default 70% to reduce edge glow / backlight bleed)
 uint8_t wifi_tx_power = 0;  // Index into power levels (default 5dBm minimum) - global for wifi.cpp access
@@ -155,10 +164,129 @@ static lv_obj_t* lbl_envoy_total_today = NULL;
 static lv_obj_t* lbl_envoy_house = NULL;
 static lv_obj_t* lbl_envoy_shed = NULL;
 static lv_obj_t* lbl_envoy_trailer = NULL;
+static lv_obj_t* card_solar_solis_mode = NULL;
+static lv_obj_t* lbl_solar_solis_mode_state = NULL;
+static lv_obj_t* lbl_solar_solis_mode_hint = NULL;
+static lv_obj_t* card_solar_tabuchi = NULL;
+static lv_obj_t* lbl_solar_tabuchi_state = NULL;
+static lv_obj_t* lbl_solar_tabuchi_hint = NULL;
+static lv_obj_t* card_solar_shed = NULL;
+static lv_obj_t* lbl_solar_shed_state = NULL;
+static lv_obj_t* lbl_solar_shed_hint = NULL;
+static lv_obj_t* card_solar_iq8 = NULL;
+static lv_obj_t* lbl_solar_iq8_state = NULL;
+static lv_obj_t* lbl_solar_iq8_hint = NULL;
+static lv_obj_t* card_solar_generator = NULL;
+static lv_obj_t* lbl_solar_generator_state = NULL;
+static lv_obj_t* lbl_solar_generator_hint = NULL;
 #else
 static lv_obj_t* tab_btns[3];
 #endif
 static uint8_t current_screen = 0;
+
+static constexpr uint32_t SOLAR_RENDER_COLOR_UNSET = 0xffffffffu;
+
+struct SolarSocRenderCache {
+  int last_value = -1;
+  int last_bucket = -1;
+};
+
+static SolarSocRenderCache master_soc_render_cache;
+static SolarSocRenderCache solark_soc_render_cache;
+static SolarSocRenderCache solis_soc_render_cache;
+static uint32_t solark_grid_text_color_cache = SOLAR_RENDER_COLOR_UNSET;
+static uint32_t solark_batt_text_color_cache = SOLAR_RENDER_COLOR_UNSET;
+static uint32_t solis_grid_text_color_cache = SOLAR_RENDER_COLOR_UNSET;
+static uint32_t solis_batt_text_color_cache = SOLAR_RENDER_COLOR_UNSET;
+static uint32_t solar_legacy_grid_text_color_cache = SOLAR_RENDER_COLOR_UNSET;
+static uint32_t solar_legacy_batt_text_color_cache = SOLAR_RENDER_COLOR_UNSET;
+static uint32_t solar_solis_mode_state_color_cache = SOLAR_RENDER_COLOR_UNSET;
+static uint32_t solar_solis_mode_border_color_cache = SOLAR_RENDER_COLOR_UNSET;
+static uint32_t solar_tabuchi_state_color_cache = SOLAR_RENDER_COLOR_UNSET;
+static uint32_t solar_tabuchi_border_color_cache = SOLAR_RENDER_COLOR_UNSET;
+static uint32_t solar_shed_state_color_cache = SOLAR_RENDER_COLOR_UNSET;
+static uint32_t solar_shed_border_color_cache = SOLAR_RENDER_COLOR_UNSET;
+static uint32_t solar_iq8_state_color_cache = SOLAR_RENDER_COLOR_UNSET;
+static uint32_t solar_iq8_border_color_cache = SOLAR_RENDER_COLOR_UNSET;
+static uint32_t solar_generator_state_color_cache = SOLAR_RENDER_COLOR_UNSET;
+static uint32_t solar_generator_border_color_cache = SOLAR_RENDER_COLOR_UNSET;
+
+static void solar_set_label_text_if_changed(lv_obj_t* label, const char* text) {
+  if (!label || !text) return;
+  const char* current = lv_label_get_text(label);
+  if (!current || strcmp(current, text) != 0) {
+    lv_label_set_text(label, text);
+  }
+}
+
+static void solar_set_text_color_if_changed(lv_obj_t* obj, uint32_t& cache, uint32_t color_hex) {
+  if (!obj || cache == color_hex) return;
+  lv_obj_set_style_text_color(obj, lv_color_hex(color_hex), 0);
+  cache = color_hex;
+}
+
+static void solar_set_border_color_if_changed(lv_obj_t* obj, uint32_t& cache, uint32_t color_hex) {
+  if (!obj || cache == color_hex) return;
+  lv_obj_set_style_border_color(obj, lv_color_hex(color_hex), 0);
+  cache = color_hex;
+}
+
+static int solar_soc_bucket(int soc_pct) {
+  if (soc_pct < 20) return 0;
+  if (soc_pct < 50) return 1;
+  return 2;
+}
+
+static unsigned long solar_bucket_status_age_seconds(unsigned long age_s) {
+  if (age_s < 60UL) return (age_s / 10UL) * 10UL;
+  if (age_s < 3600UL) return (age_s / 60UL) * 60UL;
+  return (age_s / 300UL) * 300UL;
+}
+
+static void solar_update_soc_bar(lv_obj_t* bar, lv_obj_t* pct_label, SolarSocRenderCache& cache,
+                                 int soc_pct, bool has_value) {
+  if (!bar || !pct_label) return;
+
+  int clamped_soc = has_value ? soc_pct : 0;
+  if (clamped_soc < 0) clamped_soc = 0;
+  if (clamped_soc > 100) clamped_soc = 100;
+
+  if (cache.last_value != clamped_soc) {
+    lv_bar_set_value(bar, clamped_soc, LV_ANIM_OFF);
+    cache.last_value = clamped_soc;
+  }
+
+  char pct_text[12];
+  if (has_value) snprintf(pct_text, sizeof(pct_text), "%d %%", clamped_soc);
+  else snprintf(pct_text, sizeof(pct_text), "-- %%");
+  solar_set_label_text_if_changed(pct_label, pct_text);
+
+  int bucket = has_value ? solar_soc_bucket(clamped_soc) : -1;
+  if (cache.last_bucket == bucket) return;
+  cache.last_bucket = bucket;
+  if (bucket < 0) return;
+
+  lv_color_t c1;
+  lv_color_t c2;
+  lv_color_t txt_c;
+  if (bucket == 0) {
+    c1 = lv_color_hex(0xff4444);
+    c2 = lv_color_hex(0xff8844);
+    txt_c = lv_color_hex(0xff7b72);
+  } else if (bucket == 1) {
+    c1 = lv_color_hex(0xff6622);
+    c2 = lv_color_hex(0xffcc00);
+    txt_c = lv_color_hex(0xffa657);
+  } else {
+    c1 = lv_color_hex(0x22cc44);
+    c2 = lv_color_hex(0x00ff88);
+    txt_c = lv_color_hex(0x7ee787);
+  }
+
+  lv_obj_set_style_bg_color(bar, c1, LV_PART_INDICATOR);
+  lv_obj_set_style_bg_grad_color(bar, c2, LV_PART_INDICATOR);
+  lv_obj_set_style_text_color(pct_label, txt_c, 0);
+}
 
 // Min/Max tracking (used by web UI JSON endpoint)
 static float voltage_min_ever = 9999.0f;
@@ -601,6 +729,66 @@ static void add_event(const char* msg) {
   if (event_count < MAX_EVENTS) event_count++;
 }
 
+#ifdef HW_WAVESHARE7B_DISPLAY_ONLY
+static void btn_solar_solis_mode_cb(lv_event_t* e) {
+  const SolarData& sol = mqtt_display_bridge::get_solar_data();
+  if (sol.solis_mode_last_update_ms == 0) {
+    add_event("Solar: Solis Mode waiting for 3007");
+    return;
+  }
+
+  bool target_self_use = sol.solis_mode_feed_in_priority;
+  bool ok = target_self_use
+    ? mqtt_display_bridge::set_solis_mode_self_use()
+    : mqtt_display_bridge::set_solis_mode_feed_in_priority();
+  add_event(ok
+    ? (target_self_use ? "Solar: Solis queued -> Self-Use" : "Solar: Solis queued -> Feed-In")
+    : "Solar: Solis action not queued");
+}
+
+static void btn_solar_tabuchi_cb(lv_event_t* e) {
+  const SolarData& sol = mqtt_display_bridge::get_solar_data();
+  if (sol.curtailment_last_update_ms == 0) {
+    add_event("Solar: Tabuchi waiting for 3007");
+    return;
+  }
+
+  bool enable = !sol.tabuchi_export_enabled;
+  bool ok = mqtt_display_bridge::set_tabuchi_export_enabled(enable);
+  add_event(ok
+    ? (enable ? "Solar: Tabuchi queued ON" : "Solar: Tabuchi queued OFF")
+    : "Solar: Tabuchi action not queued");
+}
+
+static void btn_solar_shed_cb(lv_event_t* e) {
+  const SolarData& sol = mqtt_display_bridge::get_solar_data();
+  if (sol.curtailment_last_update_ms == 0) {
+    add_event("Solar: Shed Micros waiting for 3007");
+    return;
+  }
+
+  bool enable = !sol.shed_micros_enabled;
+  bool ok = mqtt_display_bridge::set_shed_micros_enabled(enable);
+  add_event(ok
+    ? (enable ? "Solar: Shed Micros queued ON" : "Solar: Shed Micros queued OFF")
+    : "Solar: Shed Micros action not queued");
+}
+
+static void btn_solar_iq8_cb(lv_event_t* e) {
+  const SolarData& sol = mqtt_display_bridge::get_solar_data();
+  if (sol.curtailment_last_update_ms == 0) {
+    add_event("Solar: IQ8 Micros waiting for 3007");
+    return;
+  }
+
+  bool enable = !sol.iq8_micros_enabled;
+  bool ok = mqtt_display_bridge::set_iq8_micros_enabled(enable);
+  add_event(ok
+    ? (enable ? "Solar: IQ8 Micros queued ON" : "Solar: IQ8 Micros queued OFF")
+    : "Solar: IQ8 Micros action not queued");
+}
+#endif
+
 // Screen switching callbacks
 static void show_screen_main(lv_event_t* e);
 static void show_screen_alerts(lv_event_t* e);
@@ -608,11 +796,39 @@ static void show_screen_alerts(lv_event_t* e);
 static void show_screen_solar(lv_event_t* e);
 #endif
 
+static void set_main_bottom_row_hidden(bool hidden) {
+  if (card_batt_info) {
+    if (hidden) lv_obj_add_flag(card_batt_info, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_clear_flag(card_batt_info, LV_OBJ_FLAG_HIDDEN);
+  }
+  if (card_system_status) {
+    if (hidden) lv_obj_add_flag(card_system_status, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_clear_flag(card_system_status, LV_OBJ_FLAG_HIDDEN);
+  }
+  if (btn_wifi_ap) {
+    if (hidden) lv_obj_add_flag(btn_wifi_ap, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_clear_flag(btn_wifi_ap, LV_OBJ_FLAG_HIDDEN);
+  }
+  if (btn_reboot) {
+    if (hidden) lv_obj_add_flag(btn_reboot, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_clear_flag(btn_reboot, LV_OBJ_FLAG_HIDDEN);
+  }
+  if (btn_contactors) {
+    if (hidden) lv_obj_add_flag(btn_contactors, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_clear_flag(btn_contactors, LV_OBJ_FLAG_HIDDEN);
+  }
+  if (btn_settings) {
+    if (hidden) lv_obj_add_flag(btn_settings, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_clear_flag(btn_settings, LV_OBJ_FLAG_HIDDEN);
+  }
+}
+
 #ifdef HW_WAVESHARE7B_DISPLAY_ONLY
 static void show_screen_solar(lv_event_t* e) {
   if (screen_main) lv_obj_add_flag(screen_main, LV_OBJ_FLAG_HIDDEN);
   if (screen_alerts) lv_obj_add_flag(screen_alerts, LV_OBJ_FLAG_HIDDEN);
   if (screen_solar) lv_obj_clear_flag(screen_solar, LV_OBJ_FLAG_HIDDEN);
+  set_main_bottom_row_hidden(true);
   current_screen = 0;
   lv_obj_set_style_bg_color(tab_btns[0], lv_color_hex(0x1f6feb), 0);
   lv_obj_set_style_bg_color(tab_btns[1], lv_color_hex(0x21262d), 0);
@@ -623,12 +839,14 @@ static void show_screen_solar(lv_event_t* e) {
 static void show_screen_main(lv_event_t* e) {
   if (screen_main) lv_obj_clear_flag(screen_main, LV_OBJ_FLAG_HIDDEN);
   if (screen_alerts) lv_obj_add_flag(screen_alerts, LV_OBJ_FLAG_HIDDEN);
+  set_main_bottom_row_hidden(false);
 #ifdef HW_WAVESHARE7B_DISPLAY_ONLY
   if (screen_solar) lv_obj_add_flag(screen_solar, LV_OBJ_FLAG_HIDDEN);
   lv_obj_set_style_bg_color(tab_btns[0], lv_color_hex(0x21262d), 0);
   lv_obj_set_style_bg_color(tab_btns[2], lv_color_hex(0x21262d), 0);
 #endif
   current_screen = 1;
+  lastUpdateMillis = 0;
   lv_obj_set_style_bg_color(tab_btns[1], lv_color_hex(0x1f6feb), 0);
 }
 
@@ -881,8 +1099,8 @@ static void create_ui() {
   int info_w = 380;
   
   // Battery info card
-  lv_obj_t* batt_card = create_stat_card(lv_scr_act(), "BATTERY INFO", 20, row5_y, info_w, 115);
-  lbl_batt_info = lv_label_create(batt_card);
+  card_batt_info = create_stat_card(lv_scr_act(), "BATTERY INFO", 20, row5_y, info_w, 115);
+  lbl_batt_info = lv_label_create(card_batt_info);
   lv_label_set_text(lbl_batt_info, "Remaining: -- kWh\nSOH: -- %");
   lv_obj_set_style_text_font(lbl_batt_info, &lv_font_montserrat_16, 0);
   lv_obj_set_style_text_color(lbl_batt_info, lv_color_hex(0xc9d1d9), 0);
@@ -905,50 +1123,50 @@ static void create_ui() {
   static lv_point_t stem1[] = {{26, 12}, {30, 60}};  // Left side of stem
   static lv_point_t stem2[] = {{34, 12}, {30, 60}};  // Right side of stem
   
-  lv_obj_t* ba1 = lv_line_create(batt_card); lv_line_set_points(ba1, arc1, 2);
+  lv_obj_t* ba1 = lv_line_create(card_batt_info); lv_line_set_points(ba1, arc1, 2);
   lv_obj_set_style_line_width(ba1, 5, 0); lv_obj_set_style_line_color(ba1, t_red, 0);
   lv_obj_set_style_line_rounded(ba1, true, 0); lv_obj_set_pos(ba1, logo_x, logo_y);
   
-  lv_obj_t* ba2 = lv_line_create(batt_card); lv_line_set_points(ba2, arc2, 2);
+  lv_obj_t* ba2 = lv_line_create(card_batt_info); lv_line_set_points(ba2, arc2, 2);
   lv_obj_set_style_line_width(ba2, 5, 0); lv_obj_set_style_line_color(ba2, t_red, 0);
   lv_obj_set_style_line_rounded(ba2, true, 0); lv_obj_set_pos(ba2, logo_x, logo_y);
   
-  lv_obj_t* ba3 = lv_line_create(batt_card); lv_line_set_points(ba3, arc3, 2);
+  lv_obj_t* ba3 = lv_line_create(card_batt_info); lv_line_set_points(ba3, arc3, 2);
   lv_obj_set_style_line_width(ba3, 5, 0); lv_obj_set_style_line_color(ba3, t_red, 0);
   lv_obj_set_style_line_rounded(ba3, true, 0); lv_obj_set_pos(ba3, logo_x, logo_y);
   
-  lv_obj_t* ba4 = lv_line_create(batt_card); lv_line_set_points(ba4, arc4, 2);
+  lv_obj_t* ba4 = lv_line_create(card_batt_info); lv_line_set_points(ba4, arc4, 2);
   lv_obj_set_style_line_width(ba4, 5, 0); lv_obj_set_style_line_color(ba4, t_red, 0);
   lv_obj_set_style_line_rounded(ba4, true, 0); lv_obj_set_pos(ba4, logo_x, logo_y);
   
-  lv_obj_t* ba5 = lv_line_create(batt_card); lv_line_set_points(ba5, arc5, 2);
+  lv_obj_t* ba5 = lv_line_create(card_batt_info); lv_line_set_points(ba5, arc5, 2);
   lv_obj_set_style_line_width(ba5, 5, 0); lv_obj_set_style_line_color(ba5, t_red, 0);
   lv_obj_set_style_line_rounded(ba5, true, 0); lv_obj_set_pos(ba5, logo_x, logo_y);
   
-  lv_obj_t* ba6 = lv_line_create(batt_card); lv_line_set_points(ba6, arc6, 2);
+  lv_obj_t* ba6 = lv_line_create(card_batt_info); lv_line_set_points(ba6, arc6, 2);
   lv_obj_set_style_line_width(ba6, 5, 0); lv_obj_set_style_line_color(ba6, t_red, 0);
   lv_obj_set_style_line_rounded(ba6, true, 0); lv_obj_set_pos(ba6, logo_x, logo_y);
   
-  lv_obj_t* lst1 = lv_line_create(batt_card); lv_line_set_points(lst1, stem1, 2);
+  lv_obj_t* lst1 = lv_line_create(card_batt_info); lv_line_set_points(lst1, stem1, 2);
   lv_obj_set_style_line_width(lst1, 5, 0); lv_obj_set_style_line_color(lst1, t_red, 0);
   lv_obj_set_style_line_rounded(lst1, true, 0); lv_obj_set_pos(lst1, logo_x, logo_y);
   
-  lv_obj_t* lst2 = lv_line_create(batt_card); lv_line_set_points(lst2, stem2, 2);
+  lv_obj_t* lst2 = lv_line_create(card_batt_info); lv_line_set_points(lst2, stem2, 2);
   lv_obj_set_style_line_width(lst2, 5, 0); lv_obj_set_style_line_color(lst2, t_red, 0);
   lv_obj_set_style_line_rounded(lst2, true, 0); lv_obj_set_pos(lst2, logo_x, logo_y);
   
   // System info card (wider, split into System | CAN)
-  lv_obj_t* sys_card = create_stat_card(lv_scr_act(), "SYSTEM / CAN STATUS", 20 + info_w + gap, row5_y, info_w, 115);
+  card_system_status = create_stat_card(lv_scr_act(), "SYSTEM / CAN STATUS", 20 + info_w + gap, row5_y, info_w, 115);
   
   // Left side: System info with BMS status
-  lbl_sys_info = lv_label_create(sys_card);
+  lbl_sys_info = lv_label_create(card_system_status);
   lv_label_set_text(lbl_sys_info, "BMS: STANDBY\nUptime: --\nHeap: -- KB");
   lv_obj_set_style_text_font(lbl_sys_info, &lv_font_montserrat_14, 0);
   lv_obj_set_style_text_color(lbl_sys_info, lv_color_hex(0xc9d1d9), 0);
   lv_obj_set_pos(lbl_sys_info, 0, 22);
   
   // Divider line
-  lv_obj_t* divider = lv_obj_create(sys_card);
+  lv_obj_t* divider = lv_obj_create(card_system_status);
   lv_obj_set_size(divider, 2, 80);
   lv_obj_set_pos(divider, info_w/2 - 10, 18);
   lv_obj_set_style_bg_color(divider, lv_color_hex(0x30363d), 0);
@@ -956,13 +1174,13 @@ static void create_ui() {
   lv_obj_set_style_radius(divider, 1, 0);
   
   // Right side: CAN status
-  lv_obj_t* lbl_can_title = lv_label_create(sys_card);
+  lv_obj_t* lbl_can_title = lv_label_create(card_system_status);
   lv_label_set_text(lbl_can_title, "CAN Bus");
   lv_obj_set_style_text_font(lbl_can_title, &lv_font_montserrat_12, 0);
   lv_obj_set_style_text_color(lbl_can_title, lv_color_hex(0x8b949e), 0);
   lv_obj_set_pos(lbl_can_title, info_w/2, 22);
   
-  lv_obj_t* lbl_can_detail = lv_label_create(sys_card);
+  lv_obj_t* lbl_can_detail = lv_label_create(card_system_status);
   lv_label_set_text(lbl_can_detail, "BATT: --\nINV: --");
   lv_obj_set_style_text_font(lbl_can_detail, &lv_font_montserrat_14, 0);
   lv_obj_set_style_text_color(lbl_can_detail, lv_color_hex(0x8b949e), 0);
@@ -1112,8 +1330,8 @@ static void create_ui() {
   
   // Version info - brighter text
   lv_obj_t* version_info = lv_label_create(settings_panel);
-  static char ver_text[96];
-  snprintf(ver_text, sizeof(ver_text), "Firmware: Battery Emulator\nUI Version: %s\nBoard: Waveshare ESP32-S3-7B", UI_VERSION);
+  static char ver_text[112];
+  snprintf(ver_text, sizeof(ver_text), "FW %s\nUI %s\nBoard: Waveshare ESP32-S3-7B", version_number, UI_VERSION);
   lv_label_set_text(version_info, ver_text);
   lv_obj_set_style_text_font(version_info, &lv_font_montserrat_12, 0);
   lv_obj_set_style_text_color(version_info, lv_color_hex(0x8b949e), 0);
@@ -1435,6 +1653,16 @@ static void create_ui() {
   int tab_x = 550;  // Shifted left so status label (ACTIVE/STANDBY/FAULT) at x=900 is visible
 
 #ifdef HW_WAVESHARE7B_DISPLAY_ONLY
+  lbl_ui_build_marker = lv_label_create(lv_scr_act());
+  static char ui_marker_text[16];
+  snprintf(ui_marker_text, sizeof(ui_marker_text), "UI %s", UI_VERSION);
+  lv_label_set_text(lbl_ui_build_marker, ui_marker_text);
+  lv_obj_set_width(lbl_ui_build_marker, 90);
+  lv_obj_set_style_text_align(lbl_ui_build_marker, LV_TEXT_ALIGN_RIGHT, 0);
+  lv_obj_set_style_text_font(lbl_ui_build_marker, &lv_font_montserrat_12, 0);
+  lv_obj_set_style_text_color(lbl_ui_build_marker, lv_color_hex(0x79c0ff), 0);
+  lv_obj_set_pos(lbl_ui_build_marker, tab_x - 125, 14);
+
   // Order: Solar | Tesla | Alerts  (Solar is leftmost and default)
   tab_btns[0] = lv_btn_create(lv_scr_act());
   lv_obj_set_pos(tab_btns[0], tab_x, 8);
@@ -1494,14 +1722,16 @@ static void create_ui() {
 
   // ===== SOLAR SCREEN =====
   screen_solar = lv_obj_create(lv_scr_act());
-  lv_obj_set_size(screen_solar, 984, 550);
+  lv_obj_set_size(screen_solar, 984, 555);
   lv_obj_set_pos(screen_solar, 20, 45);
   lv_obj_set_style_bg_color(screen_solar, lv_color_hex(0x0d1117), 0);
+  lv_obj_set_style_bg_opa(screen_solar, LV_OPA_COVER, 0);
   lv_obj_set_style_border_width(screen_solar, 0, 0);
   lv_obj_set_style_radius(screen_solar, 0, 0);
   lv_obj_set_style_pad_all(screen_solar, 0, 0);
   // Solar is the default boot screen — leave it visible, hide main content
   if (screen_main) lv_obj_add_flag(screen_main, LV_OBJ_FLAG_HIDDEN);
+  set_main_bottom_row_hidden(true);
   current_screen = 0;
 
   // Solar screen title
@@ -1516,7 +1746,9 @@ static void create_ui() {
   lv_label_set_text(lbl_solar_status, "No data");
   lv_obj_set_style_text_font(lbl_solar_status, &lv_font_montserrat_12, 0);
   lv_obj_set_style_text_color(lbl_solar_status, lv_color_hex(0x8b949e), 0);
-  lv_obj_set_pos(lbl_solar_status, 400, 14);
+  lv_obj_set_width(lbl_solar_status, 610);
+  lv_obj_set_style_text_align(lbl_solar_status, LV_TEXT_ALIGN_RIGHT, 0);
+  lv_obj_set_pos(lbl_solar_status, 364, 14);
 
   // Helper to create a solar stat card
   auto make_solar_card = [&](int x, int y, int w, int h, const char* label_text, lv_obj_t** value_label) {
@@ -1541,7 +1773,7 @@ static void create_ui() {
     return card;
   };
 
-  auto make_wrapped_solar_card = [&](int x, int y, int w, int h, const char* label_text, lv_obj_t** value_label) {
+  auto make_compact_energy_card = [&](int x, int y, int w, int h, const char* label_text, lv_obj_t** value_label) {
     lv_obj_t* card = lv_obj_create(screen_solar);
     lv_obj_set_pos(card, x, y);
     lv_obj_set_size(card, w, h);
@@ -1549,21 +1781,29 @@ static void create_ui() {
     lv_obj_set_style_border_color(card, lv_color_hex(0x1e3a5f), 0);
     lv_obj_set_style_border_width(card, 1, 0);
     lv_obj_set_style_radius(card, 8, 0);
-    lv_obj_set_style_pad_all(card, 6, 0);
+    lv_obj_set_style_pad_all(card, 0, 0);
+    lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+
+    const bool summary_card = (w >= 180);
+    const int pad_x = summary_card ? 10 : 4;
+    const int title_w = summary_card ? 96 : 50;
+    const int value_w = summary_card ? (w - title_w - pad_x * 2 - 8) : 54;
 
     lv_obj_t* lbl = lv_label_create(card);
     lv_label_set_text(lbl, label_text);
-    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_font(lbl, summary_card ? &lv_font_montserrat_14 : &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(lbl, lv_color_hex(0x8b949e), 0);
     lv_label_set_long_mode(lbl, LV_LABEL_LONG_WRAP);
-    lv_obj_set_width(lbl, w - 12);
-    lv_obj_set_pos(lbl, 6, 4);
+    lv_obj_set_width(lbl, title_w);
+    lv_obj_set_pos(lbl, pad_x, summary_card ? 8 : 6);
 
     *value_label = lv_label_create(card);
     lv_label_set_text(*value_label, "--");
-    lv_obj_set_style_text_font(*value_label, &lv_font_montserrat_14, 0);
+    lv_obj_set_style_text_font(*value_label, summary_card ? &lv_font_montserrat_16 : &lv_font_montserrat_12, 0);
     lv_obj_set_style_text_color(*value_label, lv_color_hex(0xe6edf3), 0);
-    lv_obj_set_pos(*value_label, 6, 34);
+    lv_obj_set_style_text_align(*value_label, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_obj_set_width(*value_label, value_w);
+    lv_obj_align(*value_label, LV_ALIGN_RIGHT_MID, -pad_x, 0);
     return card;
   };
 
@@ -1577,25 +1817,78 @@ static void create_ui() {
     return lbl;
   };
 
-  // Layout constants — two 4-col groups side by side, Envoys below
-  const int cw = 102, ch = 60, cg = 6;    // card w / h / gap
-  const int bar_w = 4 * cw + 3 * cg;      // SOC bar spans all 4 cards wide
-  const int summary_w = 250, summary_h = 60;
+  auto make_solar_control_card = [&](int x, int y, int w, int h, const char* label_text,
+                                     lv_event_cb_t click_cb, lv_obj_t** card_out,
+                                     lv_obj_t** state_label, lv_obj_t** hint_label) {
+    lv_obj_t* card = lv_btn_create(screen_solar);
+    lv_obj_set_pos(card, x, y);
+    lv_obj_set_size(card, w, h);
+    lv_obj_set_style_bg_color(card, lv_color_hex(0x161b22), 0);
+    lv_obj_set_style_bg_color(card, lv_color_hex(0x1f6feb), LV_STATE_PRESSED);
+    lv_obj_set_style_border_color(card, lv_color_hex(0x30363d), 0);
+    lv_obj_set_style_border_width(card, 1, 0);
+    lv_obj_set_style_radius(card, 8, 0);
+    lv_obj_set_style_pad_all(card, 0, 0);
+    lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+    if (click_cb != NULL) {
+      lv_obj_add_event_cb(card, click_cb, LV_EVENT_CLICKED, NULL);
+    } else {
+      lv_obj_clear_flag(card, LV_OBJ_FLAG_CLICKABLE);
+    }
 
-  // Left group: SolArk (x: 10–450)
-  const int sk1 = 10, sk2 = sk1 + cw + cg, sk3 = sk2 + cw + cg, sk4 = sk3 + cw + cg;
-  // Right group: Solis S6 (x: 500–940)
-  const int sl1 = 500, sl2 = sl1 + cw + cg, sl3 = sl2 + cw + cg, sl4 = sl3 + cw + cg;
-  // Row y positions (master bar at top, then logos, then per-system bars)
-  const int master_y = 34, master_h = 28;
-  const int summary_y = master_y + master_h + 4;
-  const int summary_x = (984 - summary_w) / 2;
+    lv_obj_t* lbl = lv_label_create(card);
+    lv_label_set_text(lbl, label_text);
+    lv_obj_set_width(lbl, w - 12);
+    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(lbl, lv_color_hex(0x8b949e), 0);
+    lv_obj_set_style_text_align(lbl, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(lbl, LV_LABEL_LONG_WRAP);
+    lv_obj_set_pos(lbl, 6, 6);
+
+    *state_label = lv_label_create(card);
+    lv_label_set_text(*state_label, "--");
+    lv_obj_set_width(*state_label, w - 12);
+    lv_obj_set_style_text_font(*state_label, &lv_font_montserrat_16, 0);
+    lv_obj_set_style_text_color(*state_label, lv_color_hex(0xe6edf3), 0);
+    lv_obj_set_style_text_align(*state_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_pos(*state_label, 6, 34);
+
+    *hint_label = lv_label_create(card);
+    lv_label_set_text(*hint_label, click_cb != NULL ? "Waiting for 3007" : "Placeholder only");
+    lv_obj_set_width(*hint_label, w - 12);
+    lv_obj_set_style_text_font(*hint_label, &lv_font_montserrat_12, 0);
+    lv_obj_set_style_text_color(*hint_label, lv_color_hex(0x8b949e), 0);
+    lv_obj_set_style_text_align(*hint_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(*hint_label, LV_LABEL_LONG_WRAP);
+    lv_obj_set_pos(*hint_label, 6, h - 30);
+
+    *card_out = card;
+    return card;
+  };
+
+  // Layout constants — rebalance both 4-card groups to use the center gap more evenly
+  const int solar_w = 984;
+  const int margin_x = 6;
+  const int group_gap = 8;
+  const int cw = 116, ch = 60, cg = 6;
+  const int group_w = 4 * cw + 3 * cg;
+  const int bar_w = group_w;
+  const int summary_w = 252, summary_h = 60;
+
+  // Left group: SolArk; right group: Solis S6
+  const int sk1 = margin_x, sk2 = sk1 + cw + cg, sk3 = sk2 + cw + cg, sk4 = sk3 + cw + cg;
+  const int sl1 = solar_w - margin_x - group_w, sl2 = sl1 + cw + cg, sl3 = sl2 + cw + cg, sl4 = sl3 + cw + cg;
+  // Row y positions (master summary row at top, then logos, then per-system bars)
+  const int master_y = 34, master_h = summary_h;
+  const int master_w = solar_w - 2 * margin_x - summary_w - group_gap;
+  const int summary_y = master_y;
+  const int summary_x = margin_x + master_w + group_gap;
   const int slr_logo_y = summary_y + summary_h + 10;
   const int bar_y = slr_logo_y + 44, bar_h = 38;    // 110, h=38
   const int r1 = bar_y + bar_h + 6, r2 = r1 + ch + cg;
   // Envoy row
   const int ey = r2 + ch + 28;
-  const int ecw = 200, ech = 58;
+  const int ech = 58;
 
   // Helper to create a solar SOC bar (like main screen)
   auto make_solar_soc_bar = [&](int x, int y, int w, int h, lv_obj_t** bar_obj, lv_obj_t** pct_label) {
@@ -1629,9 +1922,11 @@ static void create_ui() {
     lv_obj_set_style_radius(*bar_obj, 6, LV_PART_INDICATOR);
   };
 
-  // ── Master SOC bar (full width, average of SolArk + Solis) ──
-  make_solar_soc_bar(sk1, master_y, 984 - 2 * sk1, master_h, &bar_master_soc, &lbl_master_soc_pct);
-  make_wrapped_solar_card(summary_x, summary_y, summary_w, summary_h, "TOTAL DAY PV ENERGY", &lbl_total_day_pv);
+  // ── Master SOC + global PV summary row ──────────────────────
+  make_solar_soc_bar(sk1, master_y, master_w, master_h, &bar_master_soc, &lbl_master_soc_pct);
+  lv_obj_set_style_text_font(lbl_master_soc_pct, &lv_font_montserrat_24, 0);
+  lv_obj_set_pos(lbl_master_soc_pct, 10, (master_h - 24) / 2);
+  make_compact_energy_card(summary_x, summary_y, summary_w, summary_h, "Total Day\nPV Energy", &lbl_total_day_pv);
 
   // ── SolArk section ─────────────────────────────────────────
   lv_obj_t* solark_img = lv_img_create(screen_solar);
@@ -1651,7 +1946,7 @@ static void create_ui() {
   make_solar_card(sk1, r2, cw, ch, "Solar",      &lbl_solark_solar);
   make_solar_card(sk2, r2, cw, ch, "Load",       &lbl_solark_load);
   make_solar_card(sk3, r2, cw, ch, "Grid",       &lbl_solark_grid);
-  make_wrapped_solar_card(sk4, r2, cw, ch, "Total Day PV Energy", &lbl_solark_day);
+  make_compact_energy_card(sk4, r2, cw, ch, "Total PV\nEnergy", &lbl_solark_day);
 
   // ── Solis S6 section ───────────────────────────────────────
   lv_obj_t* solis_img = lv_img_create(screen_solar);
@@ -1671,16 +1966,35 @@ static void create_ui() {
   make_solar_card(sl1, r2, cw, ch, "Solar",      &lbl_solis_solar);
   make_solar_card(sl2, r2, cw, ch, "Load",       &lbl_solis_load);
   make_solar_card(sl3, r2, cw, ch, "Grid",       &lbl_solis_grid);
-  make_wrapped_solar_card(sl4, r2, cw, ch, "Today PV Energy", &lbl_solis_day);
+  make_compact_energy_card(sl4, r2, cw, ch, "Today\nPV Energy", &lbl_solis_day);
 
   // ── Envoy section ────────────────────────────────────────
   make_section_title(sk1, ey - 22, "ENPHASE MICRO-INVERTERS");
-  const int ecw2 = (984 - sk1 - 4 * cg) / 5;
+  const int ecw2 = (solar_w - 2 * margin_x - 4 * cg) / 5;
   make_solar_card(sk1,                     ey, ecw2, ech, "Total Live",    &lbl_envoy_total_live);
   make_solar_card(sk1 + (ecw2 + cg),      ey, ecw2, ech, "Total Today",   &lbl_envoy_total_today);
   make_solar_card(sk1 + (ecw2 + cg) * 2,  ey, ecw2, ech, "House Today",   &lbl_envoy_house);
   make_solar_card(sk1 + (ecw2 + cg) * 3,  ey, ecw2, ech, "Shed Today",    &lbl_envoy_shed);
   make_solar_card(sk1 + (ecw2 + cg) * 4,  ey, ecw2, ech, "Trailer Today", &lbl_envoy_trailer);
+
+  const int control_y = ey + ech + 44;
+  const int control_h = 96;
+  make_section_title(sk1, control_y - 22, "SOLAR CONTROLS");
+  make_solar_control_card(sk1,                    control_y, ecw2, control_h, "Solis Mode",
+                          btn_solar_solis_mode_cb, &card_solar_solis_mode,
+                          &lbl_solar_solis_mode_state, &lbl_solar_solis_mode_hint);
+  make_solar_control_card(sk1 + (ecw2 + cg),     control_y, ecw2, control_h, "Tabuchi Export",
+                          btn_solar_tabuchi_cb, &card_solar_tabuchi,
+                          &lbl_solar_tabuchi_state, &lbl_solar_tabuchi_hint);
+  make_solar_control_card(sk1 + (ecw2 + cg) * 2, control_y, ecw2, control_h, "Shed Micros",
+                          btn_solar_shed_cb, &card_solar_shed,
+                          &lbl_solar_shed_state, &lbl_solar_shed_hint);
+  make_solar_control_card(sk1 + (ecw2 + cg) * 3, control_y, ecw2, control_h, "IQ8 Micros",
+                          btn_solar_iq8_cb, &card_solar_iq8,
+                          &lbl_solar_iq8_state, &lbl_solar_iq8_hint);
+  make_solar_control_card(sk1 + (ecw2 + cg) * 4, control_y, ecw2, control_h, "Generator\nStart/Stop",
+                          NULL, &card_solar_generator,
+                          &lbl_solar_generator_state, &lbl_solar_generator_hint);
 }
 
 void init_display() {
@@ -1789,39 +2103,46 @@ void update_display() {
   // Update UI values every 2000ms to minimize flicker
   if (millis() - lastUpdateMillis > 2000) {
     lastUpdateMillis = millis();
+	#ifdef HW_WAVESHARE7B_DISPLAY_ONLY
+	    const bool main_root_widgets_visible = (current_screen == 1);
+	#else
+	    const bool main_root_widgets_visible = true;
+	#endif
     
     // Update SOC
     uint8_t soc = datalayer.battery.status.reported_soc / 100;
     static char soc_text[16];
     snprintf(soc_text, sizeof(soc_text), "%d %%", soc);
-    lv_label_set_text(lbl_soc, soc_text);
-    lv_bar_set_value(bar_soc, soc, LV_ANIM_OFF);
-    
-    // Color SOC text based on level, keep gradient on bar
-    uint32_t soc_text_color = (soc < 20) ? 0xff7b72 : (soc < 50) ? 0xffa657 : 0x7ee787;
-    lv_obj_set_style_text_color(lbl_soc, lv_color_hex(soc_text_color), 0);
-    if (soc < 20) {
-      lv_obj_set_style_bg_color(bar_soc, lv_color_hex(0xff4444), LV_PART_INDICATOR);
-      lv_obj_set_style_bg_grad_color(bar_soc, lv_color_hex(0xff8844), LV_PART_INDICATOR);
-    } else if (soc < 50) {
-      lv_obj_set_style_bg_color(bar_soc, lv_color_hex(0xff6622), LV_PART_INDICATOR);
-      lv_obj_set_style_bg_grad_color(bar_soc, lv_color_hex(0xffcc00), LV_PART_INDICATOR);
-    } else {
-      lv_obj_set_style_bg_color(bar_soc, lv_color_hex(0x22cc44), LV_PART_INDICATOR);
-      lv_obj_set_style_bg_grad_color(bar_soc, lv_color_hex(0x00ff88), LV_PART_INDICATOR);
-    }
+	    if (main_root_widgets_visible) {
+	      lv_label_set_text(lbl_soc, soc_text);
+	      lv_bar_set_value(bar_soc, soc, LV_ANIM_OFF);
+	      
+	      // Color SOC text based on level, keep gradient on bar
+	      uint32_t soc_text_color = (soc < 20) ? 0xff7b72 : (soc < 50) ? 0xffa657 : 0x7ee787;
+	      lv_obj_set_style_text_color(lbl_soc, lv_color_hex(soc_text_color), 0);
+	      if (soc < 20) {
+	        lv_obj_set_style_bg_color(bar_soc, lv_color_hex(0xff4444), LV_PART_INDICATOR);
+	        lv_obj_set_style_bg_grad_color(bar_soc, lv_color_hex(0xff8844), LV_PART_INDICATOR);
+	      } else if (soc < 50) {
+	        lv_obj_set_style_bg_color(bar_soc, lv_color_hex(0xff6622), LV_PART_INDICATOR);
+	        lv_obj_set_style_bg_grad_color(bar_soc, lv_color_hex(0xffcc00), LV_PART_INDICATOR);
+	      } else {
+	        lv_obj_set_style_bg_color(bar_soc, lv_color_hex(0x22cc44), LV_PART_INDICATOR);
+	        lv_obj_set_style_bg_grad_color(bar_soc, lv_color_hex(0x00ff88), LV_PART_INDICATOR);
+	      }
+	    }
     
     // Update voltage
     float voltage = datalayer.battery.status.voltage_dV / 10.0f;
     static char volt_text[16];
     snprintf(volt_text, sizeof(volt_text), "%.1f V", voltage);
-    lv_label_set_text(lbl_voltage, volt_text);
+	    if (main_root_widgets_visible) lv_label_set_text(lbl_voltage, volt_text);
     
     // Update current
     float current = datalayer.battery.status.current_dA / 10.0f;
     static char curr_text[16];
     snprintf(curr_text, sizeof(curr_text), "%.1f A", current);
-    lv_label_set_text(lbl_current, curr_text);
+	    if (main_root_widgets_visible) lv_label_set_text(lbl_current, curr_text);
     
     // Update power
     int32_t power = (int32_t)(voltage * current);
@@ -1831,13 +2152,13 @@ void update_display() {
     } else {
       snprintf(pwr_text, sizeof(pwr_text), "%ld W", (long)power);
     }
-    lv_label_set_text(lbl_power, pwr_text);
+	    if (main_root_widgets_visible) lv_label_set_text(lbl_power, pwr_text);
     
     // Update energy/capacity
     float remaining_wh = datalayer.battery.status.remaining_capacity_Wh;
     static char energy_text[16];
     snprintf(energy_text, sizeof(energy_text), "%.1f kWh", remaining_wh / 1000.0f);
-    lv_label_set_text(lbl_energy, energy_text);
+	    if (main_root_widgets_visible) lv_label_set_text(lbl_energy, energy_text);
     
     // Update cell voltages
     float cell_min_v = datalayer.battery.status.cell_min_voltage_mV / 1000.0f;
@@ -1845,18 +2166,22 @@ void update_display() {
     static char cell_min_text[16], cell_max_text[16];
     snprintf(cell_min_text, sizeof(cell_min_text), "%.3f V", cell_min_v);
     snprintf(cell_max_text, sizeof(cell_max_text), "%.3f V", cell_max_v);
-    lv_label_set_text(lbl_cell_min, cell_min_text);
-    lv_label_set_text(lbl_cell_max, cell_max_text);
+	    if (main_root_widgets_visible) {
+	      lv_label_set_text(lbl_cell_min, cell_min_text);
+	      lv_label_set_text(lbl_cell_max, cell_max_text);
+	    }
     
     // Update cell delta
     uint16_t cell_delta = datalayer.battery.status.cell_max_voltage_mV - 
                           datalayer.battery.status.cell_min_voltage_mV;
     static char delta_text[16];
     snprintf(delta_text, sizeof(delta_text), "%d mV", cell_delta);
-    lv_label_set_text(lbl_cell_delta, delta_text);
-    // Color delta based on health (< 50mV good, > 100mV concerning)
-    uint32_t delta_color = (cell_delta < 50) ? 0x7ee787 : (cell_delta < 100) ? 0xffa657 : 0xff7b72;
-    lv_obj_set_style_text_color(lbl_cell_delta, lv_color_hex(delta_color), 0);
+	    if (main_root_widgets_visible) {
+	      lv_label_set_text(lbl_cell_delta, delta_text);
+	      // Color delta based on health (< 50mV good, > 100mV concerning)
+	      uint32_t delta_color = (cell_delta < 50) ? 0x7ee787 : (cell_delta < 100) ? 0xffa657 : 0xff7b72;
+	      lv_obj_set_style_text_color(lbl_cell_delta, lv_color_hex(delta_color), 0);
+	    }
     
     // Update temperatures
     float temp_max = datalayer.battery.status.temperature_max_dC / 10.0f;
@@ -1866,20 +2191,26 @@ void update_display() {
     snprintf(temp_text, sizeof(temp_text), "%.1f C", temp_avg);
     snprintf(temp_min_text, sizeof(temp_min_text), "%.1f C", temp_min);
     snprintf(temp_max_text, sizeof(temp_max_text), "%.1f C", temp_max);
-    lv_label_set_text(lbl_temp, temp_text);
-    lv_label_set_text(lbl_temp_min, temp_min_text);
-    lv_label_set_text(lbl_temp_max, temp_max_text);
+
+	    if (main_root_widgets_visible) {
+	      lv_label_set_text(lbl_temp, temp_text);
+	      lv_label_set_text(lbl_temp_min, temp_min_text);
+	      lv_label_set_text(lbl_temp_max, temp_max_text);
+	    }
     
     // Update contactor status
-    if (datalayer.system.status.contactors_engaged) {
-      lv_label_set_text(lbl_contactor, "CLOSED");
-      lv_obj_set_style_text_color(lbl_contactor, lv_color_hex(0x7ee787), 0);
-    } else {
-      lv_label_set_text(lbl_contactor, "OPEN");
-      lv_obj_set_style_text_color(lbl_contactor, lv_color_hex(0xff7b72), 0);
+	    if (main_root_widgets_visible) {
+	      if (datalayer.system.status.contactors_engaged) {
+	        lv_label_set_text(lbl_contactor, "CLOSED");
+	        lv_obj_set_style_text_color(lbl_contactor, lv_color_hex(0x7ee787), 0);
+	      } else {
+	        lv_label_set_text(lbl_contactor, "OPEN");
+	        lv_obj_set_style_text_color(lbl_contactor, lv_color_hex(0xff7b72), 0);
+	      }
     }
+
     // Contactors button: greyed out in display-only mode (no local battery)
-    if (btn_contactors) {
+	    if (btn_contactors && main_root_widgets_visible) {
 #ifdef HW_WAVESHARE7B_DISPLAY_ONLY
       lv_obj_add_state(btn_contactors, LV_STATE_DISABLED);
       if (lbl_contactors_btn) lv_obj_add_state(lbl_contactors_btn, LV_STATE_DISABLED);
@@ -1895,7 +2226,7 @@ void update_display() {
     }
     // Update WiFi/Network status — sync with wifiap_enabled (AP can be auto-disabled by wifi_monitor)
     wifi_ap_enabled = wifiap_enabled;
-    if (wifi_ap_enabled && WiFi.status() == WL_CONNECTED) {
+	    if (main_root_widgets_visible && wifi_ap_enabled && WiFi.status() == WL_CONNECTED) {
       // AP+STA mode: show AP SSID, AP IP, and network (STA) IP
       static char wifi_both[80];
       snprintf(wifi_both, sizeof(wifi_both), "AP: %s\n%s\nNet: %s",
@@ -1904,37 +2235,37 @@ void update_display() {
                WiFi.localIP().toString().c_str());
       lv_label_set_text(lbl_wifi, wifi_both);
       lv_obj_set_style_text_color(lbl_wifi, lv_color_hex(0x58a6ff), 0);
-    } else if (wifi_ap_enabled) {
+	    } else if (main_root_widgets_visible && wifi_ap_enabled) {
       // AP only: show AP SSID and AP IP
       static char wifi_ap[64];
       snprintf(wifi_ap, sizeof(wifi_ap), "AP: %s\n%s",
                ssidAP.c_str(), WiFi.softAPIP().toString().c_str());
       lv_label_set_text(lbl_wifi, wifi_ap);
       lv_obj_set_style_text_color(lbl_wifi, lv_color_hex(0x58a6ff), 0);
-    } else if (WiFi.status() == WL_CONNECTED) {
+	    } else if (main_root_widgets_visible && WiFi.status() == WL_CONNECTED) {
       static char wifi_sta[64];
       snprintf(wifi_sta, sizeof(wifi_sta), "%s\n%s", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
       lv_label_set_text(lbl_wifi, wifi_sta);
       lv_obj_set_style_text_color(lbl_wifi, lv_color_hex(0x7ee787), 0);
-    } else {
+	    } else if (main_root_widgets_visible) {
       lv_label_set_text(lbl_wifi, "WiFi Off");
       lv_obj_set_style_text_color(lbl_wifi, lv_color_hex(0x8b949e), 0);
     }
-    
+
     // Update battery info
     static char batt_info[96];
     snprintf(batt_info, sizeof(batt_info), "Total: %.1f kWh\nRemaining: %.1f kWh\nSOH: %d %%",
              datalayer.battery.info.total_capacity_Wh / 1000.0f,
              datalayer.battery.status.remaining_capacity_Wh / 1000.0f,
              datalayer.battery.status.soh_pptt / 100);
-    lv_label_set_text(lbl_batt_info, batt_info);
-    
+	    if (main_root_widgets_visible) lv_label_set_text(lbl_batt_info, batt_info);
+
     // Update system info (left side of split card) with BMS status
     static char sys_info[128];
     unsigned long uptime_sec = millis() / 1000;
     unsigned long hours = uptime_sec / 3600;
     unsigned long mins = (uptime_sec % 3600) / 60;
-    
+
     // Get BMS status text and color
     const char* bms_status_text;
     lv_color_t bms_status_color;
@@ -1950,36 +2281,40 @@ void update_display() {
     }
 
     bool mqtt_ok = (get_event_pointer(EVENT_MQTT_CONNECT)->state == EVENT_STATE_ACTIVE);
-    
+
     snprintf(sys_info, sizeof(sys_info), "BMS: %s\nMQTT: %s\nUptime: %luh %lum\nHeap: %lu KB",
              bms_status_text,
              mqtt_ok ? "OK" : "OFF",
              hours, mins,
              (unsigned long)(ESP.getFreeHeap() / 1024));
-    lv_label_set_text(lbl_sys_info, sys_info);
-    if (!mqtt_ok) {
-      lv_obj_set_style_text_color(lbl_sys_info, lv_color_hex(0xff7b72), 0);  // Red if MQTT down
-    } else {
-      lv_obj_set_style_text_color(lbl_sys_info, bms_status_color, 0);
+	    if (main_root_widgets_visible) {
+	      lv_label_set_text(lbl_sys_info, sys_info);
+	      if (!mqtt_ok) {
+	        lv_obj_set_style_text_color(lbl_sys_info, lv_color_hex(0xff7b72), 0);  // Red if MQTT down
+	      } else {
+	        lv_obj_set_style_text_color(lbl_sys_info, bms_status_color, 0);
+	      }
     }
-    
-    // Update CAN status (detailed view in system card)
+
     bool can_batt_ok = datalayer.battery.status.CAN_battery_still_alive > 0;
     bool can_inv_ok = datalayer.system.status.CAN_inverter_still_alive > 0;
-    
+
+    // Update CAN status (detailed view in system card)
     static char can_detail[48];
     snprintf(can_detail, sizeof(can_detail), "BATT: %s\nINV: %s",
              can_batt_ok ? "OK" : "--",
              can_inv_ok ? "OK" : "--");
-    lv_label_set_text(lbl_can_status, can_detail);
-    
-    // Color based on overall status
-    if (can_batt_ok && can_inv_ok) {
-      lv_obj_set_style_text_color(lbl_can_status, lv_color_hex(0x7ee787), 0);  // Green
-    } else if (can_batt_ok || can_inv_ok) {
-      lv_obj_set_style_text_color(lbl_can_status, lv_color_hex(0xffa657), 0);  // Yellow
-    } else {
-      lv_obj_set_style_text_color(lbl_can_status, lv_color_hex(0x8b949e), 0);  // Gray
+	    if (main_root_widgets_visible) {
+	      lv_label_set_text(lbl_can_status, can_detail);
+
+	      // Color based on overall status
+	      if (can_batt_ok && can_inv_ok) {
+	        lv_obj_set_style_text_color(lbl_can_status, lv_color_hex(0x7ee787), 0);  // Green
+	      } else if (can_batt_ok || can_inv_ok) {
+	        lv_obj_set_style_text_color(lbl_can_status, lv_color_hex(0xffa657), 0);  // Yellow
+	      } else {
+	        lv_obj_set_style_text_color(lbl_can_status, lv_color_hex(0x8b949e), 0);  // Gray
+	      }
     }
     
     // Mirror contactor/precharge state to IO expander (EXIO0, EXIO7) for relays/LEDs
@@ -1994,7 +2329,7 @@ void update_display() {
     }
     
     // Update backup battery voltage (screen's built-in battery)
-    if (lbl_backup_battery) {
+	    if (lbl_backup_battery && main_root_widgets_visible) {
       uint32_t batt_mv = read_backup_battery_mv();
       static char batt_text[24];
       snprintf(batt_text, sizeof(batt_text), "%.2f V", batt_mv / 1000.0f);
@@ -2097,7 +2432,6 @@ void update_display() {
           snprintf(b, sz, "%.0f W", w);
       };
 
-      // Check if any solar data is available
       bool any_data = sol.solark_last_update_ms > 0 || sol.solis_last_update_ms > 0 ||
                       sol.envoy_last_update_ms > 0 || datalayer.battery.status.CAN_battery_still_alive > 0;
 
@@ -2128,85 +2462,77 @@ void update_display() {
         snprintf(b, sz, "%.2f kWh", kwh);
       };
 
+      char solar_status_buf[96];
+      char solar_uptime_buf[24];
+      char solar_ip_buf[20];
+      unsigned long uptime_s = millis() / 1000;
+      if (WiFi.status() == WL_CONNECTED) {
+        IPAddress local_ip = WiFi.localIP();
+        snprintf(solar_ip_buf, sizeof(solar_ip_buf), "%u.%u.%u.%u", local_ip[0], local_ip[1], local_ip[2], local_ip[3]);
+      } else {
+        snprintf(solar_ip_buf, sizeof(solar_ip_buf), "--");
+      }
+      snprintf(solar_uptime_buf, sizeof(solar_uptime_buf), "Uptime: %luh %lum", uptime_s / 3600, (uptime_s % 3600) / 60);
+
       if (!any_data) {
-        lv_label_set_text(lbl_solar_status, "No solar data");
+        snprintf(solar_status_buf, sizeof(solar_status_buf), "No solar data   %s   %s", solar_uptime_buf, solar_ip_buf);
       } else {
         unsigned long last_update = sol.solark_last_update_ms;
         if (sol.solis_last_update_ms > last_update) last_update = sol.solis_last_update_ms;
         if (sol.envoy_last_update_ms > last_update) last_update = sol.envoy_last_update_ms;
-        if (sol.total_day_pv_last_update_ms > last_update) last_update = sol.total_day_pv_last_update_ms;
         unsigned long age_s = (millis() - last_update) / 1000;
-        snprintf(buf, sizeof(buf), "Updated %lus ago", age_s);
-        lv_label_set_text(lbl_solar_status, buf);
+        unsigned long age_bucket_s = solar_bucket_status_age_seconds(age_s);
+        snprintf(solar_status_buf, sizeof(solar_status_buf), "Updated %lus ago   %s   %s", age_bucket_s, solar_uptime_buf, solar_ip_buf);
       }
+      solar_set_label_text_if_changed(lbl_solar_status, solar_status_buf);
 
       if (lbl_total_day_pv != NULL) {
         if (sol.total_day_pv_last_update_ms > 0) {
           fmt_energy(buf, sizeof(buf), sol.total_day_pv_energy_kWh);
-          lv_label_set_text(lbl_total_day_pv, buf);
+          solar_set_label_text_if_changed(lbl_total_day_pv, buf);
         } else {
-          lv_label_set_text(lbl_total_day_pv, "--");
+          solar_set_label_text_if_changed(lbl_total_day_pv, "--");
         }
       }
 
-      // Update Solark section
       if (sol.solark_last_update_ms > 0) {
         fmt_signed_w(buf, sizeof(buf), sol.solark_battery_power_W);
-        lv_label_set_text(lbl_solark_batt_power, buf);
+        solar_set_label_text_if_changed(lbl_solark_batt_power, buf);
         fmt_voltage(buf, sizeof(buf), sol.solark_battery_voltage_V);
-        lv_label_set_text(lbl_solark_voltage, buf);
+        solar_set_label_text_if_changed(lbl_solark_voltage, buf);
         fmt_temp(buf, sizeof(buf), sol.solark_battery_temp_C);
-        lv_label_set_text(lbl_solark_temp, buf);
+        solar_set_label_text_if_changed(lbl_solark_temp, buf);
         fmt_current(buf, sizeof(buf), sol.solark_total_battery_current_A);
-        lv_label_set_text(lbl_solark_current, buf);
+        solar_set_label_text_if_changed(lbl_solark_current, buf);
         fmt_w(buf, sizeof(buf), sol.solark_pv_power_W);
-        lv_label_set_text(lbl_solark_solar, buf);
+        solar_set_label_text_if_changed(lbl_solark_solar, buf);
         fmt_w(buf, sizeof(buf), sol.solark_load_power_W);
-        lv_label_set_text(lbl_solark_load, buf);
+        solar_set_label_text_if_changed(lbl_solark_load, buf);
         if (sol.solark_grid_power_W >= 0)
           snprintf(buf, sizeof(buf), "+%.0f W", sol.solark_grid_power_W);
         else
           snprintf(buf, sizeof(buf), "%.0f W", sol.solark_grid_power_W);
-        lv_label_set_text(lbl_solark_grid, buf);
+        solar_set_label_text_if_changed(lbl_solark_grid, buf);
         fmt_energy(buf, sizeof(buf), sol.solark_day_pv_energy_kWh);
-        lv_label_set_text(lbl_solark_day, buf);
-        // Color grid
-        lv_obj_set_style_text_color(lbl_solark_grid,
-          lv_color_hex(sol.solark_grid_power_W < 0 ? 0x7ee787 : 0xff7b72), 0);
-        lv_obj_set_style_text_color(lbl_solark_batt_power,
-          lv_color_hex(sol.solark_battery_power_W >= 0 ? 0x58a6ff : 0xffa657), 0);
-        // Update SolArk SOC bar
-        if (bar_solark_soc) {
-          int soc_val = (int)sol.solark_battery_soc_pct;
-          if (soc_val < 0) soc_val = 0;
-          if (soc_val > 100) soc_val = 100;
-          lv_bar_set_value(bar_solark_soc, soc_val, LV_ANIM_OFF);
-          snprintf(buf, sizeof(buf), "%d %%", soc_val);
-          lv_label_set_text(lbl_solark_soc_pct, buf);
-          lv_color_t c1, c2, txt_c;
-          if (soc_val < 20) { c1 = lv_color_hex(0xff4444); c2 = lv_color_hex(0xff8844); txt_c = lv_color_hex(0xff7b72); }
-          else if (soc_val < 50) { c1 = lv_color_hex(0xff6622); c2 = lv_color_hex(0xffcc00); txt_c = lv_color_hex(0xffa657); }
-          else { c1 = lv_color_hex(0x22cc44); c2 = lv_color_hex(0x00ff88); txt_c = lv_color_hex(0x7ee787); }
-          lv_obj_set_style_bg_color(bar_solark_soc, c1, LV_PART_INDICATOR);
-          lv_obj_set_style_bg_grad_color(bar_solark_soc, c2, LV_PART_INDICATOR);
-          lv_obj_set_style_text_color(lbl_solark_soc_pct, txt_c, 0);
-        }
+        solar_set_label_text_if_changed(lbl_solark_day, buf);
+        solar_set_text_color_if_changed(lbl_solark_grid, solark_grid_text_color_cache,
+                                        sol.solark_grid_power_W < 0 ? 0x7ee787 : 0xff7b72);
+        solar_set_text_color_if_changed(lbl_solark_batt_power, solark_batt_text_color_cache,
+                                        sol.solark_battery_power_W >= 0 ? 0x58a6ff : 0xffa657);
+        solar_update_soc_bar(bar_solark_soc, lbl_solark_soc_pct, solark_soc_render_cache,
+                             (int)sol.solark_battery_soc_pct, true);
       } else {
-        lv_label_set_text(lbl_solark_batt_power, "--");
-        lv_label_set_text(lbl_solark_voltage, "--");
-        lv_label_set_text(lbl_solark_temp, "--");
-        lv_label_set_text(lbl_solark_current, "--");
-        lv_label_set_text(lbl_solark_solar, "--");
-        lv_label_set_text(lbl_solark_load, "--");
-        lv_label_set_text(lbl_solark_grid, "--");
-        lv_label_set_text(lbl_solark_day, "--");
-        if (bar_solark_soc) {
-          lv_bar_set_value(bar_solark_soc, 0, LV_ANIM_OFF);
-          lv_label_set_text(lbl_solark_soc_pct, "-- %");
-        }
+        solar_set_label_text_if_changed(lbl_solark_batt_power, "--");
+        solar_set_label_text_if_changed(lbl_solark_voltage, "--");
+        solar_set_label_text_if_changed(lbl_solark_temp, "--");
+        solar_set_label_text_if_changed(lbl_solark_current, "--");
+        solar_set_label_text_if_changed(lbl_solark_solar, "--");
+        solar_set_label_text_if_changed(lbl_solark_load, "--");
+        solar_set_label_text_if_changed(lbl_solark_grid, "--");
+        solar_set_label_text_if_changed(lbl_solark_day, "--");
+        solar_update_soc_bar(bar_solark_soc, lbl_solark_soc_pct, solark_soc_render_cache, 0, false);
       }
 
-      // Update Solis section (only if labels were created)
       if (lbl_solis_solar != NULL) {
         float solis_soc = (float)(datalayer.battery.status.reported_soc / 100.0f);
         float solis_voltage = datalayer.battery.status.voltage_dV / 10.0f;
@@ -2218,74 +2544,48 @@ void update_display() {
 
         if (has_battery_truth) {
           fmt_signed_w(buf, sizeof(buf), solis_batt_power);
-          lv_label_set_text(lbl_solis_batt_power, buf);
+          solar_set_label_text_if_changed(lbl_solis_batt_power, buf);
           fmt_voltage(buf, sizeof(buf), solis_voltage);
-          lv_label_set_text(lbl_solis_voltage, buf);
+          solar_set_label_text_if_changed(lbl_solis_voltage, buf);
           fmt_temp_range(buf, sizeof(buf), solis_temp_min, solis_temp_max);
-          lv_label_set_text(lbl_solis_temp, buf);
+          solar_set_label_text_if_changed(lbl_solis_temp, buf);
           fmt_current(buf, sizeof(buf), solis_current);
-          lv_label_set_text(lbl_solis_current, buf);
-          lv_obj_set_style_text_color(lbl_solis_batt_power,
-            lv_color_hex(solis_batt_power >= 0 ? 0x58a6ff : 0xffa657), 0);
+          solar_set_label_text_if_changed(lbl_solis_current, buf);
+          solar_set_text_color_if_changed(lbl_solis_batt_power, solis_batt_text_color_cache,
+                                          solis_batt_power >= 0 ? 0x58a6ff : 0xffa657);
         } else {
-          lv_label_set_text(lbl_solis_batt_power, "--");
-          lv_label_set_text(lbl_solis_voltage, "--");
-          lv_label_set_text(lbl_solis_temp, "--");
-          lv_label_set_text(lbl_solis_current, "--");
+          solar_set_label_text_if_changed(lbl_solis_batt_power, "--");
+          solar_set_label_text_if_changed(lbl_solis_voltage, "--");
+          solar_set_label_text_if_changed(lbl_solis_temp, "--");
+          solar_set_label_text_if_changed(lbl_solis_current, "--");
         }
 
         if (sol.solis_last_update_ms > 0) {
           fmt_w(buf, sizeof(buf), sol.solis_pv_power_W);
-          lv_label_set_text(lbl_solis_solar, buf);
+          solar_set_label_text_if_changed(lbl_solis_solar, buf);
           fmt_w(buf, sizeof(buf), sol.solis_load_power_W);
-          lv_label_set_text(lbl_solis_load, buf);
+          solar_set_label_text_if_changed(lbl_solis_load, buf);
           if (sol.solis_grid_power_W >= 0)
             snprintf(buf, sizeof(buf), "+%.0f W", sol.solis_grid_power_W);
           else
             snprintf(buf, sizeof(buf), "%.0f W", sol.solis_grid_power_W);
-          lv_label_set_text(lbl_solis_grid, buf);
+          solar_set_label_text_if_changed(lbl_solis_grid, buf);
           fmt_energy(buf, sizeof(buf), sol.solis_day_pv_energy_kWh);
-          lv_label_set_text(lbl_solis_day, buf);
-          lv_obj_set_style_text_color(lbl_solis_grid,
-            lv_color_hex(sol.solis_grid_power_W < 0 ? 0x7ee787 : 0xff7b72), 0);
-          // Update Solis SOC bar - use main BMS SOC since Solis has no direct battery
-          if (bar_solis_soc) {
-            int soc_val = (int)solis_soc;
-            if (soc_val < 0) soc_val = 0;
-            if (soc_val > 100) soc_val = 100;
-            lv_bar_set_value(bar_solis_soc, soc_val, LV_ANIM_OFF);
-            snprintf(buf, sizeof(buf), "%d %%", soc_val);
-            lv_label_set_text(lbl_solis_soc_pct, buf);
-            lv_color_t c1, c2, txt_c;
-            if (soc_val < 20) { c1 = lv_color_hex(0xff4444); c2 = lv_color_hex(0xff8844); txt_c = lv_color_hex(0xff7b72); }
-            else if (soc_val < 50) { c1 = lv_color_hex(0xff6622); c2 = lv_color_hex(0xffcc00); txt_c = lv_color_hex(0xffa657); }
-            else { c1 = lv_color_hex(0x22cc44); c2 = lv_color_hex(0x00ff88); txt_c = lv_color_hex(0x7ee787); }
-            lv_obj_set_style_bg_color(bar_solis_soc, c1, LV_PART_INDICATOR);
-            lv_obj_set_style_bg_grad_color(bar_solis_soc, c2, LV_PART_INDICATOR);
-            lv_obj_set_style_text_color(lbl_solis_soc_pct, txt_c, 0);
-          }
+          solar_set_label_text_if_changed(lbl_solis_day, buf);
+          solar_set_text_color_if_changed(lbl_solis_grid, solis_grid_text_color_cache,
+                                          sol.solis_grid_power_W < 0 ? 0x7ee787 : 0xff7b72);
+          solar_update_soc_bar(bar_solis_soc, lbl_solis_soc_pct, solis_soc_render_cache,
+                               (int)solis_soc, has_battery_truth);
         } else {
-          lv_label_set_text(lbl_solis_solar, "--");
-          lv_label_set_text(lbl_solis_load, "--");
-          lv_label_set_text(lbl_solis_grid, "--");
-          lv_label_set_text(lbl_solis_day, "--");
-          if (bar_solis_soc) {
-            if (has_battery_truth) {
-              int soc_val = (int)solis_soc;
-              if (soc_val < 0) soc_val = 0;
-              if (soc_val > 100) soc_val = 100;
-              lv_bar_set_value(bar_solis_soc, soc_val, LV_ANIM_OFF);
-              snprintf(buf, sizeof(buf), "%d %%", soc_val);
-              lv_label_set_text(lbl_solis_soc_pct, buf);
-            } else {
-              lv_bar_set_value(bar_solis_soc, 0, LV_ANIM_OFF);
-              lv_label_set_text(lbl_solis_soc_pct, "-- %");
-            }
-          }
+          solar_set_label_text_if_changed(lbl_solis_solar, "--");
+          solar_set_label_text_if_changed(lbl_solis_load, "--");
+          solar_set_label_text_if_changed(lbl_solis_grid, "--");
+          solar_set_label_text_if_changed(lbl_solis_day, "--");
+          solar_update_soc_bar(bar_solis_soc, lbl_solis_soc_pct, solis_soc_render_cache,
+                               (int)solis_soc, has_battery_truth);
         }
       }
 
-      // Update Master SOC bar using only currently-available SolArk/Solis sources
       if (bar_master_soc) {
         int sk_soc = (int)sol.solark_battery_soc_pct;
         int sl_soc = (int)(datalayer.battery.status.reported_soc / 100);
@@ -2304,73 +2604,128 @@ void update_display() {
           source_count++;
         }
         int master_soc = (source_count > 0) ? (master_soc_sum / source_count) : 0;
-        lv_bar_set_value(bar_master_soc, master_soc, LV_ANIM_OFF);
-        if (source_count > 0) {
-          snprintf(buf, sizeof(buf), "%d %%", master_soc);
-          lv_label_set_text(lbl_master_soc_pct, buf);
-        } else {
-          lv_label_set_text(lbl_master_soc_pct, "-- %");
-        }
-        lv_color_t c1, c2, txt_c;
-        if (master_soc < 20) { c1 = lv_color_hex(0xff4444); c2 = lv_color_hex(0xff8844); txt_c = lv_color_hex(0xff7b72); }
-        else if (master_soc < 50) { c1 = lv_color_hex(0xff6622); c2 = lv_color_hex(0xffcc00); txt_c = lv_color_hex(0xffa657); }
-        else { c1 = lv_color_hex(0x22cc44); c2 = lv_color_hex(0x00ff88); txt_c = lv_color_hex(0x7ee787); }
-        lv_obj_set_style_bg_color(bar_master_soc, c1, LV_PART_INDICATOR);
-        lv_obj_set_style_bg_grad_color(bar_master_soc, c2, LV_PART_INDICATOR);
-        lv_obj_set_style_text_color(lbl_master_soc_pct, txt_c, 0);
+        solar_update_soc_bar(bar_master_soc, lbl_master_soc_pct, master_soc_render_cache,
+                             master_soc, source_count > 0);
       }
 
-      // Update Envoy summary section
       if (lbl_envoy_total_live != NULL) {
         if (sol.envoy_last_update_ms > 0) {
           fmt_w(buf, sizeof(buf), sol.envoy_total_live_W);
-          lv_label_set_text(lbl_envoy_total_live, buf);
+          solar_set_label_text_if_changed(lbl_envoy_total_live, buf);
           snprintf(buf, sizeof(buf), "%.1f kWh", sol.envoy_total_today_kWh);
-          lv_label_set_text(lbl_envoy_total_today, buf);
+          solar_set_label_text_if_changed(lbl_envoy_total_today, buf);
           snprintf(buf, sizeof(buf), "%.1f kWh", sol.envoy_house_today_kWh);
-          lv_label_set_text(lbl_envoy_house, buf);
+          solar_set_label_text_if_changed(lbl_envoy_house, buf);
           snprintf(buf, sizeof(buf), "%.1f kWh", sol.envoy_shed_today_kWh);
-          lv_label_set_text(lbl_envoy_shed, buf);
+          solar_set_label_text_if_changed(lbl_envoy_shed, buf);
           snprintf(buf, sizeof(buf), "%.1f kWh", sol.envoy_trailer_today_kWh);
-          lv_label_set_text(lbl_envoy_trailer, buf);
+          solar_set_label_text_if_changed(lbl_envoy_trailer, buf);
         } else {
-          lv_label_set_text(lbl_envoy_total_live, "--");
-          lv_label_set_text(lbl_envoy_total_today, "--");
-          lv_label_set_text(lbl_envoy_house, "--");
-          lv_label_set_text(lbl_envoy_shed, "--");
-          lv_label_set_text(lbl_envoy_trailer, "--");
+          solar_set_label_text_if_changed(lbl_envoy_total_live, "--");
+          solar_set_label_text_if_changed(lbl_envoy_total_today, "--");
+          solar_set_label_text_if_changed(lbl_envoy_house, "--");
+          solar_set_label_text_if_changed(lbl_envoy_shed, "--");
+          solar_set_label_text_if_changed(lbl_envoy_trailer, "--");
         }
       }
 
-      // Update Legacy section (only if labels were created)
+      if (lbl_solar_solis_mode_state != NULL) {
+        auto set_control_card_state = [](lv_obj_t* card, lv_obj_t* state_label, lv_obj_t* hint_label,
+                                         const char* state_text, const char* hint_text,
+                                         uint32_t accent_hex, uint32_t border_hex,
+                                         uint32_t& state_color_cache, uint32_t& border_color_cache) {
+          solar_set_label_text_if_changed(state_label, state_text);
+          solar_set_label_text_if_changed(hint_label, hint_text);
+          solar_set_text_color_if_changed(state_label, state_color_cache, accent_hex);
+          solar_set_border_color_if_changed(card, border_color_cache, border_hex);
+        };
+
+        if (sol.solis_mode_last_update_ms == 0) {
+          set_control_card_state(card_solar_solis_mode, lbl_solar_solis_mode_state, lbl_solar_solis_mode_hint,
+                                 "WAITING", "Waiting for 3007", 0x8b949e, 0x30363d,
+                                 solar_solis_mode_state_color_cache, solar_solis_mode_border_color_cache);
+        } else if (sol.solis_mode_self_use && sol.solis_mode_feed_in_priority) {
+          set_control_card_state(card_solar_solis_mode, lbl_solar_solis_mode_state, lbl_solar_solis_mode_hint,
+                                 "MIXED", "Tap -> Self-Use", 0xffa657, 0xf0883e,
+                                 solar_solis_mode_state_color_cache, solar_solis_mode_border_color_cache);
+        } else if (sol.solis_mode_feed_in_priority) {
+          set_control_card_state(card_solar_solis_mode, lbl_solar_solis_mode_state, lbl_solar_solis_mode_hint,
+                                 "FEED-IN", "Tap -> Self-Use", 0x58a6ff, 0x1f6feb,
+                                 solar_solis_mode_state_color_cache, solar_solis_mode_border_color_cache);
+        } else if (sol.solis_mode_self_use) {
+          set_control_card_state(card_solar_solis_mode, lbl_solar_solis_mode_state, lbl_solar_solis_mode_hint,
+                                 "SELF-USE", "Tap -> Feed-In", 0x7ee787, 0x238636,
+                                 solar_solis_mode_state_color_cache, solar_solis_mode_border_color_cache);
+        } else {
+          set_control_card_state(card_solar_solis_mode, lbl_solar_solis_mode_state, lbl_solar_solis_mode_hint,
+                                 "UNKNOWN", "No active storage bit", 0xffa657, 0xf0883e,
+                                 solar_solis_mode_state_color_cache, solar_solis_mode_border_color_cache);
+        }
+
+        auto set_curtail_card = [&](lv_obj_t* card, lv_obj_t* state_label, lv_obj_t* hint_label,
+                                    bool enabled, uint32_t& state_color_cache, uint32_t& border_color_cache) {
+          if (sol.curtailment_last_update_ms == 0) {
+            set_control_card_state(card, state_label, hint_label,
+                                   "WAITING", "Waiting for 3007", 0x8b949e, 0x30363d,
+                                   state_color_cache, border_color_cache);
+            return;
+          }
+
+          char hint[64];
+          const char* auto_state = !sol.curtail_auto_enabled ? "Manual only"
+                                 : sol.curtail_auto_active ? "Auto active"
+                                 : sol.curtail_solis_active ? "Solis active"
+                                 : "Auto armed";
+          snprintf(hint, sizeof(hint), "%s\nTap -> %s", auto_state, enabled ? "OFF" : "ON");
+          set_control_card_state(card, state_label, hint_label,
+                                 enabled ? "ON" : "OFF", hint,
+                                 enabled ? 0x7ee787 : 0xff7b72,
+                                 enabled ? 0x238636 : 0xda3633,
+                                 state_color_cache, border_color_cache);
+        };
+
+        set_curtail_card(card_solar_tabuchi, lbl_solar_tabuchi_state, lbl_solar_tabuchi_hint,
+                         sol.tabuchi_export_enabled,
+                         solar_tabuchi_state_color_cache, solar_tabuchi_border_color_cache);
+        set_curtail_card(card_solar_shed, lbl_solar_shed_state, lbl_solar_shed_hint,
+                         sol.shed_micros_enabled,
+                         solar_shed_state_color_cache, solar_shed_border_color_cache);
+        set_curtail_card(card_solar_iq8, lbl_solar_iq8_state, lbl_solar_iq8_hint,
+                         sol.iq8_micros_enabled,
+                         solar_iq8_state_color_cache, solar_iq8_border_color_cache);
+        set_control_card_state(card_solar_generator, lbl_solar_generator_state, lbl_solar_generator_hint,
+                               "PLACEHOLDER", "3007 backend pending", 0xffa657, 0x30363d,
+                               solar_generator_state_color_cache, solar_generator_border_color_cache);
+      }
+
       if (lbl_solar_pv != NULL) {
         if (sol.last_update_ms > 0) {
           fmt_w(buf, sizeof(buf), sol.pv_power_W);
-          lv_label_set_text(lbl_solar_pv, buf);
+          solar_set_label_text_if_changed(lbl_solar_pv, buf);
           fmt_w(buf, sizeof(buf), sol.load_power_W);
-          lv_label_set_text(lbl_solar_load, buf);
+          solar_set_label_text_if_changed(lbl_solar_load, buf);
           if (sol.grid_power_W >= 0)
             snprintf(buf, sizeof(buf), "+%.0f W", sol.grid_power_W);
           else
             snprintf(buf, sizeof(buf), "%.0f W", sol.grid_power_W);
-          lv_label_set_text(lbl_solar_grid, buf);
+          solar_set_label_text_if_changed(lbl_solar_grid, buf);
           fmt_w(buf, sizeof(buf), sol.battery_power_W);
-          lv_label_set_text(lbl_solar_batt_power, buf);
+          solar_set_label_text_if_changed(lbl_solar_batt_power, buf);
           snprintf(buf, sizeof(buf), "%.1f %%", sol.battery_soc_pct);
-          lv_label_set_text(lbl_solar_batt_soc, buf);
+          solar_set_label_text_if_changed(lbl_solar_batt_soc, buf);
           snprintf(buf, sizeof(buf), "%.2f kWh", sol.day_pv_energy_kWh);
-          lv_label_set_text(lbl_solar_day_pv, buf);
-          lv_obj_set_style_text_color(lbl_solar_grid,
-            lv_color_hex(sol.grid_power_W < 0 ? 0x7ee787 : 0xff7b72), 0);
-          lv_obj_set_style_text_color(lbl_solar_batt_power,
-            lv_color_hex(sol.battery_power_W >= 0 ? 0x58a6ff : 0xffa657), 0);
+          solar_set_label_text_if_changed(lbl_solar_day_pv, buf);
+          solar_set_text_color_if_changed(lbl_solar_grid, solar_legacy_grid_text_color_cache,
+                                          sol.grid_power_W < 0 ? 0x7ee787 : 0xff7b72);
+          solar_set_text_color_if_changed(lbl_solar_batt_power, solar_legacy_batt_text_color_cache,
+                                          sol.battery_power_W >= 0 ? 0x58a6ff : 0xffa657);
         } else {
-          lv_label_set_text(lbl_solar_pv, "--");
-          lv_label_set_text(lbl_solar_load, "--");
-          lv_label_set_text(lbl_solar_grid, "--");
-          lv_label_set_text(lbl_solar_batt_power, "--");
-          lv_label_set_text(lbl_solar_batt_soc, "--");
-          lv_label_set_text(lbl_solar_day_pv, "--");
+          solar_set_label_text_if_changed(lbl_solar_pv, "--");
+          solar_set_label_text_if_changed(lbl_solar_load, "--");
+          solar_set_label_text_if_changed(lbl_solar_grid, "--");
+          solar_set_label_text_if_changed(lbl_solar_batt_power, "--");
+          solar_set_label_text_if_changed(lbl_solar_batt_soc, "--");
+          solar_set_label_text_if_changed(lbl_solar_day_pv, "--");
         }
       }
     }
@@ -2400,6 +2755,10 @@ void init_display() {
 
 void update_display() {
   // Placeholder for other hardware
+}
+
+const char* get_display_ui_version() {
+  return "";
 }
 
 #endif

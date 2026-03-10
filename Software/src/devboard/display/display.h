@@ -3,5 +3,6 @@
 
 void init_display();
 void update_display();
+const char* get_display_ui_version();
 
 #endif  // _DISPLAY_H_

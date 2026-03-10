@@ -38,6 +38,22 @@ struct SolarData {
   float root_day_pv_energy_kWh = 0.0f;
   float total_day_pv_energy_kWh = 0.0f;
   unsigned long total_day_pv_last_update_ms = 0;
+
+  // Solar bottom control-card state restored from the approved 3007 contract
+  bool solis_mode_self_use = false;
+  bool solis_mode_feed_in_priority = false;
+  unsigned long solis_mode_last_update_ms = 0;
+
+  bool tabuchi_export_enabled = false;
+  bool shed_micros_enabled = false;
+  bool iq8_micros_enabled = false;
+  bool curtail_auto_enabled = false;
+  bool curtail_auto_active = false;
+  bool curtail_solis_active = false;
+  float curtail_soc_pct = 0.0f;
+  float curtail_threshold_pct = 0.0f;
+  float curtail_restore_pct = 0.0f;
+  unsigned long curtailment_last_update_ms = 0;
   
   // Legacy compatibility fields (mapped to Solark data)
   float pv_power_W = 0.0f;
@@ -75,6 +91,13 @@ void tick_alive_counter();
 
 // Solar data accessor — used by display.cpp Solar tab
 const SolarData& get_solar_data();
+
+// Approved 3007 action helpers for the live Solar control cards
+bool set_solis_mode_self_use();
+bool set_solis_mode_feed_in_priority();
+bool set_tabuchi_export_enabled(bool enabled);
+bool set_shed_micros_enabled(bool enabled);
+bool set_iq8_micros_enabled(bool enabled);
 
 // MQTT message log accessor — used by webserver /canlog repurposed endpoint
 const MqttLogEntry* get_mqtt_log();
