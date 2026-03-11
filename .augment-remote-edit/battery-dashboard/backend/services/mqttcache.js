@@ -33,6 +33,27 @@ function getCellCache(battery = 'tesla') {
   return cellCaches[battery];
 }
 
+function uniqueTopics(topics) {
+  return [...new Set(
+    topics
+      .filter(Boolean)
+      .map((topic) => String(topic).trim())
+      .filter(Boolean)
+  )];
+}
+
+function getTeslaInfoTopics() {
+  return uniqueTopics([config.mqtt.topicTeslaBe, config.mqtt.compatTeslaInfoTopic]);
+}
+
+function getTeslaSpecTopics() {
+  return uniqueTopics([getCellSource('tesla')?.specTopic, config.mqtt.topicBeSpec, config.mqtt.compatTeslaSpecTopic]);
+}
+
+function getTeslaBalancingTopics() {
+  return uniqueTopics([getCellSource('tesla')?.balancingTopic, config.mqtt.topicBeBalancing, config.mqtt.compatTeslaBalancingTopic]);
+}
+
 function subscribeIfPresent(topic) {
   if (topic) client.subscribe(topic, { qos: 0 });
 }
@@ -46,12 +67,14 @@ function subscribeDynamicTopic(topic) {
 
 function refreshDynamicSubscriptions() {
   if (!mqttConnected) return;
-  [
+  uniqueTopics([
     config.mqtt.topicSolarkJson,
-    config.mqtt.topicTeslaBe,
-    config.mqtt.topicBeSpec,
-    config.mqtt.topicBeBalancing,
-  ].filter(Boolean).forEach(subscribeDynamicTopic);
+    ...getTeslaInfoTopics(),
+    ...getTeslaSpecTopics(),
+    ...getTeslaBalancingTopics(),
+    config.mqtt.compatTopicEnvoy1Power,
+    config.mqtt.compatTopicEnvoy2Power,
+  ]).forEach(subscribeDynamicTopic);
 
   for (const battery of ['tesla', 'ruxiu']) {
     const source = getCellSource(battery);
@@ -118,6 +141,55 @@ function applyBalancingPayload(battery, rawValue) {
   }
 }
 
+function mergeEnvoyData(existing, patch) {
+  if (existing && typeof existing === 'object' && !Array.isArray(existing)) {
+    return { ...existing, ...patch };
+  }
+  return { ...patch };
+}
+
+function applyEnvoyPayload(envoyId, rawValue, now) {
+  try {
+    const data = JSON.parse(rawValue);
+    if (data && typeof data === 'object' && !Array.isArray(data)) {
+      envoyCache[envoyId] = { data, ts: now };
+      return true;
+    }
+    if (typeof data === 'number') {
+      envoyCache[envoyId] = {
+        data: mergeEnvoyData(envoyCache[envoyId]?.data, {
+          production: data,
+          active_power: data,
+        }),
+        ts: now,
+      };
+      return true;
+    }
+  } catch {}
+  return false;
+}
+
+function applyEnvoyActivePower(envoyId, rawValue, topic, now) {
+  let watts = Number(rawValue);
+  if (!Number.isFinite(watts)) {
+    try {
+      const data = JSON.parse(rawValue);
+      watts = Number(data?.production ?? data?.active_power ?? data?.value ?? data);
+    } catch {}
+  }
+  if (!Number.isFinite(watts)) return false;
+  envoyCache[envoyId] = {
+    data: mergeEnvoyData(envoyCache[envoyId]?.data, {
+      production: watts,
+      active_power: watts,
+      source: 'mqtt-active-power',
+      power_topic: topic,
+    }),
+    ts: now,
+  };
+  return true;
+}
+
 // ── MQTT ──────────────────────────────────────────────────
 
 const client = mqtt.connect(config.mqtt.url, {
@@ -130,16 +202,20 @@ const client = mqtt.connect(config.mqtt.url, {
 client.on('connect', () => {
   mqttConnected = true;
   dynamicSubscriptions = new Set();
-  client.subscribe(config.mqtt.topicSolark,  { qos: 0 });
-  if (config.mqtt.topicSolarkJson) client.subscribe(config.mqtt.topicSolarkJson, { qos: 0 });
-  if (config.mqtt.topicTeslaBe) client.subscribe(config.mqtt.topicTeslaBe,     { qos: 0 });
-  if (config.mqtt.topicBeSpec)  client.subscribe(config.mqtt.topicBeSpec,      { qos: 0 });
-  if (config.mqtt.topicBeBalancing) client.subscribe(config.mqtt.topicBeBalancing, { qos: 0 });
-  client.subscribe(config.mqtt.topicCells,   { qos: 0 });
-  if (config.mqtt.topicEnvoy1) client.subscribe(config.mqtt.topicEnvoy1, { qos: 0 });
-  if (config.mqtt.topicEnvoy2) client.subscribe(config.mqtt.topicEnvoy2, { qos: 0 });
+  uniqueTopics([
+    config.mqtt.topicSolark,
+    config.mqtt.topicSolarkJson,
+    ...getTeslaInfoTopics(),
+    ...getTeslaSpecTopics(),
+    ...getTeslaBalancingTopics(),
+    config.mqtt.topicCells,
+    config.mqtt.topicEnvoy1,
+    config.mqtt.topicEnvoy2,
+    config.mqtt.compatTopicEnvoy1Power,
+    config.mqtt.compatTopicEnvoy2Power,
+  ]).forEach(subscribeIfPresent);
   refreshDynamicSubscriptions();
-  console.log('[mqtt] connected, subscribed to solark + cell + tesla-be + be-spec + envoy topics');
+  console.log('[mqtt] connected, subscribed to solark + BE compatibility + envoy topics');
 });
 
 client.on('error',      (e) => console.warn('[mqtt] error:', e.message));
@@ -151,7 +227,7 @@ client.on('message', (topic, payload) => {
   const now = Date.now();
 
   // BE/info — Battery Emulator summary (SOC, temps, voltages, power)
-  if (config.mqtt.topicTeslaBe && topic === config.mqtt.topicTeslaBe) {
+  if (getTeslaInfoTopics().includes(topic)) {
     try {
       const data = JSON.parse(val);
       const keys = [
@@ -171,11 +247,11 @@ client.on('message', (topic, payload) => {
   }
 
   const teslaCellSource = getCellSource('tesla');
-  if (teslaCellSource?.type === 'mqtt' && teslaCellSource.specTopic && topic === teslaCellSource.specTopic) {
+  if (teslaCellSource?.type === 'mqtt' && getTeslaSpecTopics().includes(topic)) {
     if (applyCellPayload('tesla', val)) return;
   }
 
-  if (teslaCellSource?.type === 'mqtt' && teslaCellSource.balancingTopic && topic === teslaCellSource.balancingTopic) {
+  if (teslaCellSource?.type === 'mqtt' && getTeslaBalancingTopics().includes(topic)) {
     if (applyBalancingPayload('tesla', val)) return;
   }
 
@@ -282,20 +358,18 @@ client.on('message', (topic, payload) => {
     return;
   }
 
-  // solar/envoy1, solar/envoy2 — full Envoy data from Envoy API publisher
+  // Envoy MQTT compatibility — accept full retained JSON plus active-power aliases
   if (config.mqtt.topicEnvoy1 && topic === config.mqtt.topicEnvoy1) {
-    try {
-      const data = JSON.parse(val);
-      envoyCache.envoy1 = { data, ts: now };
-    } catch {}
-    return;
+    if (applyEnvoyPayload('envoy1', val, now)) return;
   }
   if (config.mqtt.topicEnvoy2 && topic === config.mqtt.topicEnvoy2) {
-    try {
-      const data = JSON.parse(val);
-      envoyCache.envoy2 = { data, ts: now };
-    } catch {}
-    return;
+    if (applyEnvoyPayload('envoy2', val, now)) return;
+  }
+  if (config.mqtt.compatTopicEnvoy1Power && topic === config.mqtt.compatTopicEnvoy1Power) {
+    if (applyEnvoyActivePower('envoy1', val, topic, now)) return;
+  }
+  if (config.mqtt.compatTopicEnvoy2Power && topic === config.mqtt.compatTopicEnvoy2Power) {
+    if (applyEnvoyActivePower('envoy2', val, topic, now)) return;
   }
 
   // Legacy: solar/bms/cells  (JSON array [{cell:1,mv:3320},…] or CSV mV)
@@ -355,7 +429,7 @@ pollSolis();
 // so getEnvoy() returns fresh data without blocking the request handler.
 
 function pollEnvoyHttp() {
-  const base = (config.envoy?.apiUrl || 'http://localhost:3002').replace(/\/$/, '');
+  const base = (config.envoy?.apiUrl || 'http://localhost:3004').replace(/\/$/, '');
   const url  = `${base}/api/envoy/debug`;
   const mod  = url.startsWith('https') ? require('https') : http;
   mod.get(url, { timeout: 25000 }, (res) => {

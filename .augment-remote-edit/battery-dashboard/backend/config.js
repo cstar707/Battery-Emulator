@@ -1,5 +1,16 @@
 const fs = require('fs');
 
+const LEGACY_TESLA_TOPICS = Object.freeze({
+  info: 'BE/info',
+  spec: 'BE/spec_data',
+  balancing: 'BE/balancing_data',
+});
+
+const LEGACY_ENVOY_POWER_TOPICS = Object.freeze({
+  envoy1: 'envoy/1/active_power',
+  envoy2: 'envoy/2/active_power',
+});
+
 const SHARED_SETTINGS_FILE = process.env.INTEGRATION_SETTINGS_FILE || '/home/chad/solar-monitoring/solis_s6_app/settings.json';
 
 function loadSharedSettings() {
@@ -83,15 +94,20 @@ const config = {
       topicTeslaBe: String(getSetting('tesla_source_info_topic', 'MQTT_TOPIC_TESLA_BE', 'BE/info', (value) => String(value).trim()) || ''),
       topicBeSpec: String(getSetting('tesla_source_spec_topic', 'MQTT_TOPIC_BE_SPEC', 'BE/spec_data', (value) => String(value).trim()) || ''),
       topicBeBalancing: String(getSetting('tesla_source_balancing_topic', 'MQTT_TOPIC_BE_BALANCING', 'BE/balancing_data', (value) => String(value).trim()) || ''),
+      compatTeslaInfoTopic: process.env.MQTT_TOPIC_TESLA_BE_LEGACY || LEGACY_TESLA_TOPICS.info,
+      compatTeslaSpecTopic: process.env.MQTT_TOPIC_BE_SPEC_LEGACY || LEGACY_TESLA_TOPICS.spec,
+      compatTeslaBalancingTopic: process.env.MQTT_TOPIC_BE_BALANCING_LEGACY || LEGACY_TESLA_TOPICS.balancing,
       topicEnvoy1: process.env.MQTT_TOPIC_ENVOY1 || 'solar/envoy1',
       topicEnvoy2: process.env.MQTT_TOPIC_ENVOY2 || 'solar/envoy2',
+      compatTopicEnvoy1Power: process.env.MQTT_TOPIC_ENVOY1_ACTIVE_POWER || LEGACY_ENVOY_POWER_TOPICS.envoy1,
+      compatTopicEnvoy2Power: process.env.MQTT_TOPIC_ENVOY2_ACTIVE_POWER || LEGACY_ENVOY_POWER_TOPICS.envoy2,
     };
   },
   solis: {
     apiUrl: process.env.SOLIS_API_URL || 'http://localhost:3007',
   },
   envoy: {
-    apiUrl: process.env.ENVOY_API_URL || process.env.SOLAR_API_URL || 'http://localhost:3002',
+    apiUrl: process.env.ENVOY_API_URL || process.env.SOLAR_API_URL || 'http://localhost:3004',
   },
   influxdb: {
     url: process.env.INFLUXDB_URL || 'http://localhost:8086',

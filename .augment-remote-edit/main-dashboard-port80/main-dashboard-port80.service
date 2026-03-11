@@ -1,0 +1,21 @@
+[Unit]
+Description=Consolidated Main Dashboard (port 80)
+After=network-online.target mosquitto.service
+Wants=network-online.target
+Conflicts=mqtt-dashboard.service secure-dashboard.service
+
+[Service]
+Type=simple
+User=chad
+WorkingDirectory=/home/chad/solar-monitoring/main-dashboard-port80/backend
+EnvironmentFile=/home/chad/solar-monitoring/main-dashboard-port80/.env
+Environment=PORT=80
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=5
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

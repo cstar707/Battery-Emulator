@@ -109,7 +109,7 @@ router.get('/sensors/:id/history', async (req, res) => {
 
 function fetchEnvoyFromHttp() {
   const http = require('http');
-  const url = (config.envoy?.apiUrl || 'http://localhost:3002').replace(/\/$/, '');
+  const url = (config.envoy?.apiUrl || 'http://localhost:3004').replace(/\/$/, '');
   const target = `${url}/api/envoy/debug`;
   return new Promise((resolve, reject) => {
     http.get(target, (resp) => {
