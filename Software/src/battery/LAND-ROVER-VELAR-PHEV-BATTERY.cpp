@@ -175,7 +175,11 @@ void LandRoverVelarPhevBattery::transmit_can(unsigned long currentMillis) {
   if (currentMillis - previousMillis50ms >= INTERVAL_50_MS) {
     previousMillis50ms = currentMillis;
 
-    bool effective_close = userRequestContactorClose && (currentMillis >= VELAR_CONTACTOR_DELAY_MS);
+    // Close when: user requested close OR inverter allows (auto-close when inverter ready)
+    // User request bypasses the init delay; auto-close waits for BMS to settle.
+    bool delay_ok = userRequestContactorClose || (currentMillis >= VELAR_CONTACTOR_DELAY_MS);
+    bool effective_close = (userRequestContactorClose || datalayer.system.status.inverter_allows_contactor_closing) &&
+                           delay_ok && !datalayer.system.info.equipment_stop_active;
     velar_counter_a2++;
     uint8_t count = velar_counter_a2 & 0x0F;
 
@@ -183,13 +187,17 @@ void LandRoverVelarPhevBattery::transmit_can(unsigned long currentMillis) {
     uint8_t byte1 = (VELAR_0xA2_PCM_HVBatt.data.u8[1] & 0x87) | (count << 3);
 
     if (effective_close) {
-      // HVBattContactorRequest=1 (byte6 bit5 = 0x20). HVBattContactorDemandT=0 (no open command).
+      // Close: HybridMode=2 (Hybrid Battery Only) byte5 bits3-6 = 0x10
+      //        HVBattContactorRequest=1 byte6 bit5 = 0x20
+      //        PwrSupWakeUpAllowed=1 (HV Battery) byte7 bits4-5 = 0x10
       VELAR_0xA2_PCM_HVBatt.data.u8[1] = byte1;
+      VELAR_0xA2_PCM_HVBatt.data.u8[5] = 0x10;
       VELAR_0xA2_PCM_HVBatt.data.u8[6] = 0x20;
-      VELAR_0xA2_PCM_HVBatt.data.u8[7] = 0x01;
+      VELAR_0xA2_PCM_HVBatt.data.u8[7] = 0x10;
     } else {
-      // HVBattContactorRequest=0 (open). All close bits cleared.
+      // Open: HybridMode=0 (Standby), no contactor request, no wakeup
       VELAR_0xA2_PCM_HVBatt.data.u8[1] = byte1;
+      VELAR_0xA2_PCM_HVBatt.data.u8[5] = 0x00;
       VELAR_0xA2_PCM_HVBatt.data.u8[6] = 0x00;
       VELAR_0xA2_PCM_HVBatt.data.u8[7] = 0x00;
     }
