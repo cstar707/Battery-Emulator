@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Cell Monitor – Battery Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Chakra+Petch:wght@300;400;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/dashboard.css" />
+  <style>
+    .battery-tabs { display:flex; gap:0.25rem; padding:0 1rem; border-bottom:1px solid rgba(255,255,255,0.06); background:var(--bg-card,#111827); }
+    .battery-tab-link { display:inline-flex; align-items:center; gap:0.5rem; padding:0.7rem 1rem; text-decoration:none; font-family:'Chakra Petch',sans-serif; font-size:0.78rem; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:rgba(255,255,255,0.45); border-bottom:2px solid transparent; }
+    .battery-tab-link.is-active[data-battery="tesla"] { color:#fff; border-bottom-color:#e3342f; }
+    .battery-tab-link.is-active[data-battery="ruxiu"] { color:#fff; border-bottom-color:#00c8ff; }
+    .source-summary { margin:1rem 1rem 0; padding:0.9rem 1rem; border-radius:10px; border:1px solid rgba(148,163,184,0.16); background:rgba(15,23,42,0.45); display:flex; flex-direction:column; gap:0.65rem; }
+    .source-summary-row { display:flex; align-items:center; justify-content:space-between; gap:1rem; flex-wrap:wrap; }
+    .source-label { font-family:'JetBrains Mono',monospace; font-size:0.68rem; text-transform:uppercase; letter-spacing:0.08em; color:rgba(148,163,184,0.75); }
+    .source-title { margin:0.2rem 0 0; font-family:'Chakra Petch',sans-serif; font-size:1.05rem; letter-spacing:0.06em; text-transform:uppercase; }
+    .source-meta, .history-note, .source-message { font-family:'JetBrains Mono',monospace; font-size:0.74rem; }
+    .source-meta { color:rgba(226,232,240,0.82); }
+    .history-note { color:rgba(255,255,255,0.5); }
+    .source-state-badge { display:inline-flex; align-items:center; gap:0.35rem; padding:0.22rem 0.65rem; border-radius:999px; font-family:'JetBrains Mono',monospace; font-size:0.68rem; letter-spacing:0.08em; text-transform:uppercase; border:1px solid rgba(148,163,184,0.25); background:rgba(148,163,184,0.12); color:rgba(226,232,240,0.9); }
+    .source-state-badge.is-live { border-color:rgba(34,197,94,0.35); background:rgba(34,197,94,0.12); color:#86efac; }
+    .source-state-badge.is-mock, .source-state-badge.is-mock-history { border-color:rgba(245,158,11,0.35); background:rgba(245,158,11,0.12); color:#fcd34d; }
+    .source-state-badge.is-stale, .source-state-badge.is-fallback, .source-state-badge.is-historical { border-color:rgba(251,191,36,0.35); background:rgba(251,191,36,0.12); color:#fde68a; }
+    .source-state-badge.is-error, .source-state-badge.is-disabled, .source-state-badge.is-unavailable { border-color:rgba(248,113,113,0.35); background:rgba(248,113,113,0.12); color:#fca5a5; }
+    .source-message { padding:0.65rem 0.8rem; border-radius:8px; border:1px solid rgba(148,163,184,0.2); background:rgba(15,23,42,0.35); color:rgba(226,232,240,0.9); }
+    .source-message.is-mock, .source-message.is-mock-history { border-color:rgba(245,158,11,0.22); background:rgba(245,158,11,0.10); color:rgba(252,211,77,0.95); }
+    .source-message.is-stale, .source-message.is-fallback, .source-message.is-historical { border-color:rgba(251,191,36,0.22); background:rgba(251,191,36,0.10); color:rgba(253,230,138,0.95); }
+    .source-message.is-error, .source-message.is-disabled, .source-message.is-unavailable { border-color:rgba(248,113,113,0.25); background:rgba(127,29,29,0.18); color:rgba(254,202,202,0.95); }
+  </style>
+</head>
+<body>
+
+  <!-- ── Header ─────────────────────────────────────────── -->
+  <header class="app-header">
+    <div class="header-left">
+      <div class="logo">
+        <span class="logo-icon">⚡</span>
+        <span class="logo-text">BATTERY<span class="logo-accent">MONITOR</span></span>
+      </div>
+      <div id="mock-badge" class="mock-badge hidden">MOCK DATA</div>
+    </div>
+    <nav class="header-nav">
+      <a href="/grid-status.html" class="nav-link">Grid Status</a>
+      <a href="/" class="nav-link">Dashboard</a>
+      <a href="/envoys.html" class="nav-link">Envoys</a>
+      <a href="/cells.html" class="nav-link active">Cell Monitor</a>
+    </nav>
+    <div class="header-center">
+      <div class="stat-block">
+        <span class="stat-label">MAX</span>
+        <span class="stat-value" id="stat-max">— mV</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-block">
+        <span class="stat-label">MIN</span>
+        <span class="stat-value" id="stat-min">— mV</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-block">
+        <span class="stat-label">DEVIATION</span>
+        <span class="stat-value deviation" id="stat-dev">— mV</span>
+      </div>
+      <div class="stat-divider"></div>
+      <div class="stat-block">
+        <span class="stat-label">AVG</span>
+        <span class="stat-value" id="stat-avg">— mV</span>
+      </div>
+    </div>
+    <div class="header-right">
+      <div id="live-indicator" class="live-indicator">
+        <span class="live-dot"></span>
+        <span class="live-label">LIVE</span>
+      </div>
+      <div id="timestamp-display" class="timestamp-display">—</div>
+      <div id="error-badge" class="error-badge hidden">⚠ SOURCE ISSUE</div>
+    </div>
+  </header>
+
+  <div class="battery-tabs">
+    <a href="/cells.html?battery=tesla" id="battery-tab-tesla" class="battery-tab-link" data-battery="tesla">
+      Tesla Battery <span id="tab-badge-tesla" class="source-state-badge">Loading…</span>
+    </a>
+    <a href="/cells.html?battery=ruxiu" id="battery-tab-ruxiu" class="battery-tab-link" data-battery="ruxiu">
+      Ruxiu Batteries <span id="tab-badge-ruxiu" class="source-state-badge">Loading…</span>
+    </a>
+  </div>
+
+  <section class="source-summary">
+    <div class="source-summary-row">
+      <div>
+        <div class="source-label">Selected battery</div>
+        <h1 id="battery-title" class="source-title">Tesla Battery</h1>
+      </div>
+      <div id="source-badge" class="source-state-badge">Loading…</div>
+    </div>
+    <div id="battery-meta" class="source-meta">Loading source state…</div>
+    <div id="source-message" class="source-message hidden"></div>
+    <div id="history-note" class="history-note">Loading history contract…</div>
+  </section>
+
+  <!-- ── Main content ───────────────────────────────────── -->
+  <main class="app-main">
+
+    <!-- Cell grid -->
+    <section class="grid-section">
+      <div id="cell-grid" class="cell-grid">
+        <!-- Cells injected by cellGrid.js -->
+        <div class="grid-loading">
+          <div class="spinner"></div>
+          <p>Loading cells…</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Bar chart -->
+    <section class="chart-section">
+      <canvas id="bar-chart" class="bar-chart"></canvas>
+      <div class="chart-hover-info" id="chart-hover-info">
+        <span id="chart-hover-label"></span>
+        <span id="chart-hover-value"></span>
+      </div>
+    </section>
+
+    <!-- Time slider -->
+    <section class="slider-section">
+      <div class="slider-labels">
+        <span class="slider-label-time" id="slider-label-oldest">–24h</span>
+        <span class="slider-label-center" id="slider-label-center">◀ scroll back in time</span>
+        <span class="slider-label-live">LIVE ▶</span>
+      </div>
+      <div class="slider-track-wrapper">
+        <input
+          type="range"
+          id="time-slider"
+          class="time-slider"
+          min="0"
+          max="1000"
+          value="1000"
+          step="1"
+        />
+        <div class="slider-progress" id="slider-progress"></div>
+      </div>
+      <div class="slider-time-display" id="slider-time-display">LIVE</div>
+    </section>
+
+  </main>
+
+  <!-- ── Scripts (order matters) ────────────────────────── -->
+  <script src="js/config.js"></script>
+  <script src="js/highlight.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/cellGrid.js"></script>
+  <script src="js/barChart.js"></script>
+  <script src="js/timeSlider.js"></script>
+  <script src="js/app.js"></script>
+
+</body>
+</html>

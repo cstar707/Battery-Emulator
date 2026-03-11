@@ -20,6 +20,7 @@
 #include "../display/mqtt_display_bridge.h"
 #include "../utils/events.h"
 #include "../utils/logging.h"
+#include "../utils/release_metadata.h"
 #include "../utils/timer.h"
 
 extern std::string http_username;
@@ -107,11 +108,21 @@ static const char HTML_HEADER[] =
 
 static const char HTML_FOOTER[] = "</body></html>";
 
+static String build_release_footer() {
+  String footer = "<div style='margin-top:12px;padding:10px 0;color:#8b949e;font-size:11px;text-align:center'>";
+  footer += "Release " + String(release_metadata::release_identifier().c_str());
+  footer += "<br>Build " + String(release_metadata::kBuildId);
+  footer += "</div>";
+  footer += HTML_FOOTER;
+  return footer;
+}
+
 // ── /api/status JSON endpoint ─────────────────────────────────────────────────
 
 static void handle_api_status(AsyncWebServerRequest* request) {
   static JsonDocument doc;
   doc.clear();
+  const auto releaseIdentifier = release_metadata::release_identifier();
 
   auto& bat = datalayer.battery.status;
   auto& info = datalayer.battery.info;
@@ -131,6 +142,12 @@ static void handle_api_status(AsyncWebServerRequest* request) {
   doc["soh_pct"] = bat.soh_pptt / 100.0f;
   doc["num_cells"] = info.number_of_cells;
   doc["mqtt_alive"] = bat.CAN_battery_still_alive;
+  doc["release"]["version"] = release_metadata::kVersion;
+  doc["release"]["identifier"] = releaseIdentifier.c_str();
+  doc["release"]["build"] = release_metadata::kBuildId;
+  if (release_metadata::kChannel[0] != '\0') {
+    doc["release"]["channel"] = release_metadata::kChannel;
+  }
 
   const SolarData& sol = mqtt_display_bridge::get_solar_data();
   
@@ -313,7 +330,7 @@ static void handle_root(AsyncWebServerRequest* request) {
     snprintf(sol_buf, sizeof(sol_buf), "%s", sol_html.c_str());
   }
 
-  String page = String(buf) + sol_buf + HTML_FOOTER;
+  String page = String(buf) + sol_buf + build_release_footer();
   request->send(200, "text/html", page);
 }
 
@@ -340,7 +357,7 @@ static void handle_cellmonitor(AsyncWebServerRequest* request) {
     page += "</table>";
   }
   page += "</div>";
-  page += HTML_FOOTER;
+  page += build_release_footer();
   request->send(200, "text/html", page);
 }
 
@@ -367,7 +384,7 @@ static void handle_events(AsyncWebServerRequest* request) {
   }
 
   page += "</table></div>";
-  page += HTML_FOOTER;
+  page += build_release_footer();
   request->send(200, "text/html", page);
 }
 
@@ -397,7 +414,7 @@ static void handle_canlog(AsyncWebServerRequest* request) {
   }
 
   page += "</table></div>";
-  page += HTML_FOOTER;
+  page += build_release_footer();
   request->send(200, "text/html", page);
 }
 
@@ -409,7 +426,7 @@ static void handle_log(AsyncWebServerRequest* request) {
           "<p style='color:#8b949e;font-size:12px'>Live logging is available via USB serial (115200 baud).<br>"
           "Uptime: " + String(millis() / 1000) + "s &nbsp;|&nbsp; Free heap: " + String(ESP.getFreeHeap()) + " bytes</p>"
           "</div>";
-  page += HTML_FOOTER;
+  page += build_release_footer();
   request->send(200, "text/html", page);
 }
 
@@ -436,7 +453,7 @@ static void handle_settings_get(AsyncWebServerRequest* request) {
 
   page += "<input type='submit' value='Save &amp; Reboot'>";
   page += "</form></div>";
-  page += HTML_FOOTER;
+  page += build_release_footer();
   request->send(200, "text/html", page);
 }
 
@@ -476,7 +493,7 @@ static void handle_reboot(AsyncWebServerRequest* request) {
   request->send(200, "text/html",
                 String(HTML_HEADER) +
                     "<div class='card'><p>Rebooting...</p></div>" +
-                    HTML_FOOTER);
+                    build_release_footer());
   delay(500);
   ESP.restart();
 }
@@ -613,7 +630,7 @@ static void handle_solar(AsyncWebServerRequest* request) {
   page += "<tr><td>Envoy 2</td><td>envoy/2/active_power</td><td>" + String(sol.envoy2_last_update_ms > 0 ? "<span class='ok'>Active</span>" : "<span class='err'>No data</span>") + "</td></tr>";
   page += "</table></div>";
   
-  page += HTML_FOOTER;
+  page += build_release_footer();
   request->send(200, "text/html", page);
 }
 

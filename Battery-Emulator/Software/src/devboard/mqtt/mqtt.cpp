@@ -13,6 +13,7 @@
 #include "../../devboard/hal/hal.h"
 #include "../../lib/bblanchon-ArduinoJson/ArduinoJson.h"
 #include "../utils/events.h"
+#include "../utils/release_metadata.h"
 #include "../utils/timer.h"
 #include "../webserver/webserver.h"
 #ifdef HW_WAVESHARE7B_DISPLAY_ONLY
@@ -194,10 +195,12 @@ static String generateButtonAutoConfigTopic(const char* subtype) {
 }
 
 void set_common_discovery_attributes(JsonDocument& doc) {
+  const auto releaseSummary = release_metadata::release_summary();
   doc["device"]["identifiers"][0] = device_id;
   doc["device"]["manufacturer"] = "DalaTech";
   doc["device"]["model"] = "BatteryEmulator";
   doc["device"]["name"] = device_name;
+  doc["device"]["sw_version"] = releaseSummary.c_str();
   doc["availability"][0]["topic"] = lwt_topic;
   doc["payload_available"] = "online";
   doc["payload_not_available"] = "offline";

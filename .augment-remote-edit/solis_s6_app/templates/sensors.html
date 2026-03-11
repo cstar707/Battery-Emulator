@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}Sensors{% endblock %}
+{% block content %}
+  <div class="card">
+    <h2>Connection</h2>
+    {% if ok %}
+      <span class="status-ok">Solis ({{ inverter_label }}) — data from Modbus</span>
+    {% else %}
+      <span class="status-fail">No connection</span>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Power &amp; meter</h2>
+    <table style="width:100%; border-collapse: collapse;">
+      <tr><td class="muted">Grid (meter) power</td><td>{{ data.grid_power_W | default(0) | int }} W</td></tr>
+      <tr><td class="muted">PV power</td><td>{{ data.pv_power_W | default(0) | int }} W</td></tr>
+      <tr><td class="muted">Battery power</td><td>{{ data.battery_power_W | default(0) | int }} W</td></tr>
+      <tr><td class="muted">House load</td><td>{{ data.load_power_W | default(0) | int }} W</td></tr>
+      <tr><td class="muted">Active power (inverter)</td><td>{{ data.active_power_W | default(0) | int }} W</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Battery</h2>
+    <table style="width:100%; border-collapse: collapse;">
+      <tr><td class="muted">SOC</td><td>{{ data.battery_soc_pct | default(0) | int }} %</td></tr>
+      <tr><td class="muted">SOH</td><td>{{ data.battery_soh_pct | default(0) | int }} %</td></tr>
+      <tr><td class="muted">Voltage</td><td>{{ "%.2f" | format(data.battery_voltage_V | default(0)) }} V</td></tr>
+      <tr><td class="muted">Current</td><td>{{ "%.2f" | format(data.battery_current_A | default(0)) }} A</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>PV &amp; AC</h2>
+    <table style="width:100%; border-collapse: collapse;">
+      <tr><td class="muted">PV1 V / A</td><td>{{ "%.1f" | format(data.pv_voltage_1_V | default(0)) }} V / {{ "%.1f" | format(data.pv_current_1_A | default(0)) }} A</td></tr>
+      <tr><td class="muted">PV2 V / A</td><td>{{ "%.1f" | format(data.pv_voltage_2_V | default(0)) }} V / {{ "%.1f" | format(data.pv_current_2_A | default(0)) }} A</td></tr>
+      <tr><td class="muted">AC voltage (phase A)</td><td>{{ "%.1f" | format(data.ac_voltage_V | default(0)) }} V</td></tr>
+      <tr><td class="muted">AC current (phase A)</td><td>{{ "%.1f" | format(data.ac_current_A | default(0)) }} A</td></tr>
+      <tr><td class="muted">Grid frequency</td><td>{{ "%.2f" | format(data.grid_freq_Hz | default(0)) }} Hz</td></tr>
+      <tr><td class="muted">Inverter temperature</td><td>{{ "%.1f" | format(data.inverter_temp_C | default(0)) }} °C</td></tr>
+      <tr><td class="muted">Inverter state</td><td>{{ data.inverter_state | default(0) }}</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Energy today (kWh)</h2>
+    <table style="width:100%; border-collapse: collapse;">
+      <tr><td class="muted">PV</td><td>{{ "%.2f" | format(data.energy_today_pv_kWh | default(0)) }}</td></tr>
+      <tr><td class="muted">Load</td><td>{{ "%.2f" | format(data.energy_today_load_kWh | default(0)) }}</td></tr>
+      <tr><td class="muted">Battery charge</td><td>{{ "%.2f" | format(data.energy_today_bat_charge_kWh | default(0)) }}</td></tr>
+      <tr><td class="muted">Battery discharge</td><td>{{ "%.2f" | format(data.energy_today_bat_discharge_kWh | default(0)) }}</td></tr>
+      <tr><td class="muted">Grid import</td><td>{{ "%.2f" | format(data.energy_today_grid_import_kWh | default(0)) }}</td></tr>
+      <tr><td class="muted">Grid export</td><td>{{ "%.2f" | format(data.energy_today_grid_export_kWh | default(0)) }}</td></tr>
+    </table>
+  </div>
+{% endblock %}

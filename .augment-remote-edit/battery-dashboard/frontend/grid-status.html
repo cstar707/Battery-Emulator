@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Grid Status – Battery Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Chakra+Petch:wght@300;400;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/dashboard.css" />
+</head>
+<body>
+
+  <header class="app-header">
+    <div class="header-left">
+      <div class="logo">
+        <span class="logo-icon">⚡</span>
+        <span class="logo-text">BATTERY<span class="logo-accent">MONITOR</span></span>
+      </div>
+    </div>
+    <nav class="header-nav">
+      <a href="/grid-status.html" class="nav-link active">Grid Status</a>
+      <a href="/"           class="nav-link">Dashboard</a>
+      <a href="/envoys.html" class="nav-link">Envoys</a>
+      <a href="/cells.html" class="nav-link">Cell Monitor</a>
+    </nav>
+    <div class="header-right">
+      <div id="live-indicator" class="live-indicator">
+        <span class="live-dot"></span>
+        <span class="live-label">LIVE</span>
+      </div>
+      <div id="timestamp-display" class="timestamp-display">—</div>
+    </div>
+  </header>
+
+  <main class="dashboard-main">
+    <h2 class="grid-status-title">Grid Status</h2>
+
+    <!-- Battery SOC cards -->
+    <div class="grid-status-cards kpi-row">
+      <div class="kpi-card grid-status-card" style="--sensor-color:#00c8ff">
+        <span class="kpi-label">SOLARK BATTERY</span>
+        <span class="kpi-value" id="solark-soc">—</span>
+        <span class="kpi-unit">%</span>
+      </div>
+      <div class="kpi-card grid-status-card" style="--sensor-color:#e3342f">
+        <span class="kpi-label">TESLA BATTERY #1</span>
+        <span class="kpi-value" id="tesla-soc">—</span>
+        <span class="kpi-unit">%</span>
+      </div>
+    </div>
+
+    <!-- Total Day PV Energy card with breakdown -->
+    <div class="card grid-status-pv-card">
+      <div class="card-header">
+        <span class="card-title" style="color:#fbbf24">TOTAL DAY PV ENERGY</span>
+        <span class="card-current-val" id="total-day-pv">—</span>
+      </div>
+      <div class="pv-breakdown">
+        <div class="pv-row">
+          <span class="pv-source">Solis S6</span>
+          <span class="pv-value" id="pv-solis">—</span>
+        </div>
+        <div class="pv-row">
+          <span class="pv-source">Solark</span>
+          <span class="pv-value" id="pv-solark">—</span>
+        </div>
+        <div class="pv-row">
+          <span class="pv-source">Tabuchi</span>
+          <span class="pv-value" id="pv-tubuchi">—</span>
+        </div>
+        <div class="pv-row">
+          <span class="pv-source">Envoy-1</span>
+          <span class="pv-value" id="pv-envoy1">—</span>
+        </div>
+        <div class="pv-row pv-row-sub">
+          <span class="pv-source pv-source-sub">&#8627; yesterday</span>
+          <span class="pv-value pv-value-sub" id="pv-envoy1-yday">—</span>
+        </div>
+        <div class="pv-row">
+          <span class="pv-source">Envoy-2</span>
+          <span class="pv-value" id="pv-envoy2">—</span>
+        </div>
+        <div class="pv-row pv-row-sub">
+          <span class="pv-source pv-source-sub">&#8627; yesterday</span>
+          <span class="pv-value pv-value-sub" id="pv-envoy2-yday">—</span>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/grid-status.js"></script>
+
+</body>
+</html>

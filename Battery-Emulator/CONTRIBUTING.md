@@ -107,6 +107,12 @@ sudo cmake CMakeLists.txt
 sudo make
 ```
 
+## Release versioning
+- The shipped semantic version lives in `Software/src/devboard/utils/release_metadata.h` via `BE_RELEASE_VERSION`.
+- Every meaningful shipped behavior or operator-visible UI change must bump that semantic version.
+- The running firmware also exposes an automatic build identifier (`BE_RELEASE_BUILD_ID`) so operators can distinguish rebuilds of the same semantic version during rollout or rollback.
+- When cutting a formal release tag, keep the tag aligned with `BE_RELEASE_VERSION`.
+
 ## Downloading a pull request build to test locally 🛜
 If you want to help test a new feature that is only available in an open pull request, you can download the precompiled binaries from the build system. 
 

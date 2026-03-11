@@ -68,6 +68,7 @@ add_compile_definitions(ESP32 HW_LILYGO COMMON_IMAGE)
 # add the executable
 add_executable(tests 
     tests.cpp 
+    release_metadata_tests.cpp
     safety_tests.cpp 
     bms_reset_tests.cpp
     battery/NissanLeafTest.cpp 

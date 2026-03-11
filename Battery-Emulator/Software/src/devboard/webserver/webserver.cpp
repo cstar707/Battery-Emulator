@@ -24,6 +24,7 @@
 #include "html_escape.h"
 
 #include <string>
+#include "../utils/release_metadata.h"
 extern std::string http_username;
 extern std::string http_password;
 
@@ -762,9 +763,16 @@ String get_firmware_info_processor(const String& var) {
   if (var == "X") {
     String content = "";
     static JsonDocument doc;
+    const auto releaseIdentifier = release_metadata::release_identifier();
 
     doc["hardware"] = esp32hal->name();
     doc["firmware"] = String(version_number);
+    doc["release"]["version"] = release_metadata::kVersion;
+    doc["release"]["identifier"] = releaseIdentifier.c_str();
+    doc["release"]["build"] = release_metadata::kBuildId;
+    if (release_metadata::kChannel[0] != '\0') {
+      doc["release"]["channel"] = release_metadata::kChannel;
+    }
     serializeJson(doc, content);
     return content;
   }
@@ -846,6 +854,8 @@ String processor(const String& var) {
     content += " Hardware: Stark CMR Module";
 #endif  // HW_STARK
     content += " @ " + String(datalayer.system.info.CPU_temperature, 1) + " &deg;C</h4>";
+    content += "<h4>Release: " + html_escape(String(release_metadata::release_identifier().c_str())) + "</h4>";
+    content += "<h4>Build: " + html_escape(String(release_metadata::kBuildId)) + "</h4>";
     content += "<h4>Uptime: " + get_uptime() + "</h4>";
     if (datalayer.system.info.performance_measurement_active) {
       // Load information

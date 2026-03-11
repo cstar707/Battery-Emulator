@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="da">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Chart Detail – Battery Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Chakra+Petch:wght@300;400;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/dashboard.css" />
+</head>
+<body>
+
+  <header class="app-header">
+    <div class="header-left">
+      <div class="logo">
+        <span class="logo-icon">⚡</span>
+        <span class="logo-text">BATTERY<span class="logo-accent">MONITOR</span></span>
+      </div>
+    </div>
+    <nav class="header-nav">
+      <a href="/grid-status.html" class="nav-link">Grid Status</a>
+      <a href="/"           class="nav-link">Dashboard</a>
+      <a href="/envoys.html" class="nav-link">Envoys</a>
+      <a href="/cells.html" class="nav-link">Cell Monitor</a>
+    </nav>
+    <div class="header-right">
+      <div id="error-badge" class="error-badge hidden">⚠ DISCONNECTED</div>
+    </div>
+  </header>
+
+  <main class="detail-main">
+
+    <!-- Title + controls -->
+    <div class="detail-toolbar">
+      <a href="/" class="nav-back">← Dashboard</a>
+
+      <div class="detail-title-block">
+        <h1 class="detail-title" id="detail-title">—</h1>
+        <span class="detail-unit"  id="detail-unit"></span>
+      </div>
+
+      <!-- Time range buttons -->
+      <div class="time-range-btns" id="time-range-btns">
+        <button class="range-btn" data-hours="1">1H</button>
+        <button class="range-btn active" data-hours="6">6H</button>
+        <button class="range-btn" data-hours="24">24H</button>
+        <button class="range-btn" data-hours="72">3D</button>
+        <button class="range-btn" data-hours="168">7D</button>
+      </div>
+
+      <!-- Overlay selector -->
+      <div class="overlay-section">
+        <span class="overlay-label">OVERLAY</span>
+        <div class="overlay-chips" id="overlay-chips">
+          <!-- Sensor chips injected by detail.js -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Hover tooltip -->
+    <div class="detail-tooltip" id="detail-tooltip">
+      <div id="tooltip-time" class="tooltip-time"></div>
+      <div id="tooltip-values" class="tooltip-values"></div>
+    </div>
+
+    <!-- Main chart canvas -->
+    <div class="detail-chart-wrap" id="detail-chart-wrap">
+      <canvas id="detail-canvas"></canvas>
+    </div>
+
+    <!-- Legend -->
+    <div class="detail-legend" id="detail-legend"></div>
+
+  </main>
+
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/lineChart.js"></script>
+  <script src="js/detail.js"></script>
+
+</body>
+</html>

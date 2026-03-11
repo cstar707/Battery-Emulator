@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Enphase Micro-Inverters</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Chakra+Petch:wght@300;400;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/dashboard.css" />
+  <style>
+    .group-section { display:flex; flex-direction:column; gap:12px; }
+    .group-header { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:.75rem; padding:.5rem 0 .4rem; border-bottom:1px solid var(--border-subtle); }
+    .group-header-left { display:flex; align-items:center; gap:.75rem; }
+    .group-title { font-family:var(--font-display); font-size:.85rem; font-weight:700; letter-spacing:.1em; text-transform:uppercase; margin:0; }
+    .group-badge { font-family:var(--font-mono); font-size:.68rem; padding:2px 8px; border-radius:99px; background:rgba(255,255,255,.07); color:var(--text-secondary); }
+    .group-stats { display:flex; gap:1.5rem; font-family:var(--font-mono); font-size:.78rem; }
+    .group-stat { color:var(--text-secondary); }
+    .group-stat strong { color:var(--text-primary); }
+    .group-chart { background:var(--bg-card); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:8px 12px 6px; }
+    .group-chart-inner { height:90px; }
+    .group-chart-inner canvas { display:block; width:100%; height:100%; }
+    .inv-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:10px; }
+    .inv-card { background:var(--bg-card); border:1px solid var(--border-subtle); border-radius:var(--radius-md); padding:10px 12px 8px; position:relative; overflow:hidden; transition:border-color .25s; }
+    .inv-card:hover { border-color:var(--group-color,var(--border-default)); }
+    .inv-card::before { content:''; position:absolute; top:0; left:0; right:0; height:2px; background:var(--group-color,#555); opacity:.8; }
+    .inv-card.offline { opacity:.55; }
+    .inv-card.offline::before { background:#374151; }
+    .inv-top { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px; }
+    .inv-label-wrap {}
+    .inv-num { font-family:var(--font-display); font-size:.6rem; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--text-dim); display:block; }
+    .inv-sn { font-family:var(--font-mono); font-size:.62rem; color:var(--text-dim); }
+    .inv-status-dot { width:6px; height:6px; border-radius:50%; background:var(--group-color,#555); margin-top:3px; flex-shrink:0; }
+    .inv-card.offline .inv-status-dot { background:#374151; }
+    .inv-watts-row { display:flex; align-items:baseline; gap:3px; margin-bottom:4px; }
+    .inv-watts { font-family:var(--font-display); font-size:1.5rem; font-weight:700; color:var(--text-primary); line-height:1; }
+    .inv-watts-u { font-family:var(--font-mono); font-size:.62rem; color:var(--text-dim); }
+    .inv-meta { display:flex; justify-content:space-between; font-family:var(--font-mono); font-size:.62rem; color:var(--text-dim); margin-bottom:6px; }
+    .inv-daily { font-weight:600; }
+    .inv-yday  { color:var(--text-dim); font-size:0.58rem; }
+    .inv-spark { height:28px; }
+    .inv-spark canvas { display:block; width:100%; height:100%; }
+    .no-data-notice { padding:1rem; text-align:center; font-family:var(--font-mono); font-size:.75rem; color:var(--text-dim); background:var(--bg-card); border:1px solid var(--border-subtle); border-radius:var(--radius-md); }
+  </style>
+</head>
+<body>
+
+  <header class="app-header">
+    <div class="header-left">
+      <div class="logo">
+        <span class="logo-icon">&#9889;</span>
+        <span class="logo-text">BATTERY<span class="logo-accent">MONITOR</span></span>
+      </div>
+    </div>
+    <nav class="header-nav">
+      <a href="/grid-status.html" class="nav-link">Grid Status</a>
+      <a href="/"                 class="nav-link">Dashboard</a>
+      <a href="/envoys.html"      class="nav-link active">Envoys</a>
+      <a href="/cells.html"       class="nav-link">Cell Monitor</a>
+    </nav>
+    <div class="header-right">
+      <div id="live-indicator" class="live-indicator">
+        <span class="live-dot"></span>
+        <span class="live-label">LIVE</span>
+      </div>
+      <div id="timestamp-display" class="timestamp-display">--</div>
+    </div>
+  </header>
+
+  <main class="dashboard-main">
+    <h2 class="grid-status-title">Enphase Micro-Inverters</h2>
+
+    <!-- Today KPI row -->
+    <div class="kpi-row" style="grid-template-columns:repeat(5,1fr)">
+      <div class="kpi-card" style="--sensor-color:#fbbf24">
+        <span class="kpi-label">TOTAL LIVE</span>
+        <span class="kpi-value" id="sum-live">--</span>
+        <span class="kpi-unit">W</span>
+      </div>
+      <div class="kpi-card" style="--sensor-color:#fbbf24">
+        <span class="kpi-label">TOTAL TODAY</span>
+        <span class="kpi-value" id="sum-daily">--</span>
+        <span class="kpi-unit">kWh</span>
+      </div>
+      <div class="kpi-card" style="--sensor-color:#34d399">
+        <span class="kpi-label">HOUSE TODAY</span>
+        <span class="kpi-value" id="house-daily">--</span>
+        <span class="kpi-unit">kWh</span>
+      </div>
+      <div class="kpi-card" style="--sensor-color:#60a5fa">
+        <span class="kpi-label">SHED TODAY</span>
+        <span class="kpi-value" id="shed-daily">--</span>
+        <span class="kpi-unit">kWh</span>
+      </div>
+      <div class="kpi-card" style="--sensor-color:#f87171">
+        <span class="kpi-label">TRAILER TODAY</span>
+        <span class="kpi-value" id="trailer-daily">--</span>
+        <span class="kpi-unit">kWh</span>
+      </div>
+    </div>
+
+    <!-- Yesterday KPI row -->
+    <div class="kpi-row" style="grid-template-columns:repeat(5,1fr);opacity:0.7">
+      <div class="kpi-card" style="--sensor-color:#94a3b8">
+        <span class="kpi-label">TOTAL YESTERDAY</span>
+        <span class="kpi-value" id="sum-yday">--</span>
+        <span class="kpi-unit">kWh</span>
+      </div>
+      <div class="kpi-card" style="--sensor-color:#94a3b8">
+        <span class="kpi-label">ENVOY-1 YDAY</span>
+        <span class="kpi-value" id="e1-yday">--</span>
+        <span class="kpi-unit">kWh</span>
+      </div>
+      <div class="kpi-card" style="--sensor-color:#34d399;opacity:0.7">
+        <span class="kpi-label">HOUSE YDAY</span>
+        <span class="kpi-value" id="house-yday">--</span>
+        <span class="kpi-unit">kWh</span>
+      </div>
+      <div class="kpi-card" style="--sensor-color:#60a5fa;opacity:0.7">
+        <span class="kpi-label">SHED YDAY</span>
+        <span class="kpi-value" id="shed-yday">--</span>
+        <span class="kpi-unit">kWh</span>
+      </div>
+      <div class="kpi-card" style="--sensor-color:#f87171;opacity:0.7">
+        <span class="kpi-label">TRAILER YDAY</span>
+        <span class="kpi-value" id="trailer-yday">--</span>
+        <span class="kpi-unit">kWh</span>
+      </div>
+    </div>
+
+    <!-- House Inverters -->
+    <div class="group-section">
+      <div class="group-header">
+        <div class="group-header-left">
+          <h2 class="group-title" style="color:#34d399">House Inverters</h2>
+          <span class="group-badge">Envoy-1 &bull; 3 panels</span>
+        </div>
+        <div class="group-stats">
+          <span class="group-stat">Live: <strong id="house-live">-- W</strong></span>
+          <span class="group-stat">Today: <strong id="house-daily-sub">-- kWh</strong></span>
+          <span class="group-stat">Active: <strong id="house-active">--/--</strong></span>
+        </div>
+      </div>
+      <div class="group-chart"><div class="group-chart-inner"><canvas id="chart-house"></canvas></div></div>
+      <div class="inv-grid" id="grid-house"><div class="no-data-notice">Loading...</div></div>
+    </div>
+
+    <!-- Shed Inverters -->
+    <div class="group-section">
+      <div class="group-header">
+        <div class="group-header-left">
+          <h2 class="group-title" style="color:#60a5fa">Shed Inverters</h2>
+          <span class="group-badge">Envoy-1 + freezer &bull; 10 panels</span>
+        </div>
+        <div class="group-stats">
+          <span class="group-stat">Live: <strong id="shed-live">-- W</strong></span>
+          <span class="group-stat">Today: <strong id="shed-daily-sub">-- kWh</strong></span>
+          <span class="group-stat">Active: <strong id="shed-active">--/--</strong></span>
+        </div>
+      </div>
+      <div class="group-chart"><div class="group-chart-inner"><canvas id="chart-shed"></canvas></div></div>
+      <div class="inv-grid" id="grid-shed"><div class="no-data-notice">Loading...</div></div>
+    </div>
+
+    <!-- Trailer Building -->
+    <div class="group-section">
+      <div class="group-header">
+        <div class="group-header-left">
+          <h2 class="group-title" style="color:#f87171">Trailer Building</h2>
+          <span class="group-badge">Envoy-2 &bull; 13 panels</span>
+        </div>
+        <div class="group-stats">
+          <span class="group-stat">Live: <strong id="trailer-live">-- W</strong></span>
+          <span class="group-stat">Today: <strong id="trailer-daily-sub">-- kWh</strong></span>
+          <span class="group-stat">Active: <strong id="trailer-active">--/--</strong></span>
+        </div>
+      </div>
+      <div class="group-chart"><div class="group-chart-inner"><canvas id="chart-trailer"></canvas></div></div>
+      <div class="inv-grid" id="grid-trailer"><div class="no-data-notice">Loading...</div></div>
+    </div>
+  </main>
+
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/lineChart.js"></script>
+  <script src="js/envoys.js"></script>
+
+</body>
+</html>

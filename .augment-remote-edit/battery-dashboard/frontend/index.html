@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Battery Dashboard – Streets Ridge Solar</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Chakra+Petch:wght@300;400;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/dashboard.css" />
+  <style>
+    .battery-tabs { display:flex; gap:0.25rem; padding:0 1.5rem; border-bottom:1px solid rgba(255,255,255,0.06); background:var(--bg-card,#111827); }
+    .battery-tab  { padding:0.6rem 1.4rem; font-family:'Chakra Petch',sans-serif; font-size:0.78rem; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; cursor:pointer; border:none; background:none; color:rgba(255,255,255,0.35); border-bottom:2px solid transparent; transition:all .2s; position:relative; top:1px; }
+    .battery-tab.active            { color:#fff; border-bottom-color:var(--tab-color,#00c8ff); }
+    .battery-tab[data-tab="ruxiu"] { --tab-color:#00c8ff; }
+    .battery-tab[data-tab="tesla"] { --tab-color:#e3342f; }
+    .battery-tab:hover:not(.active){ color:rgba(255,255,255,0.65); }
+    .battery-tab .source-state-badge { margin-left:0.45rem; }
+    .tab-badge { display:inline-block; margin-left:0.45rem; padding:0.1rem 0.45rem; border-radius:99px; font-size:0.65rem; background:rgba(255,255,255,0.08); color:rgba(255,255,255,0.5); }
+    .battery-tab.active .tab-badge { background:rgba(255,255,255,0.15); color:#fff; }
+    .tab-section { display:none; }
+    .tab-section.active { display:block; }
+    .system-label { display:flex; align-items:center; justify-content:space-between; gap:0.75rem; padding:0.9rem 1.5rem 0; flex-wrap:wrap; }
+    .system-meta { display:flex; align-items:center; gap:0.75rem; flex-wrap:wrap; }
+    .system-label h2 { font-family:'Chakra Petch',sans-serif; font-size:0.9rem; font-weight:600; letter-spacing:0.08em; text-transform:uppercase; margin:0; }
+    .system-label .sysinfo { font-size:0.72rem; color:rgba(255,255,255,0.35); font-family:'JetBrains Mono',monospace; }
+    .source-state-badge { display:inline-flex; align-items:center; gap:0.35rem; padding:0.22rem 0.65rem; border-radius:999px; font-family:'JetBrains Mono',monospace; font-size:0.68rem; letter-spacing:0.08em; text-transform:uppercase; border:1px solid rgba(148,163,184,0.25); background:rgba(148,163,184,0.12); color:rgba(226,232,240,0.9); }
+    .source-state-badge.is-live { border-color:rgba(34,197,94,0.35); background:rgba(34,197,94,0.12); color:#86efac; }
+    .source-state-badge.is-mock, .source-state-badge.is-mock-history { border-color:rgba(245,158,11,0.35); background:rgba(245,158,11,0.12); color:#fcd34d; }
+    .source-state-badge.is-stale, .source-state-badge.is-fallback, .source-state-badge.is-historical { border-color:rgba(251,191,36,0.35); background:rgba(251,191,36,0.12); color:#fde68a; }
+    .source-state-badge.is-error, .source-state-badge.is-disabled, .source-state-badge.is-unavailable { border-color:rgba(248,113,113,0.35); background:rgba(248,113,113,0.12); color:#fca5a5; }
+    .source-message { margin:0.75rem 1.5rem 0; padding:0.65rem 1rem; border-radius:6px; font-size:0.75rem; font-family:'JetBrains Mono',monospace; border:1px solid rgba(148,163,184,0.2); background:rgba(15,23,42,0.45); color:rgba(226,232,240,0.88); }
+    .source-message.is-mock, .source-message.is-mock-history { border-color:rgba(245,158,11,0.22); background:rgba(245,158,11,0.10); color:rgba(252,211,77,0.95); }
+    .source-message.is-stale, .source-message.is-fallback, .source-message.is-historical { border-color:rgba(251,191,36,0.22); background:rgba(251,191,36,0.10); color:rgba(253,230,138,0.95); }
+    .source-message.is-error, .source-message.is-disabled, .source-message.is-unavailable { border-color:rgba(248,113,113,0.25); background:rgba(127,29,29,0.18); color:rgba(254,202,202,0.95); }
+    .history-note { font-size:0.72rem; color:rgba(255,255,255,0.42); font-family:'JetBrains Mono',monospace; }
+  </style>
+</head>
+<body>
+
+  <header class="app-header">
+    <div class="header-left">
+      <div class="logo">
+        <span class="logo-icon">⚡</span>
+        <span class="logo-text">BATTERY<span class="logo-accent">MONITOR</span></span>
+      </div>
+    </div>
+    <nav class="header-nav">
+      <a href="/grid-status.html" class="nav-link">Grid Status</a>
+      <a href="/"           class="nav-link active">Dashboard</a>
+      <a href="/envoys.html" class="nav-link">Envoys</a>
+      <a href="/cells.html" class="nav-link">Cell Monitor</a>
+    </nav>
+    <div class="header-right">
+      <div id="live-indicator" class="live-indicator">
+        <span class="live-dot"></span>
+        <span class="live-label">LIVE</span>
+      </div>
+      <div id="timestamp-display" class="timestamp-display">—</div>
+      <div id="error-badge" class="error-badge hidden">⚠ SOURCE ISSUE</div>
+    </div>
+  </header>
+
+  <!-- Battery system tabs -->
+  <div class="battery-tabs">
+    <button class="battery-tab active" data-tab="tesla">
+      Tesla Battery <span id="tab-badge-tesla" class="source-state-badge">Loading…</span>
+    </button>
+    <button class="battery-tab" data-tab="ruxiu">
+      Ruxiu Batteries <span id="tab-badge-ruxiu" class="source-state-badge">Loading…</span>
+    </button>
+  </div>
+
+  <main class="dashboard-main">
+
+    <!-- ── Tesla tab ───────────────────────────────────── -->
+    <div id="tab-tesla" class="tab-section active">
+      <div class="system-label">
+        <div class="system-meta">
+          <h2 id="battery-label-tesla" style="color:#e3342f">Tesla Battery</h2>
+          <span id="source-badge-tesla" class="source-state-badge">Loading…</span>
+          <span id="sysinfo-tesla" class="sysinfo">Loading source state…</span>
+        </div>
+      </div>
+      <div id="source-message-tesla" class="source-message hidden"></div>
+      <div id="chart-grid-tesla" class="chart-grid"></div>
+      <div class="mini-cells-card">
+        <div class="card-header">
+          <span class="card-title">TESLA CELL MONITOR</span>
+          <a href="/cells.html?battery=tesla" class="card-link-btn">Full View →</a>
+        </div>
+        <div class="mini-bar-wrap">
+          <canvas id="mini-bar-canvas-tesla"></canvas>
+        </div>
+        <div id="history-note-tesla" class="history-note">Loading history contract…</div>
+      </div>
+    </div>
+
+    <!-- ── Ruxiu tab ───────────────────────────────────── -->
+    <div id="tab-ruxiu" class="tab-section">
+      <div class="system-label">
+        <div class="system-meta">
+          <h2 id="battery-label-ruxiu" style="color:#00c8ff">Ruxiu Batteries</h2>
+          <span id="source-badge-ruxiu" class="source-state-badge">Loading…</span>
+          <span id="sysinfo-ruxiu" class="sysinfo">Loading source state…</span>
+        </div>
+      </div>
+      <div id="source-message-ruxiu" class="source-message hidden"></div>
+      <div id="chart-grid-ruxiu" class="chart-grid"></div>
+      <div class="mini-cells-card">
+        <div class="card-header">
+          <span class="card-title">RUXIU CELL MONITOR</span>
+          <a href="/cells.html?battery=ruxiu" class="card-link-btn">Full View →</a>
+        </div>
+        <div class="mini-bar-wrap">
+          <canvas id="mini-bar-canvas-ruxiu"></canvas>
+        </div>
+        <div id="history-note-ruxiu" class="history-note">Loading history contract…</div>
+      </div>
+    </div>
+
+  </main>
+
+  <script src="js/config.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/lineChart.js"></script>
+  <script src="js/dashboard.js"></script>
+  <script>
+    // Tab switching
+    document.querySelectorAll('.battery-tab').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.battery-tab').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-section').forEach(s => s.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+        localStorage.setItem('activeTab', btn.dataset.tab);
+      });
+    });
+    // Restore last tab
+    const saved = localStorage.getItem('activeTab');
+    const initial = saved === 'ruxiu' || saved === 'tesla' ? saved : 'tesla';
+    document.querySelector('[data-tab="' + initial + '"]')?.click();
+  </script>
+
+</body>
+</html>

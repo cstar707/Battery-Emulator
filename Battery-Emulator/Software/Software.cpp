@@ -28,6 +28,7 @@
 #include "src/devboard/utils/events.h"
 #include "src/devboard/utils/led_handler.h"
 #include "src/devboard/utils/logging.h"
+#include "src/devboard/utils/release_metadata.h"
 #include "src/devboard/utils/time_meas.h"
 #include "src/devboard/utils/timer.h"
 #include "src/devboard/utils/types.h"
@@ -46,8 +47,8 @@
 void register_transmitter(Transmitter* t) {}
 #endif
 
-// The current software version, shown on webserver
-const char* version_number = "9.3.5";
+// The semantic release version shown on webserver and published via telemetry.
+const char* version_number = release_metadata::kVersion;
 
 // Interval timers
 volatile unsigned long currentMillis = 0;
@@ -680,7 +681,7 @@ void setup() {
 #endif
 
   // We print this after setting up serial, so that is also printed if configured to do so
-  DEBUG_PRINTF("Battery emulator %s build " __DATE__ " " __TIME__ "\n", version_number);
+  DEBUG_PRINTF("Battery emulator %s built %s\n", release_metadata::release_identifier().c_str(), release_metadata::kBuildId);
 
   init_events();
 
