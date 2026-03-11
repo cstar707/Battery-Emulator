@@ -11,7 +11,7 @@
   <div class="card flash flash-ok" role="alert">Automation turned {{ flash_automation }}.</div>
   {% endif %}
   {% if flash_error %}
-  <div class="card flash flash-err" role="alert">Error: {% if flash_error == 'write_failed' %}Modbus write failed (check inverter connection).{% elif flash_error == 'timeout' %}Inverter did not respond in time.{% elif flash_error == 'server_error' %}Server error. Try again.{% elif flash_error == 'invalid_bit' %}Invalid setting.{% else %}{{ flash_error }}{% endif %}</div>
+  <div class="card flash flash-err" role="alert">Error: {% if flash_error == 'write_failed' %}Modbus write failed (check inverter connection).{% elif flash_error == 'timeout' %}Inverter did not respond in time.{% elif flash_error == 'server_error' %}Server error. Try again.{% elif flash_error == 'invalid_bit' %}Invalid setting.{% elif flash_error == 'off_grid_policy' %}Off-Grid keeps Export and Grid Charge off.{% else %}{{ flash_error }}{% endif %}</div>
   {% endif %}
   <div class="card">
     <h2>Status</h2>

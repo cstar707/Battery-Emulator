@@ -216,22 +216,62 @@ _HA_CURTAIL_COOLDOWN_SEC = 120             # minimum seconds between HA switch s
 # Modbus write timeout (seconds) so a stuck inverter doesn't hang the request
 _MODBUS_WRITE_TIMEOUT = 15.0
 
-# Mutual exclusion rules for storage register 43110.
-# When turning ON a bit in this map, also turn OFF the paired bits.
-# e.g. enabling Self-Use (0) must clear Feed-In Priority (6), and vice versa.
-_STORAGE_BIT_EXCLUSIVE: dict[int, list[int]] = {
-    0: [6],   # Self-Use ON  → Feed-In Priority OFF
-    6: [0],   # Feed-In ON   → Self-Use OFF
-}
+# One-hot work-mode bits for storage register 43110.
+# Enabling any one of these modes clears the others in the same write.
+_STORAGE_WORK_MODE_BITS = (0, 2, 6, 11)  # self_use, off_grid, feed_in_priority, peak_shaving
+_STORAGE_OFF_GRID_BIT = 2
+_STORAGE_ALLOW_GRID_CHARGE_BIT = 5
+_HYBRID_ALLOW_EXPORT_BIT = 3
 
 
 def _storage_changes_with_exclusions(bit_index: int, on: bool) -> dict:
     """Return full set of bit changes to apply, including mutual exclusions."""
     changes = {bit_index: on}
-    if on and bit_index in _STORAGE_BIT_EXCLUSIVE:
-        for excl in _STORAGE_BIT_EXCLUSIVE[bit_index]:
-            changes[excl] = False
+    if on and bit_index in _STORAGE_WORK_MODE_BITS:
+        for mode_bit in _STORAGE_WORK_MODE_BITS:
+            if mode_bit != bit_index:
+                changes[mode_bit] = False
     return changes
+
+
+def _off_grid_active() -> bool:
+    """Read current storage bits and report whether Off-Grid mode is active."""
+    return bool((get_storage_control_bits() or {}).get("off_grid"))
+
+
+def _apply_control_change(register: str, bit_index: int, on: bool) -> tuple[bool, str | None]:
+    """Apply one control change, enforcing cross-register Off-Grid policy when needed."""
+    if register == "storage" and 0 <= bit_index <= 11:
+        if on and bit_index == _STORAGE_ALLOW_GRID_CHARGE_BIT and _off_grid_active():
+            return False, "off_grid_policy"
+
+        if on and bit_index == _STORAGE_OFF_GRID_BIT:
+            # Off-Grid dominates both policy bits: clear export first, then storage bits.
+            if not set_hybrid_control_bit(_HYBRID_ALLOW_EXPORT_BIT, False):
+                return False, "write_failed"
+            changes = _storage_changes_with_exclusions(bit_index, on)
+            changes[_STORAGE_ALLOW_GRID_CHARGE_BIT] = False
+            ok = set_storage_control_bits(changes)
+            return bool(ok), None if ok else "write_failed"
+
+        changes = _storage_changes_with_exclusions(bit_index, on)
+        ok = set_storage_control_bits(changes)
+        return bool(ok), None if ok else "write_failed"
+
+    if register == "hybrid" and 0 <= bit_index <= 7:
+        if on and bit_index == _HYBRID_ALLOW_EXPORT_BIT and _off_grid_active():
+            return False, "off_grid_policy"
+        ok = set_hybrid_control_bit(bit_index, on)
+        return bool(ok), None if ok else "write_failed"
+
+    return False, "invalid_bit"
+
+
+def _control_write_timeout(register: str, bit_index: int, on: bool) -> float:
+    """Allow a longer timeout for multi-step policy writes such as Off-Grid activation."""
+    if register == "storage" and bit_index == _STORAGE_OFF_GRID_BIT and on:
+        return _MODBUS_WRITE_TIMEOUT * 2
+    return _MODBUS_WRITE_TIMEOUT
 
 
 # Map individual sensor topic suffixes → data dict keys used by the rest of the app.
@@ -733,6 +773,8 @@ def _storage_mode_label(storage_bits: dict) -> str:
     # Main mode (one primary; Solis typically has one of these active)
     if storage_bits.get("off_grid"):
         mode = "Off-grid"
+    elif storage_bits.get("peak_shaving"):
+        mode = "Peak-shaving"
     elif storage_bits.get("feed_in_priority"):
         mode = "Feed-in"
     elif storage_bits.get("self_use"):
@@ -747,7 +789,7 @@ def _storage_mode_label(storage_bits: dict) -> str:
     extras = []
     if storage_bits.get("allow_grid_charge") and mode not in ("—", "Unknown"):
         extras.append("grid charge")
-    if storage_bits.get("peak_shaving"):
+    if storage_bits.get("peak_shaving") and mode != "Peak-shaving":
         extras.append("peak-shaving")
     if extras:
         mode = f"{mode} + {', '.join(extras)}"
@@ -801,24 +843,18 @@ async def index_toggle_redirect(request: Request):
         except (TypeError, ValueError):
             return RedirectResponse(url="/?error=invalid_bit", status_code=303)
         ok = False
+        error = None
         try:
             loop = asyncio.get_event_loop()
-            if register == "hybrid" and 0 <= bit_index <= 7:
-                ok = await asyncio.wait_for(
-                    loop.run_in_executor(None, lambda: set_hybrid_control_bit(bit_index, on)),
-                    timeout=_MODBUS_WRITE_TIMEOUT,
-                )
-            elif register == "storage" and 0 <= bit_index <= 11:
-                # Apply mutual exclusions (e.g. self_use ON clears feed_in, and vice versa)
-                changes = _storage_changes_with_exclusions(bit_index, on)
-                ok = await asyncio.wait_for(
-                    loop.run_in_executor(None, lambda c=changes: set_storage_control_bits(c)),
-                    timeout=_MODBUS_WRITE_TIMEOUT,
-                )
+            timeout = _control_write_timeout(register, bit_index, on)
+            ok, error = await asyncio.wait_for(
+                loop.run_in_executor(None, lambda: _apply_control_change(register, bit_index, on)),
+                timeout=timeout,
+            )
         except asyncio.TimeoutError:
             logger.warning("Modbus write timed out (dashboard)")
             return RedirectResponse(url="/?error=timeout", status_code=303)
-        return RedirectResponse(url="/?saved=1" if ok else "/?error=write_failed", status_code=303)
+        return RedirectResponse(url="/?saved=1" if ok else f"/?error={error or 'write_failed'}", status_code=303)
     except Exception as e:
         logger.exception("POST /: %s", e)
         return RedirectResponse(url="/?error=server_error", status_code=303)
@@ -1419,7 +1455,7 @@ async def api_hybrid_bits():
 
 @app.post("/api/storage_toggle")
 async def api_storage_toggle(request: Request):
-    """Toggle a storage bit (43110). Accepts application/json or form: bit_index (0–11), on (true/false)."""
+    """Toggle a storage bit (43110). Work-mode bits are applied with one-hot exclusions."""
     ct = request.headers.get("content-type", "").strip()
     if ct.startswith("application/json"):
         try:
@@ -1449,8 +1485,8 @@ async def api_storage_toggle(request: Request):
     if bit_index < 0 or bit_index > 11:
         return JSONResponse({"ok": False, "error": "bit_index 0..11"}, status_code=400)
     on_bool = str(on).strip().lower() in ("1", "true", "on", "yes")
-    ok = set_storage_control_bit(bit_index, on_bool)
-    return {"ok": ok, "bit_index": bit_index, "on": on_bool}
+    ok, error = _apply_control_change("storage", bit_index, on_bool)
+    return {"ok": ok, "error": error, "bit_index": bit_index, "on": on_bool}
 
 
 @app.post("/api/hybrid_toggle")
@@ -1485,8 +1521,8 @@ async def api_hybrid_toggle(request: Request):
     if bit_index < 0 or bit_index > 7:
         return JSONResponse({"ok": False, "error": "bit_index 0..7"}, status_code=400)
     on_bool = str(on).strip().lower() in ("1", "true", "on", "yes")
-    ok = set_hybrid_control_bit(bit_index, on_bool)
-    return {"ok": ok, "bit_index": bit_index, "on": on_bool}
+    ok, error = _apply_control_change("hybrid", bit_index, on_bool)
+    return {"ok": ok, "error": error, "bit_index": bit_index, "on": on_bool}
 
 
 @app.post("/control")
@@ -1519,24 +1555,19 @@ async def control_toggle_redirect(request: Request):
         on_bool = (form.get("on") or "true").strip().lower() in ("1", "true", "on", "yes")
         register = (form.get("register") or "storage").strip().lower()
         ok = False
+        error = None
         try:
             loop = asyncio.get_event_loop()
-            if register == "hybrid" and 0 <= bit_index <= 7:
-                ok = await asyncio.wait_for(
-                    loop.run_in_executor(None, lambda: set_hybrid_control_bit(bit_index, on_bool)),
-                    timeout=_MODBUS_WRITE_TIMEOUT,
-                )
-            elif register == "storage" and 0 <= bit_index <= 11:
-                changes = _storage_changes_with_exclusions(bit_index, on_bool)
-                ok = await asyncio.wait_for(
-                    loop.run_in_executor(None, lambda: set_storage_control_bits(changes)),
-                    timeout=_MODBUS_WRITE_TIMEOUT,
-                )
+            timeout = _control_write_timeout(register, bit_index, on_bool)
+            ok, error = await asyncio.wait_for(
+                loop.run_in_executor(None, lambda: _apply_control_change(register, bit_index, on_bool)),
+                timeout=timeout,
+            )
         except asyncio.TimeoutError:
             logger.warning("Modbus write timed out (control)")
             return RedirectResponse(url="/control?error=timeout", status_code=303)
         return RedirectResponse(
-            url="/control?saved=1" if ok else "/control?error=write_failed",
+            url="/control?saved=1" if ok else f"/control?error={error or 'write_failed'}",
             status_code=303,
         )
     except Exception as e:
@@ -1564,25 +1595,17 @@ async def api_control(request: Request):
         on_bool = bool(body.get("on", True))
         register = str(body.get("register", "storage")).lower()
         ok = False
+        error = None
         loop = asyncio.get_event_loop()
         try:
-            if register == "hybrid" and 0 <= bit_index <= 7:
-                ok = await asyncio.wait_for(
-                    loop.run_in_executor(None, lambda: set_hybrid_control_bit(bit_index, on_bool)),
-                    timeout=_MODBUS_WRITE_TIMEOUT,
-                )
-            elif register == "storage" and 0 <= bit_index <= 11:
-                # Apply mutual exclusions atomically in a single read-modify-write
-                changes = _storage_changes_with_exclusions(bit_index, on_bool)
-                ok = await asyncio.wait_for(
-                    loop.run_in_executor(None, lambda: set_storage_control_bits(changes)),
-                    timeout=_MODBUS_WRITE_TIMEOUT,
-                )
-            else:
-                return {"ok": False, "error": "invalid_bit"}
+            timeout = _control_write_timeout(register, bit_index, on_bool)
+            ok, error = await asyncio.wait_for(
+                loop.run_in_executor(None, lambda: _apply_control_change(register, bit_index, on_bool)),
+                timeout=timeout,
+            )
         except asyncio.TimeoutError:
             return {"ok": False, "error": "timeout"}
-        return {"ok": bool(ok), "error": None if ok else "write_failed"}
+        return {"ok": bool(ok), "error": error}
     except Exception as e:
         logger.exception("POST /api/control: %s", e)
         return {"ok": False, "error": "server_error"}

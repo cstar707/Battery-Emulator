@@ -6,30 +6,52 @@
   <div id="ctrl-toast" style="display:none; position:fixed; top:1rem; right:1rem; z-index:999; padding:0.6rem 1rem; border-radius:6px; font-weight:600; font-size:0.95rem;"></div>
 
   <div class="card">
-    <h2>Self-Use &amp; Feed-In Priority</h2>
-    <p class="muted">Quick buttons for the two main operating modes.</p>
-    <p class="muted" style="margin: 0 0 0.75rem 0; font-size: 0.85rem;">These two modes are mutually exclusive — enabling one automatically disables the other in a single atomic write.</p>
+    <h2>Work Mode</h2>
+    <p class="muted">Primary Solis work-mode controls. Use these buttons to switch modes without manually toggling raw bits.</p>
+    <p class="muted" style="margin: 0 0 0.75rem 0; font-size: 0.85rem;">These four modes are mutually exclusive — switching to one clears the other three in a single atomic write.</p>
     <div style="display:flex; flex-wrap:wrap; gap:1.5rem; align-items:flex-start;">
       <div style="min-width:220px;">
         <strong>Self-Use Mode</strong>
         <span id="state-storage-0" style="margin-left:0.5rem;">{% if storage_bits.self_use %}<span class="status-ok">On</span>{% else %}<span class="muted">Off</span>{% endif %}</span>
-        <p class="muted" style="margin: 0.2rem 0 0.5rem; font-size:0.8rem;">Solar → load → battery. Disables Feed-In.</p>
+        <p class="muted" style="margin: 0.2rem 0 0.5rem; font-size:0.8rem;">Solar → load → battery. Use local solar first.</p>
         <button id="btn-storage-0"
-          class="btn ctrl-btn"
-          data-register="storage" data-bit="0" data-on="{{ 'false' if storage_bits.self_use else 'true' }}"
-          style="{% if storage_bits.self_use %}background:var(--muted);{% else %}background:var(--green);{% endif %}">
-          {{ 'Turn off Self-Use' if storage_bits.self_use else '⚡ Switch to Self-Use' }}
+          class="btn ctrl-btn mode-btn"
+          data-register="storage" data-bit="0" data-on="true" data-active="{{ 'true' if storage_bits.self_use else 'false' }}" data-mode-button="true"
+          style="background:{% if storage_bits.self_use %}var(--green){% else %}#30363d{% endif %};">
+          {{ '✓ Self-Use Active' if storage_bits.self_use else '⚡ Switch to Self-Use' }}
         </button>
       </div>
       <div style="min-width:220px;">
         <strong>Feed-In Priority</strong>
         <span id="state-storage-6" style="margin-left:0.5rem;">{% if storage_bits.feed_in_priority %}<span class="status-ok">On</span>{% else %}<span class="muted">Off</span>{% endif %}</span>
-        <p class="muted" style="margin: 0.2rem 0 0.5rem; font-size:0.8rem;">Export solar to grid first. Disables Self-Use.</p>
+        <p class="muted" style="margin: 0.2rem 0 0.5rem; font-size:0.8rem;">Export solar first when available.</p>
         <button id="btn-storage-6"
-          class="btn ctrl-btn"
-          data-register="storage" data-bit="6" data-on="{{ 'false' if storage_bits.feed_in_priority else 'true' }}"
-          style="{% if storage_bits.feed_in_priority %}background:var(--muted);{% else %}background:var(--accent);{% endif %}">
-          {{ 'Turn off Feed-In' if storage_bits.feed_in_priority else '↑ Switch to Feed-In' }}
+          class="btn ctrl-btn mode-btn"
+          data-register="storage" data-bit="6" data-on="true" data-active="{{ 'true' if storage_bits.feed_in_priority else 'false' }}" data-mode-button="true"
+          style="background:{% if storage_bits.feed_in_priority %}var(--accent){% else %}#30363d{% endif %};">
+          {{ '✓ Feed-In Active' if storage_bits.feed_in_priority else '↑ Switch to Feed-In' }}
+        </button>
+      </div>
+      <div style="min-width:220px;">
+        <strong>Peak-Shaving Mode</strong>
+        <span id="state-storage-11" style="margin-left:0.5rem;">{% if storage_bits.peak_shaving %}<span class="status-ok">On</span>{% else %}<span class="muted">Off</span>{% endif %}</span>
+        <p class="muted" style="margin: 0.2rem 0 0.5rem; font-size:0.8rem;">Limit grid draw during peak load conditions.</p>
+        <button id="btn-storage-11"
+          class="btn ctrl-btn mode-btn"
+          data-register="storage" data-bit="11" data-on="true" data-active="{{ 'true' if storage_bits.peak_shaving else 'false' }}" data-mode-button="true"
+          style="background:{% if storage_bits.peak_shaving %}var(--orange){% else %}#30363d{% endif %};">
+          {{ '✓ Peak-Shaving Active' if storage_bits.peak_shaving else '⛰ Switch to Peak-Shaving' }}
+        </button>
+      </div>
+      <div style="min-width:220px;">
+        <strong>Off-Grid Mode</strong>
+        <span id="state-storage-2" style="margin-left:0.5rem;">{% if storage_bits.off_grid %}<span class="status-ok">On</span>{% else %}<span class="muted">Off</span>{% endif %}</span>
+        <p class="muted" style="margin: 0.2rem 0 0.5rem; font-size:0.8rem;">Prioritize isolated operation away from the grid. Forces Export and Grid Charge off.</p>
+        <button id="btn-storage-2"
+          class="btn ctrl-btn mode-btn"
+          data-register="storage" data-bit="2" data-on="true" data-active="{{ 'true' if storage_bits.off_grid else 'false' }}" data-mode-button="true"
+          style="background:{% if storage_bits.off_grid %}var(--red){% else %}#30363d{% endif %};">
+          {{ '✓ Off-Grid Active' if storage_bits.off_grid else '⛔ Switch to Off-Grid' }}
         </button>
       </div>
     </div>
@@ -186,17 +208,25 @@
         });
 
         // Top-card named states
-        var s0 = !!sbits['self_use'], s6 = !!sbits['feed_in_priority'];
+        var s0 = !!sbits['self_use'], s2 = !!sbits['off_grid'], s6 = !!sbits['feed_in_priority'], s11 = !!sbits['peak_shaving'];
         ['state-storage-0','state-storage-0b'].forEach(function(id){
           var el = document.getElementById(id);
           if (el) el.innerHTML = s0 ? '<span class="status-ok">On</span>' : '<span class="muted">Off</span>';
         });
+        var el2 = document.getElementById('state-storage-2');
+        if (el2) el2.innerHTML = s2 ? '<span class="status-ok">On</span>' : '<span class="muted">Off</span>';
         var el6 = document.getElementById('state-storage-6');
         if (el6) el6.innerHTML = s6 ? '<span class="status-ok">On</span>' : '<span class="muted">Off</span>';
+        var el11 = document.getElementById('state-storage-11');
+        if (el11) el11.innerHTML = s11 ? '<span class="status-ok">On</span>' : '<span class="muted">Off</span>';
         var b0 = document.getElementById('btn-storage-0');
-        if (b0) { b0.dataset.on = s0?'false':'true'; b0.textContent = s0?'Turn off Self-Use':'Enable Self-Use'; b0.style.background = s0?'var(--muted)':'var(--green)'; }
+        if (b0) { b0.dataset.on = 'true'; b0.dataset.active = s0 ? 'true' : 'false'; b0.textContent = s0?'✓ Self-Use Active':'⚡ Switch to Self-Use'; b0.style.background = s0?'var(--green)':'#30363d'; }
+        var b2 = document.getElementById('btn-storage-2');
+        if (b2) { b2.dataset.on = 'true'; b2.dataset.active = s2 ? 'true' : 'false'; b2.textContent = s2?'✓ Off-Grid Active':'⛔ Switch to Off-Grid'; b2.style.background = s2?'var(--red)':'#30363d'; }
         var b6 = document.getElementById('btn-storage-6');
-        if (b6) { b6.dataset.on = s6?'false':'true'; b6.textContent = s6?'Turn off Feed-In':'Enable Feed-In Priority'; b6.style.background = s6?'var(--muted)':'var(--accent)'; }
+        if (b6) { b6.dataset.on = 'true'; b6.dataset.active = s6 ? 'true' : 'false'; b6.textContent = s6?'✓ Feed-In Active':'↑ Switch to Feed-In'; b6.style.background = s6?'var(--accent)':'#30363d'; }
+        var b11 = document.getElementById('btn-storage-11');
+        if (b11) { b11.dataset.on = 'true'; b11.dataset.active = s11 ? 'true' : 'false'; b11.textContent = s11?'✓ Peak-Shaving Active':'⛰ Switch to Peak-Shaving'; b11.style.background = s11?'var(--orange)':'#30363d'; }
 
         // State spans in the export table
         var h3el = document.getElementById('state-hybrid-3'); if(h3el) h3el.textContent = hbits.allow_export ? '✓ On' : '— Off';
@@ -227,7 +257,7 @@
           showToast('✓ Done', '#27ae60');
           refreshState(btn, payload.register, payload.bit_index, payload.on);
         } else {
-          var msg = {timeout:'Timed out', write_failed:'Write failed — check inverter', invalid_bit:'Invalid bit', server_error:'Server error'}[res.error] || res.error || 'Failed';
+          var msg = {timeout:'Timed out', write_failed:'Write failed — check inverter', invalid_bit:'Invalid bit', off_grid_policy:'Off-Grid keeps Export and Grid Charge off', server_error:'Server error'}[res.error] || res.error || 'Failed';
           showToast('✗ ' + msg, '#c0392b');
           setBtnState(btn, 'err', '✗ Failed');
           setTimeout(function() { setBtnState(btn, 'idle', origText); }, 3000);
@@ -242,9 +272,13 @@
     // Wire up all control buttons
     document.querySelectorAll('.ctrl-btn').forEach(function(btn) {
       btn.addEventListener('click', function() {
+        if (btn.dataset.modeButton === 'true' && btn.dataset.active === 'true') {
+          showToast('Mode already active', '#58a6ff');
+          return;
+        }
         var register = btn.dataset.register;
         var bit = parseInt(btn.dataset.bit, 10);
-        var on = (btn.dataset.on === 'true');
+        var on = (btn.dataset.modeButton === 'true') ? true : (btn.dataset.on === 'true');
         doControl(btn, {register: register, bit_index: bit, on: on});
       });
     });
