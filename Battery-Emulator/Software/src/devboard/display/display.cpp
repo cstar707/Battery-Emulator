@@ -99,7 +99,6 @@ static lv_obj_t* lbl_brightness;
 static lv_obj_t* lbl_backup_battery;
 static bool wifi_ap_enabled = false;  // Synced with wifiap_enabled after init_WiFi()
 static uint8_t brightness_level = 70;  // 0-100% (default 70% to reduce edge glow / backlight bleed)
-uint8_t wifi_tx_power = 0;  // Index into power levels (default 5dBm minimum) - global for wifi.cpp access
 
 // Auto-dim feature
 static unsigned long lastTouchMillis = 0;
@@ -1800,6 +1799,19 @@ void update_display() {
     lv_label_set_text(lbl_temp_max, temp_max_text);
     
     // Update contactor status
+#ifdef HW_WAVESHARE7B_DISPLAY_ONLY
+    {
+      const TeslaSummaryData& tesla = mqtt_display_bridge::get_tesla_summary();
+      if (tesla.has_contactor_state) {
+        lv_label_set_text(lbl_contactor, tesla.contactor_state);
+        lv_obj_set_style_text_color(lbl_contactor,
+                                    lv_color_hex(tesla.contactor_state_code == 4 ? 0x7ee787 : 0xff7b72), 0);
+      } else {
+        lv_label_set_text(lbl_contactor, "--");
+        lv_obj_set_style_text_color(lbl_contactor, lv_color_hex(0x8b949e), 0);
+      }
+    }
+#else
     if (datalayer.system.status.contactors_engaged) {
       lv_label_set_text(lbl_contactor, "CLOSED");
       lv_obj_set_style_text_color(lbl_contactor, lv_color_hex(0x7ee787), 0);
@@ -1807,6 +1819,7 @@ void update_display() {
       lv_label_set_text(lbl_contactor, "OPEN");
       lv_obj_set_style_text_color(lbl_contactor, lv_color_hex(0xff7b72), 0);
     }
+#endif
     // Contactors button: greyed out in display-only mode (no local battery)
     if (btn_contactors) {
 #ifdef HW_WAVESHARE7B_DISPLAY_ONLY
@@ -1851,11 +1864,35 @@ void update_display() {
     }
     
     // Update battery info
-    static char batt_info[96];
+    static char batt_info[128];
+#ifdef HW_WAVESHARE7B_DISPLAY_ONLY
+    {
+      const TeslaSummaryData& tesla = mqtt_display_bridge::get_tesla_summary();
+      char battery_12v_voltage_text[16];
+      char battery_12v_current_text[16];
+      if (tesla.has_battery_12v_voltage) {
+        snprintf(battery_12v_voltage_text, sizeof(battery_12v_voltage_text), "%.2f V", tesla.battery_12v_voltage_V);
+      } else {
+        snprintf(battery_12v_voltage_text, sizeof(battery_12v_voltage_text), "--");
+      }
+      if (tesla.has_battery_12v_current) {
+        snprintf(battery_12v_current_text, sizeof(battery_12v_current_text), "%.1f A", tesla.battery_12v_current_A);
+      } else {
+        snprintf(battery_12v_current_text, sizeof(battery_12v_current_text), "--");
+      }
+      snprintf(batt_info, sizeof(batt_info), "Total: %.1f kWh\nRemaining: %.1f kWh\nSOH: %d %%\n12V: %s, %s",
+               datalayer.battery.info.total_capacity_Wh / 1000.0f,
+               datalayer.battery.status.remaining_capacity_Wh / 1000.0f,
+               datalayer.battery.status.soh_pptt / 100,
+               battery_12v_voltage_text,
+               battery_12v_current_text);
+    }
+#else
     snprintf(batt_info, sizeof(batt_info), "Total: %.1f kWh\nRemaining: %.1f kWh\nSOH: %d %%",
              datalayer.battery.info.total_capacity_Wh / 1000.0f,
              datalayer.battery.status.remaining_capacity_Wh / 1000.0f,
              datalayer.battery.status.soh_pptt / 100);
+#endif
     lv_label_set_text(lbl_batt_info, batt_info);
     
     // Update system info (left side of split card) with BMS status

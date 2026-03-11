@@ -20,6 +20,7 @@
 namespace mqtt_display_bridge {
 
 static SolarData solar_data;
+static TeslaSummaryData tesla_summary;
 static MqttLogEntry mqtt_log[MQTT_LOG_SIZE];
 static int mqtt_log_head = 0;
 static int mqtt_log_count = 0;
@@ -46,6 +47,25 @@ static bms_status_enum parse_bms_status(const char* s) {
   if (strncmp(s, "STANDBY", 7) == 0)
     return STANDBY;
   return ACTIVE;
+}
+
+static const char* parse_tesla_contactor_state(uint8_t code) {
+  switch (code) {
+    case 1:
+      return "OPEN";
+    case 2:
+      return "OPENING";
+    case 3:
+      return "CLOSING";
+    case 4:
+      return "CLOSED";
+    case 5:
+      return "WELDED";
+    case 6:
+      return "BLOCKED";
+    default:
+      return "UNKNOWN";
+  }
 }
 
 // ── BE/info handler ───────────────────────────────────────────────────────────
@@ -123,6 +143,40 @@ static void handle_be_info(const char* data, int data_len) {
   // BMS status string → enum
   if (doc["bms_status"].is<const char*>()) {
     datalayer.battery.status.bms_status = parse_bms_status(doc["bms_status"].as<const char*>());
+  }
+
+  // Tesla-specific summary fields published on BE/info for display-only rendering
+  tesla_summary.has_contactor_state = false;
+  tesla_summary.contactor_state[0] = '\0';
+  tesla_summary.contactor_state_code = 0;
+  bool has_contactor_state_code = false;
+  if (doc["contactor_state_code"].is<int>()) {
+    tesla_summary.contactor_state_code = (uint8_t)doc["contactor_state_code"].as<int>();
+    has_contactor_state_code = true;
+  }
+  if (doc["contactor_state"].is<const char*>()) {
+    strncpy(tesla_summary.contactor_state, doc["contactor_state"].as<const char*>(), sizeof(tesla_summary.contactor_state) - 1);
+    tesla_summary.contactor_state[sizeof(tesla_summary.contactor_state) - 1] = '\0';
+    tesla_summary.has_contactor_state = true;
+  } else if (has_contactor_state_code) {
+    strncpy(tesla_summary.contactor_state, parse_tesla_contactor_state(tesla_summary.contactor_state_code),
+            sizeof(tesla_summary.contactor_state) - 1);
+    tesla_summary.contactor_state[sizeof(tesla_summary.contactor_state) - 1] = '\0';
+    tesla_summary.has_contactor_state = true;
+  }
+
+  tesla_summary.has_battery_12v_voltage = false;
+  tesla_summary.battery_12v_voltage_V = 0.0f;
+  if (doc["battery_12v_voltage"].is<float>()) {
+    tesla_summary.battery_12v_voltage_V = doc["battery_12v_voltage"].as<float>();
+    tesla_summary.has_battery_12v_voltage = true;
+  }
+
+  tesla_summary.has_battery_12v_current = false;
+  tesla_summary.battery_12v_current_A = 0.0f;
+  if (doc["battery_12v_current"].is<float>()) {
+    tesla_summary.battery_12v_current_A = doc["battery_12v_current"].as<float>();
+    tesla_summary.has_battery_12v_current = true;
   }
 
   // Mark battery data as fresh — same mechanism as CAN-alive counter
@@ -313,6 +367,10 @@ void tick_alive_counter() {
 
 const SolarData& get_solar_data() {
   return solar_data;
+}
+
+const TeslaSummaryData& get_tesla_summary() {
+  return tesla_summary;
 }
 
 const MqttLogEntry* get_mqtt_log() {

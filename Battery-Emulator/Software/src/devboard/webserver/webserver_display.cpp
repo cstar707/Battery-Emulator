@@ -142,6 +142,14 @@ static void handle_api_status(AsyncWebServerRequest* request) {
   doc["soh_pct"] = bat.soh_pptt / 100.0f;
   doc["num_cells"] = info.number_of_cells;
   doc["mqtt_alive"] = bat.CAN_battery_still_alive;
+  const TeslaSummaryData& tesla = mqtt_display_bridge::get_tesla_summary();
+  doc["contactor_state"] = tesla.has_contactor_state ? tesla.contactor_state : "";
+  doc["contactor_state_code"] = tesla.contactor_state_code;
+  doc["contactor_state_valid"] = tesla.has_contactor_state;
+  doc["battery_12v_voltage_v"] = tesla.battery_12v_voltage_V;
+  doc["battery_12v_voltage_valid"] = tesla.has_battery_12v_voltage;
+  doc["battery_12v_current_a"] = tesla.battery_12v_current_A;
+  doc["battery_12v_current_valid"] = tesla.has_battery_12v_current;
   doc["release"]["version"] = release_metadata::kVersion;
   doc["release"]["identifier"] = releaseIdentifier.c_str();
   doc["release"]["build"] = release_metadata::kBuildId;
@@ -238,6 +246,21 @@ static void handle_root(AsyncWebServerRequest* request) {
            info.number_of_cells,
            alive ? "ok" : "err", alive ? "LIVE" : "STALE");
 
+  const TeslaSummaryData& tesla = mqtt_display_bridge::get_tesla_summary();
+  String tesla_html = "";
+  if (tesla.has_contactor_state || tesla.has_battery_12v_voltage || tesla.has_battery_12v_current) {
+    String contactorValue = tesla.has_contactor_state ? String(tesla.contactor_state) : "--";
+    String contactorClass = tesla.has_contactor_state && tesla.contactor_state_code == 4 ? "ok" :
+                            tesla.has_contactor_state ? "err" : "";
+    String battery12vVoltage = tesla.has_battery_12v_voltage ? String(tesla.battery_12v_voltage_V, 2) + " V" : "--";
+    String battery12vCurrent = tesla.has_battery_12v_current ? String(tesla.battery_12v_current_A, 1) + " A" : "--";
+    tesla_html += "<div class='card'><div class='section-title'>TESLA SUMMARY</div><div class='grid'>";
+    tesla_html += "<div><div class='stat-label'>CONTACTOR</div><div class='stat-value " + contactorClass + "'>" + contactorValue + "</div></div>";
+    tesla_html += "<div><div class='stat-label'>12V VOLTAGE</div><div class='stat-value'>" + battery12vVoltage + "</div></div>";
+    tesla_html += "<div><div class='stat-label'>12V CURRENT</div><div class='stat-value'>" + battery12vCurrent + "</div></div>";
+    tesla_html += "</div></div>";
+  }
+
   // Solar sections
   const SolarData& sol = mqtt_display_bridge::get_solar_data();
   char sol_buf[2048];
@@ -330,7 +353,7 @@ static void handle_root(AsyncWebServerRequest* request) {
     snprintf(sol_buf, sizeof(sol_buf), "%s", sol_html.c_str());
   }
 
-  String page = String(buf) + sol_buf + build_release_footer();
+  String page = String(buf) + tesla_html + sol_buf + build_release_footer();
   request->send(200, "text/html", page);
 }
 

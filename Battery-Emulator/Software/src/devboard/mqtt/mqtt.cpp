@@ -10,6 +10,7 @@
 #include "../../devboard/safety/safety.h"
 #endif
 #include "../../datalayer/datalayer.h"
+#include "../../datalayer/datalayer_extended.h"
 #include "../../devboard/hal/hal.h"
 #include "../../lib/bblanchon-ArduinoJson/ArduinoJson.h"
 #include "../utils/events.h"
@@ -118,6 +119,30 @@ static std::function<bool(Battery*)> always = [](Battery* b) {
 static std::function<bool(Battery*)> supports_charged = [](Battery* b) {
   return b->supports_charged_energy();
 };
+
+static bool has_live_tesla_summary_data() {
+  return datalayer_extended.tesla.BMS_contactorState != 0u || datalayer_extended.tesla.battery_dcdcLvBusVolt != 0u ||
+         datalayer_extended.tesla.battery_dcdcLvOutputCurrent != 0u;
+}
+
+static const char* get_tesla_contactor_state_text(uint8_t state) {
+  switch (state) {
+    case 1:
+      return "OPEN";
+    case 2:
+      return "OPENING";
+    case 3:
+      return "CLOSING";
+    case 4:
+      return "CLOSED";
+    case 5:
+      return "WELDED";
+    case 6:
+      return "BLOCKED";
+    default:
+      return "UNKNOWN";
+  }
+}
 
 SensorConfig batterySensorConfigTemplate[] = {
     {"SOC", "SOC (Scaled)", "", "%", "battery", always},
@@ -260,6 +285,13 @@ void set_battery_attributes(JsonDocument& doc, const DATALAYER_BATTERY_TYPE& bat
   doc["remaining_capacity" + suffix] = ((float)battery.status.reported_remaining_capacity_Wh);
   doc["max_discharge_power" + suffix] = ((float)battery.status.max_discharge_power_W);
   doc["max_charge_power" + suffix] = ((float)battery.status.max_charge_power_W);
+
+  if (suffix.isEmpty() && has_live_tesla_summary_data()) {
+    doc["contactor_state"] = get_tesla_contactor_state_text(datalayer_extended.tesla.BMS_contactorState);
+    doc["contactor_state_code"] = datalayer_extended.tesla.BMS_contactorState;
+    doc["battery_12v_voltage"] = ((float)datalayer_extended.tesla.battery_dcdcLvBusVolt) * 0.0390625f;
+    doc["battery_12v_current"] = ((float)datalayer_extended.tesla.battery_dcdcLvOutputCurrent) * 0.1f;
+  }
 
   if (supports_charged) {
     if (datalayer.battery.status.total_charged_battery_Wh != 0 &&

@@ -19,6 +19,7 @@ std::string ssid;
 std::string password;
 std::string ssidAP;
 std::string passwordAP;
+uint8_t wifi_tx_power = 0;  // Index into WiFi TX power levels; shared with display settings when present
 
 // Set your Static IP address. Only used incase Static address option is set
 bool static_IP_enabled = false;
