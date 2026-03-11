@@ -244,10 +244,14 @@ document.getElementById('cdelta').className='card-val '+(dl<50?'grn':dl<100?'yel
 document.getElementById('temp').textContent=((d.temp_min+d.temp_max)/20).toFixed(1)+' C';
 document.getElementById('tmin').textContent=(d.temp_min/10).toFixed(1)+' C';
 document.getElementById('tmax').textContent=(d.temp_max/10).toFixed(1)+' C';
-document.getElementById('cont').textContent=d.contactors?'CLOSED':'OPEN';
-document.getElementById('cont').className='card-val '+(d.contactors?'grn':'red');
+var contactorText=d.contactor_state_valid?d.contactor_state:'--';
+var contactorClass=d.contactor_state_valid?(d.contactor_state_code==4?'grn':'red'):'';
+document.getElementById('cont').textContent=contactorText;
+document.getElementById('cont').className='card-val '+contactorClass;
 document.getElementById('net').innerHTML=d.wifi;document.getElementById('net').style.color=d.wifi_ok?'#7ee787':'#8b949e';
-document.getElementById('binfo').innerHTML='Total: '+(d.total_kwh).toFixed(1)+' kWh<br>Remaining: '+(d.remaining_kwh).toFixed(1)+' kWh<br>SOH: '+d.soh+' %<br>'+d.fw_version+'<br>'+d.ui_version;
+var battery12vVoltage=d.battery_12v_voltage_valid?d.battery_12v_voltage_v.toFixed(2)+' V':'--';
+var battery12vCurrent=d.battery_12v_current_valid?d.battery_12v_current_a.toFixed(1)+' A':'--';
+document.getElementById('binfo').innerHTML='Total: '+(d.total_kwh).toFixed(1)+' kWh<br>Remaining: '+(d.remaining_kwh).toFixed(1)+' kWh<br>SOH: '+d.soh+' %<br>12V: '+battery12vVoltage+', '+battery12vCurrent+'<br>'+d.fw_version+'<br>'+d.ui_version;
 var sc=d.bms==1?'#7ee787':d.bms==2?'#ff7b72':'#ffa657';var st=d.bms==1?'ACTIVE':d.bms==2?'FAULT':'STANDBY';
 document.getElementById('sys').innerHTML='<span style="color:'+sc+'">BMS: '+st+'</span><br>'+'<span style="color:'+(d.mqtt_ok?'#7ee787':'#ff7b72')+'">MQTT: '+(d.mqtt_ok?'OK':'OFF')+'</span><br>Uptime: '+d.uptime+'<br>Heap: '+d.heap+' KB';
 document.getElementById('can').innerHTML='<span class="sys-lbl">CAN Bus</span><br>'+'<span style="color:'+(d.can_batt?'#7ee787':'#8b949e')+'">BATT: '+(d.can_batt?'OK':'--')+'</span><br>'+'<span style="color:'+(d.can_inv?'#7ee787':'#8b949e')+'">INV: '+(d.can_inv?'OK':'--')+'</span>';
@@ -353,7 +357,8 @@ void init_webserver() {
     uint16_t cell_max = datalayer.battery.status.cell_max_voltage_mV;
     int16_t temp_min = datalayer.battery.status.temperature_min_dC;
     int16_t temp_max = datalayer.battery.status.temperature_max_dC;
-    bool contactors = datalayer.system.status.contactors_engaged;
+    const TeslaSummaryData& tesla = mqtt_display_bridge::get_tesla_summary();
+    bool contactors = tesla.has_contactor_state && tesla.contactor_state_code == 4;
     bool can_batt = datalayer.battery.status.CAN_battery_still_alive > 0;
     bool can_inv = datalayer.system.status.CAN_inverter_still_alive > 0;
     bool mqtt_ok = (get_event_pointer(EVENT_MQTT_CONNECT)->state == EVENT_STATE_ACTIVE);
@@ -395,6 +400,13 @@ void init_webserver() {
       ",\"temp_min\":" + String(temp_min) +
       ",\"temp_max\":" + String(temp_max) +
       ",\"contactors\":" + String(contactors ? "true" : "false") +
+      ",\"contactor_state\":\"" + String(tesla.has_contactor_state ? tesla.contactor_state : "") + "\"" +
+      ",\"contactor_state_code\":" + String(tesla.contactor_state_code) +
+      ",\"contactor_state_valid\":" + String(tesla.has_contactor_state ? "true" : "false") +
+      ",\"battery_12v_voltage_v\":" + String(tesla.battery_12v_voltage_V, 2) +
+      ",\"battery_12v_voltage_valid\":" + String(tesla.has_battery_12v_voltage ? "true" : "false") +
+      ",\"battery_12v_current_a\":" + String(tesla.battery_12v_current_A, 1) +
+      ",\"battery_12v_current_valid\":" + String(tesla.has_battery_12v_current ? "true" : "false") +
       ",\"can_batt\":" + String(can_batt ? "true" : "false") +
       ",\"can_inv\":" + String(can_inv ? "true" : "false") +
       ",\"mqtt_ok\":" + String(mqtt_ok ? "true" : "false") +

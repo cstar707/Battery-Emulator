@@ -67,6 +67,16 @@ struct SolarData {
   unsigned long last_update_ms = 0;  // millis() of last received update, 0 = never
 };
 
+struct TeslaSummaryData {
+  char contactor_state[16] = "";
+  uint8_t contactor_state_code = 0;
+  float battery_12v_voltage_V = 0.0f;
+  float battery_12v_current_A = 0.0f;
+  bool has_contactor_state = false;
+  bool has_battery_12v_voltage = false;
+  bool has_battery_12v_current = false;
+};
+
 // MQTT message log entry (repurposed from CAN log viewer)
 struct MqttLogEntry {
   char topic[64];
@@ -91,6 +101,9 @@ void tick_alive_counter();
 
 // Solar data accessor — used by display.cpp Solar tab
 const SolarData& get_solar_data();
+
+// Tesla summary accessor — used by display.cpp and webserver.cpp
+const TeslaSummaryData& get_tesla_summary();
 
 // Approved 3007 action helpers for the live Solar control cards
 bool set_solis_mode_self_use();
