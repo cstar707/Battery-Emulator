@@ -155,7 +155,8 @@ void LandRoverVelarPhevBattery::transmit_can(unsigned long currentMillis) {
   // Byte0 = STJLR 18.036 CRC8 over bytes1-7.
   if (currentMillis - previousMillis10ms >= INTERVAL_10_MS) {
     previousMillis10ms = currentMillis;
-    VELAR_0x96_BCCM_DCDC.data.u8[1] = (VELAR_0x96_BCCM_DCDC.data.u8[1] & 0xC3) | ((velar_counter_96 & 0x0F) << 3);
+    // Match ShortDrive: byte1 = 0x10 | (counter & 0x0F)
+    VELAR_0x96_BCCM_DCDC.data.u8[1] = 0x10 | (velar_counter_96 & 0x0F);
     velar_counter_96++;
     VELAR_0x96_BCCM_DCDC.data.u8[0] = velar_crc8(&VELAR_0x96_BCCM_DCDC);
     transmit_can_frame(&VELAR_0x96_BCCM_DCDC);
@@ -167,35 +168,27 @@ void LandRoverVelarPhevBattery::transmit_can(unsigned long currentMillis) {
     transmit_can_frame(&VELAR_0xA4_InverterHVIL);
   }
 
-  // 0xA2 PCM_PMZ_HVBatt 50ms. Contactor demand per VELAR_PMZ_HSCAN.dbc:
-  //   byte0 = HVBattContDemandTCS (STJLR 18.036 CRC8 over bytes 1-7)
-  //   byte1 bits3-6 = HVBattContDemandTCount rolling counter 0-15
-  //   byte6 bit5 (0x20) = HVBattContactorRequest: 0=Open, 1=Closed
-  //   byte6 bit4 (0x10) = HVBattContactorDemandT: 1=Open immediately (only set when opening)
+  // 0xA2 PCM_PMZ_HVBatt 50ms. Match ShortDrive: bytes 6-7 = 20 01 (close) / 00 00 (open).
   if (currentMillis - previousMillis50ms >= INTERVAL_50_MS) {
     previousMillis50ms = currentMillis;
 
-    // Close when: user requested close OR inverter allows (auto-close when inverter ready)
-    // User request bypasses the init delay; auto-close waits for BMS to settle.
-    bool delay_ok = userRequestContactorClose || (currentMillis >= VELAR_CONTACTOR_DELAY_MS);
-    bool effective_close = (userRequestContactorClose || datalayer.system.status.inverter_allows_contactor_closing) &&
-                           delay_ok && !datalayer.system.info.equipment_stop_active;
+    bool effective_close = userRequestContactorClose && (currentMillis >= VELAR_CONTACTOR_DELAY_MS);
     velar_counter_a2++;
     uint8_t count = velar_counter_a2 & 0x0F;
 
-    // byte1: keep non-counter bits (0-2, 7), place counter in bits 3-6
-    uint8_t byte1 = (VELAR_0xA2_PCM_HVBatt.data.u8[1] & 0x87) | (count << 3);
+    // byte1: match ShortDrive - counter in lower nibble
+    uint8_t byte1 = count;
 
     if (effective_close) {
-      // Close: HybridMode=2 (Hybrid Battery Only) byte5 bits3-6 = 0x10
-      //        HVBattContactorRequest=1 byte6 bit5 = 0x20
-      //        PwrSupWakeUpAllowed=1 (HV Battery) byte7 bits4-5 = 0x10
+      // HybridMode=2 (Hybrid Battery Only) byte5 bits3-6 = 0x10
+      // HVBattContactorRequest=1 byte6 bit5 = 0x20
+      // PwrSupWakeUpAllowed=1 (HV Battery) byte7 bits4-5 = 0x10
       VELAR_0xA2_PCM_HVBatt.data.u8[1] = byte1;
       VELAR_0xA2_PCM_HVBatt.data.u8[5] = 0x10;
       VELAR_0xA2_PCM_HVBatt.data.u8[6] = 0x20;
       VELAR_0xA2_PCM_HVBatt.data.u8[7] = 0x10;
     } else {
-      // Open: HybridMode=0 (Standby), no contactor request, no wakeup
+      // HybridMode=0 (Standby), no contactor request, no wakeup
       VELAR_0xA2_PCM_HVBatt.data.u8[1] = byte1;
       VELAR_0xA2_PCM_HVBatt.data.u8[5] = 0x00;
       VELAR_0xA2_PCM_HVBatt.data.u8[6] = 0x00;
