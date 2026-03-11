@@ -612,7 +612,11 @@ void init_webserver() {
           if (batt) {
             cmd.action(batt);
           }
-          request->send(200, "text/plain", "Command performed.");
+          const char* msg = "Command performed.";
+          if (strcmp(cmd.identifier, "contactorClose") == 0 && datalayer.system.info.equipment_stop_active) {
+            msg = "Command performed. Equipment stop is active - clear it from the main page for contactors to close.";
+          }
+          request->send(200, "text/plain", msg);
         });
   }
 

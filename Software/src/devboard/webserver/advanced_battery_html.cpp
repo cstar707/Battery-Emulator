@@ -84,8 +84,8 @@ String advanced_battery_processor(const String& var) {
           content += "function " + String(cmd.identifier) + "(batteryNum) {";
           content += "  var xhr = new XMLHttpRequest();";
           content += "  xhr.open('PUT', '/" + String(cmd.identifier) + "', true);";
-          // Send index of the battery as PUT content
-          content += "  xhr.send(batteryNum);";
+          // Send index of the battery as PUT content (explicit string for reliable body)
+          content += "  xhr.send(String(batteryNum));";
           content += "}";
           content += "</script>";
         }
