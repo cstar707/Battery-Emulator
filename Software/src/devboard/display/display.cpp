@@ -164,21 +164,6 @@ static lv_obj_t* lbl_envoy_total_today = NULL;
 static lv_obj_t* lbl_envoy_house = NULL;
 static lv_obj_t* lbl_envoy_shed = NULL;
 static lv_obj_t* lbl_envoy_trailer = NULL;
-static lv_obj_t* card_solar_solis_mode = NULL;
-static lv_obj_t* lbl_solar_solis_mode_state = NULL;
-static lv_obj_t* lbl_solar_solis_mode_hint = NULL;
-static lv_obj_t* card_solar_tabuchi = NULL;
-static lv_obj_t* lbl_solar_tabuchi_state = NULL;
-static lv_obj_t* lbl_solar_tabuchi_hint = NULL;
-static lv_obj_t* card_solar_shed = NULL;
-static lv_obj_t* lbl_solar_shed_state = NULL;
-static lv_obj_t* lbl_solar_shed_hint = NULL;
-static lv_obj_t* card_solar_iq8 = NULL;
-static lv_obj_t* lbl_solar_iq8_state = NULL;
-static lv_obj_t* lbl_solar_iq8_hint = NULL;
-static lv_obj_t* card_solar_generator = NULL;
-static lv_obj_t* lbl_solar_generator_state = NULL;
-static lv_obj_t* lbl_solar_generator_hint = NULL;
 #else
 static lv_obj_t* tab_btns[3];
 #endif
@@ -200,16 +185,6 @@ static uint32_t solis_grid_text_color_cache = SOLAR_RENDER_COLOR_UNSET;
 static uint32_t solis_batt_text_color_cache = SOLAR_RENDER_COLOR_UNSET;
 static uint32_t solar_legacy_grid_text_color_cache = SOLAR_RENDER_COLOR_UNSET;
 static uint32_t solar_legacy_batt_text_color_cache = SOLAR_RENDER_COLOR_UNSET;
-static uint32_t solar_solis_mode_state_color_cache = SOLAR_RENDER_COLOR_UNSET;
-static uint32_t solar_solis_mode_border_color_cache = SOLAR_RENDER_COLOR_UNSET;
-static uint32_t solar_tabuchi_state_color_cache = SOLAR_RENDER_COLOR_UNSET;
-static uint32_t solar_tabuchi_border_color_cache = SOLAR_RENDER_COLOR_UNSET;
-static uint32_t solar_shed_state_color_cache = SOLAR_RENDER_COLOR_UNSET;
-static uint32_t solar_shed_border_color_cache = SOLAR_RENDER_COLOR_UNSET;
-static uint32_t solar_iq8_state_color_cache = SOLAR_RENDER_COLOR_UNSET;
-static uint32_t solar_iq8_border_color_cache = SOLAR_RENDER_COLOR_UNSET;
-static uint32_t solar_generator_state_color_cache = SOLAR_RENDER_COLOR_UNSET;
-static uint32_t solar_generator_border_color_cache = SOLAR_RENDER_COLOR_UNSET;
 
 static void solar_set_label_text_if_changed(lv_obj_t* label, const char* text) {
   if (!label || !text) return;
@@ -222,12 +197,6 @@ static void solar_set_label_text_if_changed(lv_obj_t* label, const char* text) {
 static void solar_set_text_color_if_changed(lv_obj_t* obj, uint32_t& cache, uint32_t color_hex) {
   if (!obj || cache == color_hex) return;
   lv_obj_set_style_text_color(obj, lv_color_hex(color_hex), 0);
-  cache = color_hex;
-}
-
-static void solar_set_border_color_if_changed(lv_obj_t* obj, uint32_t& cache, uint32_t color_hex) {
-  if (!obj || cache == color_hex) return;
-  lv_obj_set_style_border_color(obj, lv_color_hex(color_hex), 0);
   cache = color_hex;
 }
 
@@ -728,66 +697,6 @@ static void add_event(const char* msg) {
   snprintf(event_log[0], 63, "[%lu] %s", secs, msg);
   if (event_count < MAX_EVENTS) event_count++;
 }
-
-#ifdef HW_WAVESHARE7B_DISPLAY_ONLY
-static void btn_solar_solis_mode_cb(lv_event_t* e) {
-  const SolarData& sol = mqtt_display_bridge::get_solar_data();
-  if (sol.solis_mode_last_update_ms == 0) {
-    add_event("Solar: Solis Mode waiting for 3007");
-    return;
-  }
-
-  bool target_self_use = sol.solis_mode_feed_in_priority;
-  bool ok = target_self_use
-    ? mqtt_display_bridge::set_solis_mode_self_use()
-    : mqtt_display_bridge::set_solis_mode_feed_in_priority();
-  add_event(ok
-    ? (target_self_use ? "Solar: Solis queued -> Self-Use" : "Solar: Solis queued -> Feed-In")
-    : "Solar: Solis action not queued");
-}
-
-static void btn_solar_tabuchi_cb(lv_event_t* e) {
-  const SolarData& sol = mqtt_display_bridge::get_solar_data();
-  if (sol.curtailment_last_update_ms == 0) {
-    add_event("Solar: Tabuchi waiting for 3007");
-    return;
-  }
-
-  bool enable = !sol.tabuchi_export_enabled;
-  bool ok = mqtt_display_bridge::set_tabuchi_export_enabled(enable);
-  add_event(ok
-    ? (enable ? "Solar: Tabuchi queued ON" : "Solar: Tabuchi queued OFF")
-    : "Solar: Tabuchi action not queued");
-}
-
-static void btn_solar_shed_cb(lv_event_t* e) {
-  const SolarData& sol = mqtt_display_bridge::get_solar_data();
-  if (sol.curtailment_last_update_ms == 0) {
-    add_event("Solar: Shed Micros waiting for 3007");
-    return;
-  }
-
-  bool enable = !sol.shed_micros_enabled;
-  bool ok = mqtt_display_bridge::set_shed_micros_enabled(enable);
-  add_event(ok
-    ? (enable ? "Solar: Shed Micros queued ON" : "Solar: Shed Micros queued OFF")
-    : "Solar: Shed Micros action not queued");
-}
-
-static void btn_solar_iq8_cb(lv_event_t* e) {
-  const SolarData& sol = mqtt_display_bridge::get_solar_data();
-  if (sol.curtailment_last_update_ms == 0) {
-    add_event("Solar: IQ8 Micros waiting for 3007");
-    return;
-  }
-
-  bool enable = !sol.iq8_micros_enabled;
-  bool ok = mqtt_display_bridge::set_iq8_micros_enabled(enable);
-  add_event(ok
-    ? (enable ? "Solar: IQ8 Micros queued ON" : "Solar: IQ8 Micros queued OFF")
-    : "Solar: IQ8 Micros action not queued");
-}
-#endif
 
 // Screen switching callbacks
 static void show_screen_main(lv_event_t* e);
@@ -1817,55 +1726,6 @@ static void create_ui() {
     return lbl;
   };
 
-  auto make_solar_control_card = [&](int x, int y, int w, int h, const char* label_text,
-                                     lv_event_cb_t click_cb, lv_obj_t** card_out,
-                                     lv_obj_t** state_label, lv_obj_t** hint_label) {
-    lv_obj_t* card = lv_btn_create(screen_solar);
-    lv_obj_set_pos(card, x, y);
-    lv_obj_set_size(card, w, h);
-    lv_obj_set_style_bg_color(card, lv_color_hex(0x161b22), 0);
-    lv_obj_set_style_bg_color(card, lv_color_hex(0x1f6feb), LV_STATE_PRESSED);
-    lv_obj_set_style_border_color(card, lv_color_hex(0x30363d), 0);
-    lv_obj_set_style_border_width(card, 1, 0);
-    lv_obj_set_style_radius(card, 8, 0);
-    lv_obj_set_style_pad_all(card, 0, 0);
-    lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
-    if (click_cb != NULL) {
-      lv_obj_add_event_cb(card, click_cb, LV_EVENT_CLICKED, NULL);
-    } else {
-      lv_obj_clear_flag(card, LV_OBJ_FLAG_CLICKABLE);
-    }
-
-    lv_obj_t* lbl = lv_label_create(card);
-    lv_label_set_text(lbl, label_text);
-    lv_obj_set_width(lbl, w - 12);
-    lv_obj_set_style_text_font(lbl, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(lbl, lv_color_hex(0x8b949e), 0);
-    lv_obj_set_style_text_align(lbl, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(lbl, LV_LABEL_LONG_WRAP);
-    lv_obj_set_pos(lbl, 6, 6);
-
-    *state_label = lv_label_create(card);
-    lv_label_set_text(*state_label, "--");
-    lv_obj_set_width(*state_label, w - 12);
-    lv_obj_set_style_text_font(*state_label, &lv_font_montserrat_16, 0);
-    lv_obj_set_style_text_color(*state_label, lv_color_hex(0xe6edf3), 0);
-    lv_obj_set_style_text_align(*state_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_pos(*state_label, 6, 34);
-
-    *hint_label = lv_label_create(card);
-    lv_label_set_text(*hint_label, click_cb != NULL ? "Waiting for 3007" : "Placeholder only");
-    lv_obj_set_width(*hint_label, w - 12);
-    lv_obj_set_style_text_font(*hint_label, &lv_font_montserrat_12, 0);
-    lv_obj_set_style_text_color(*hint_label, lv_color_hex(0x8b949e), 0);
-    lv_obj_set_style_text_align(*hint_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(*hint_label, LV_LABEL_LONG_WRAP);
-    lv_obj_set_pos(*hint_label, 6, h - 30);
-
-    *card_out = card;
-    return card;
-  };
-
   // Layout constants — rebalance both 4-card groups to use the center gap more evenly
   const int solar_w = 984;
   const int margin_x = 6;
@@ -1976,25 +1836,6 @@ static void create_ui() {
   make_solar_card(sk1 + (ecw2 + cg) * 2,  ey, ecw2, ech, "House Today",   &lbl_envoy_house);
   make_solar_card(sk1 + (ecw2 + cg) * 3,  ey, ecw2, ech, "Shed Today",    &lbl_envoy_shed);
   make_solar_card(sk1 + (ecw2 + cg) * 4,  ey, ecw2, ech, "Trailer Today", &lbl_envoy_trailer);
-
-  const int control_y = ey + ech + 44;
-  const int control_h = 96;
-  make_section_title(sk1, control_y - 22, "SOLAR CONTROLS");
-  make_solar_control_card(sk1,                    control_y, ecw2, control_h, "Solis Mode",
-                          btn_solar_solis_mode_cb, &card_solar_solis_mode,
-                          &lbl_solar_solis_mode_state, &lbl_solar_solis_mode_hint);
-  make_solar_control_card(sk1 + (ecw2 + cg),     control_y, ecw2, control_h, "Tabuchi Export",
-                          btn_solar_tabuchi_cb, &card_solar_tabuchi,
-                          &lbl_solar_tabuchi_state, &lbl_solar_tabuchi_hint);
-  make_solar_control_card(sk1 + (ecw2 + cg) * 2, control_y, ecw2, control_h, "Shed Micros",
-                          btn_solar_shed_cb, &card_solar_shed,
-                          &lbl_solar_shed_state, &lbl_solar_shed_hint);
-  make_solar_control_card(sk1 + (ecw2 + cg) * 3, control_y, ecw2, control_h, "IQ8 Micros",
-                          btn_solar_iq8_cb, &card_solar_iq8,
-                          &lbl_solar_iq8_state, &lbl_solar_iq8_hint);
-  make_solar_control_card(sk1 + (ecw2 + cg) * 4, control_y, ecw2, control_h, "Generator\nStart/Stop",
-                          NULL, &card_solar_generator,
-                          &lbl_solar_generator_state, &lbl_solar_generator_hint);
 }
 
 void init_display() {
@@ -2627,75 +2468,6 @@ void update_display() {
           solar_set_label_text_if_changed(lbl_envoy_shed, "--");
           solar_set_label_text_if_changed(lbl_envoy_trailer, "--");
         }
-      }
-
-      if (lbl_solar_solis_mode_state != NULL) {
-        auto set_control_card_state = [](lv_obj_t* card, lv_obj_t* state_label, lv_obj_t* hint_label,
-                                         const char* state_text, const char* hint_text,
-                                         uint32_t accent_hex, uint32_t border_hex,
-                                         uint32_t& state_color_cache, uint32_t& border_color_cache) {
-          solar_set_label_text_if_changed(state_label, state_text);
-          solar_set_label_text_if_changed(hint_label, hint_text);
-          solar_set_text_color_if_changed(state_label, state_color_cache, accent_hex);
-          solar_set_border_color_if_changed(card, border_color_cache, border_hex);
-        };
-
-        if (sol.solis_mode_last_update_ms == 0) {
-          set_control_card_state(card_solar_solis_mode, lbl_solar_solis_mode_state, lbl_solar_solis_mode_hint,
-                                 "WAITING", "Waiting for 3007", 0x8b949e, 0x30363d,
-                                 solar_solis_mode_state_color_cache, solar_solis_mode_border_color_cache);
-        } else if (sol.solis_mode_self_use && sol.solis_mode_feed_in_priority) {
-          set_control_card_state(card_solar_solis_mode, lbl_solar_solis_mode_state, lbl_solar_solis_mode_hint,
-                                 "MIXED", "Tap -> Self-Use", 0xffa657, 0xf0883e,
-                                 solar_solis_mode_state_color_cache, solar_solis_mode_border_color_cache);
-        } else if (sol.solis_mode_feed_in_priority) {
-          set_control_card_state(card_solar_solis_mode, lbl_solar_solis_mode_state, lbl_solar_solis_mode_hint,
-                                 "FEED-IN", "Tap -> Self-Use", 0x58a6ff, 0x1f6feb,
-                                 solar_solis_mode_state_color_cache, solar_solis_mode_border_color_cache);
-        } else if (sol.solis_mode_self_use) {
-          set_control_card_state(card_solar_solis_mode, lbl_solar_solis_mode_state, lbl_solar_solis_mode_hint,
-                                 "SELF-USE", "Tap -> Feed-In", 0x7ee787, 0x238636,
-                                 solar_solis_mode_state_color_cache, solar_solis_mode_border_color_cache);
-        } else {
-          set_control_card_state(card_solar_solis_mode, lbl_solar_solis_mode_state, lbl_solar_solis_mode_hint,
-                                 "UNKNOWN", "No active storage bit", 0xffa657, 0xf0883e,
-                                 solar_solis_mode_state_color_cache, solar_solis_mode_border_color_cache);
-        }
-
-        auto set_curtail_card = [&](lv_obj_t* card, lv_obj_t* state_label, lv_obj_t* hint_label,
-                                    bool enabled, uint32_t& state_color_cache, uint32_t& border_color_cache) {
-          if (sol.curtailment_last_update_ms == 0) {
-            set_control_card_state(card, state_label, hint_label,
-                                   "WAITING", "Waiting for 3007", 0x8b949e, 0x30363d,
-                                   state_color_cache, border_color_cache);
-            return;
-          }
-
-          char hint[64];
-          const char* auto_state = !sol.curtail_auto_enabled ? "Manual only"
-                                 : sol.curtail_auto_active ? "Auto active"
-                                 : sol.curtail_solis_active ? "Solis active"
-                                 : "Auto armed";
-          snprintf(hint, sizeof(hint), "%s\nTap -> %s", auto_state, enabled ? "OFF" : "ON");
-          set_control_card_state(card, state_label, hint_label,
-                                 enabled ? "ON" : "OFF", hint,
-                                 enabled ? 0x7ee787 : 0xff7b72,
-                                 enabled ? 0x238636 : 0xda3633,
-                                 state_color_cache, border_color_cache);
-        };
-
-        set_curtail_card(card_solar_tabuchi, lbl_solar_tabuchi_state, lbl_solar_tabuchi_hint,
-                         sol.tabuchi_export_enabled,
-                         solar_tabuchi_state_color_cache, solar_tabuchi_border_color_cache);
-        set_curtail_card(card_solar_shed, lbl_solar_shed_state, lbl_solar_shed_hint,
-                         sol.shed_micros_enabled,
-                         solar_shed_state_color_cache, solar_shed_border_color_cache);
-        set_curtail_card(card_solar_iq8, lbl_solar_iq8_state, lbl_solar_iq8_hint,
-                         sol.iq8_micros_enabled,
-                         solar_iq8_state_color_cache, solar_iq8_border_color_cache);
-        set_control_card_state(card_solar_generator, lbl_solar_generator_state, lbl_solar_generator_hint,
-                               "PLACEHOLDER", "3007 backend pending", 0xffa657, 0x30363d,
-                               solar_generator_state_color_cache, solar_generator_border_color_cache);
       }
 
       if (lbl_solar_pv != NULL) {
