@@ -1498,6 +1498,9 @@ static void create_ui() {
   lv_obj_set_size(tab_btns[0], tab_w, tab_h);
   lv_obj_set_style_bg_color(tab_btns[0], lv_color_hex(0x1f6feb), 0);  // Active
   lv_obj_set_style_radius(tab_btns[0], 6, 0);
+  // ACCESSIBILITY: Add focus indicator (2px blue border on keyboard focus)
+  lv_obj_set_style_border_width(tab_btns[0], 2, LV_STATE_FOCUS_KEY);
+  lv_obj_set_style_border_color(tab_btns[0], lv_color_hex(0x58a6ff), LV_STATE_FOCUS_KEY);
   lv_obj_add_event_cb(tab_btns[0], show_screen_main, LV_EVENT_CLICKED, NULL);
   lv_obj_t* lbl_tab0 = lv_label_create(tab_btns[0]);
   lv_label_set_text(lbl_tab0, "Main");
@@ -1509,6 +1512,9 @@ static void create_ui() {
   lv_obj_set_size(tab_btns[1], tab_w, tab_h);
   lv_obj_set_style_bg_color(tab_btns[1], lv_color_hex(0x21262d), 0);
   lv_obj_set_style_radius(tab_btns[1], 6, 0);
+  // ACCESSIBILITY: Add focus indicator (2px blue border on keyboard focus)
+  lv_obj_set_style_border_width(tab_btns[1], 2, LV_STATE_FOCUS_KEY);
+  lv_obj_set_style_border_color(tab_btns[1], lv_color_hex(0x58a6ff), LV_STATE_FOCUS_KEY);
   lv_obj_add_event_cb(tab_btns[1], show_screen_cells, LV_EVENT_CLICKED, NULL);
   lv_obj_t* lbl_tab1 = lv_label_create(tab_btns[1]);
   lv_label_set_text(lbl_tab1, "Cells");
@@ -1520,6 +1526,9 @@ static void create_ui() {
   lv_obj_set_size(tab_btns[2], tab_w, tab_h);
   lv_obj_set_style_bg_color(tab_btns[2], lv_color_hex(0x21262d), 0);
   lv_obj_set_style_radius(tab_btns[2], 6, 0);
+  // ACCESSIBILITY: Add focus indicator (2px blue border on keyboard focus)
+  lv_obj_set_style_border_width(tab_btns[2], 2, LV_STATE_FOCUS_KEY);
+  lv_obj_set_style_border_color(tab_btns[2], lv_color_hex(0x58a6ff), LV_STATE_FOCUS_KEY);
   lv_obj_add_event_cb(tab_btns[2], show_screen_alerts, LV_EVENT_CLICKED, NULL);
   lv_obj_t* lbl_tab2 = lv_label_create(tab_btns[2]);
   lv_label_set_text(lbl_tab2, "Alerts");
@@ -1532,6 +1541,9 @@ static void create_ui() {
   lv_obj_set_size(tab_btns[3], tab_w, tab_h);
   lv_obj_set_style_bg_color(tab_btns[3], lv_color_hex(0x21262d), 0);
   lv_obj_set_style_radius(tab_btns[3], 6, 0);
+  // ACCESSIBILITY: Add focus indicator (2px blue border on keyboard focus)
+  lv_obj_set_style_border_width(tab_btns[3], 2, LV_STATE_FOCUS_KEY);
+  lv_obj_set_style_border_color(tab_btns[3], lv_color_hex(0x58a6ff), LV_STATE_FOCUS_KEY);
   lv_obj_add_event_cb(tab_btns[3], show_screen_solar, LV_EVENT_CLICKED, NULL);
   lv_obj_t* lbl_tab3 = lv_label_create(tab_btns[3]);
   lv_label_set_text(lbl_tab3, "Solar");
@@ -2071,23 +2083,31 @@ void update_display() {
         lv_label_set_text(lbl_solark_pv, buf);
         fmt_w(buf, sizeof(buf), sol.solark_load_power_W);
         lv_label_set_text(lbl_solark_load, buf);
+
+        // ACCESSIBILITY: Add direction indicator to grid power (↓=import, ↑=export)
+        const char* grid_dir = sol.solark_grid_power_W < 0 ? "↓ " : "↑ ";
         if (sol.solark_grid_power_W >= 0)
-          snprintf(buf, sizeof(buf), "+%.0f W", sol.solark_grid_power_W);
+          snprintf(buf, sizeof(buf), "%s+%.0f W", grid_dir, sol.solark_grid_power_W);
         else
-          snprintf(buf, sizeof(buf), "%.0f W", sol.solark_grid_power_W);
+          snprintf(buf, sizeof(buf), "%s%.0f W", grid_dir, sol.solark_grid_power_W);
         lv_label_set_text(lbl_solark_grid, buf);
+
         // Battery: flip sign so charging (negative in data) shows positive
         float batt_display = -sol.solark_battery_power_W;
+        // ACCESSIBILITY: Add direction indicator to battery power (⚡ for both, color indicates direction)
+        const char* batt_dir = "⚡ ";
         if (batt_display >= 0)
-          snprintf(buf, sizeof(buf), "+%.0f W", batt_display);
+          snprintf(buf, sizeof(buf), "%s+%.0f W", batt_dir, batt_display);
         else
-          snprintf(buf, sizeof(buf), "%.0f W", batt_display);
+          snprintf(buf, sizeof(buf), "%s%.0f W", batt_dir, batt_display);
         lv_label_set_text(lbl_solark_batt, buf);
+
         snprintf(buf, sizeof(buf), "%.1f %%", sol.solark_battery_soc_pct);
         lv_label_set_text(lbl_solark_soc, buf);
         snprintf(buf, sizeof(buf), "%.2f kWh", sol.solark_day_pv_energy_kWh);
         lv_label_set_text(lbl_solark_day, buf);
-        // Color grid
+
+        // Color grid (green=import, red=export)
         lv_obj_set_style_text_color(lbl_solark_grid,
           lv_color_hex(sol.solark_grid_power_W < 0 ? 0x7ee787 : 0xff7b72), 0);
         // Color battery: blue=charging(+), orange=discharging(-)
