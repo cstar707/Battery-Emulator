@@ -90,7 +90,6 @@ static const char HTML_HEADER[] =
     "input,select{background:#0d1117;color:#e6edf3;border:1px solid #30363d;border-radius:4px;padding:6px;width:100%;box-sizing:border-box}"
     "button,input[type=submit]{background:#1f6feb;color:#fff;border:none;border-radius:6px;padding:8px 18px;cursor:pointer;width:auto}"
     "button:hover{background:#388bfd}"
-    "button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid #58a6ff;outline-offset:2px}"
     ".section-title{color:#f0a500;font-size:14px;font-weight:bold;margin:12px 0 6px}"
     "</style>"
     "</head><body>"
@@ -281,12 +280,8 @@ static void handle_root(AsyncWebServerRequest* request) {
     if (sol.solark_last_update_ms > 0) {
       sol_html += "<div><div class='stat-label'>PV</div><div class='stat-value ok'>" + format_power(sol.solark_pv_power_W) + "</div></div>";
       sol_html += "<div><div class='stat-label'>LOAD</div><div class='stat-value'>" + format_power(sol.solark_load_power_W) + "</div></div>";
-      // ACCESSIBILITY: Add direction indicator to grid power (↓=import, ↑=export)
-      String grid_dir = sol.solark_grid_power_W < 0 ? "↓ Import " : "↑ Export ";
-      sol_html += "<div><div class='stat-label'>GRID</div><div class='stat-value " + String(sol.solark_grid_power_W < 0 ? "ok" : "err") + "'>" + grid_dir + format_grid(sol.solark_grid_power_W) + "</div></div>";
-      // ACCESSIBILITY: Add direction indicator to battery power (⚡ for both, color indicates direction)
-      String batt_dir = sol.solark_battery_power_W >= 0 ? "⚡ Charging " : "⚡ Discharging ";
-      sol_html += "<div><div class='stat-label'>BATT</div><div class='stat-value " + String(sol.solark_battery_power_W >= 0 ? "ok" : "warn") + "'>" + batt_dir + format_power(sol.solark_battery_power_W) + "</div></div>";
+      sol_html += "<div><div class='stat-label'>GRID</div><div class='stat-value " + String(sol.solark_grid_power_W < 0 ? "ok" : "err") + "'>" + format_grid(sol.solark_grid_power_W) + "</div></div>";
+      sol_html += "<div><div class='stat-label'>BATT</div><div class='stat-value " + String(sol.solark_battery_power_W >= 0 ? "ok" : "warn") + "'>" + format_power(sol.solark_battery_power_W) + "</div></div>";
       sol_html += "<div><div class='stat-label'>SOC</div><div class='stat-value ok'>" + String(sol.solark_battery_soc_pct, 1) + " %</div></div>";
       sol_html += "<div><div class='stat-label'>DAY PV</div><div class='stat-value'>" + String(sol.solark_day_pv_energy_kWh, 2) + " kWh</div></div>";
     } else {
@@ -304,12 +299,8 @@ static void handle_root(AsyncWebServerRequest* request) {
     if (sol.solis_last_update_ms > 0) {
       sol_html += "<div><div class='stat-label'>PV</div><div class='stat-value ok'>" + format_power(sol.solis_pv_power_W) + "</div></div>";
       sol_html += "<div><div class='stat-label'>LOAD</div><div class='stat-value'>" + format_power(sol.solis_load_power_W) + "</div></div>";
-      // ACCESSIBILITY: Add direction indicator to grid power (↓=import, ↑=export)
-      String grid_dir = sol.solis_grid_power_W < 0 ? "↓ Import " : "↑ Export ";
-      sol_html += "<div><div class='stat-label'>GRID</div><div class='stat-value " + String(sol.solis_grid_power_W < 0 ? "ok" : "err") + "'>" + grid_dir + format_grid(sol.solis_grid_power_W) + "</div></div>";
-      // ACCESSIBILITY: Add direction indicator to battery power (⚡ for both, color indicates direction)
-      String batt_dir = sol.solis_battery_power_W >= 0 ? "⚡ Charging " : "⚡ Discharging ";
-      sol_html += "<div><div class='stat-label'>BATT</div><div class='stat-value " + String(sol.solis_battery_power_W >= 0 ? "ok" : "warn") + "'>" + batt_dir + format_power(sol.solis_battery_power_W) + "</div></div>";
+      sol_html += "<div><div class='stat-label'>GRID</div><div class='stat-value " + String(sol.solis_grid_power_W < 0 ? "ok" : "err") + "'>" + format_grid(sol.solis_grid_power_W) + "</div></div>";
+      sol_html += "<div><div class='stat-label'>BATT</div><div class='stat-value " + String(sol.solis_battery_power_W >= 0 ? "ok" : "warn") + "'>" + format_power(sol.solis_battery_power_W) + "</div></div>";
       sol_html += "<div><div class='stat-label'>SOC</div><div class='stat-value ok'>" + String(sol.solis_battery_soc_pct, 1) + " %</div></div>";
       sol_html += "<div><div class='stat-label'>DAY PV</div><div class='stat-value'>" + String(sol.solis_day_pv_energy_kWh, 2) + " kWh</div></div>";
     } else {
