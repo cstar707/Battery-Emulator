@@ -43,7 +43,7 @@ extern const char* version_number;
 #define SCREEN_HEIGHT 600
 
 // UI Version - increment with each UI change
-#define UI_VERSION "2.3.1"
+#define UI_VERSION "2.4.0"
 
 const char* get_display_ui_version() { return UI_VERSION; }
 
@@ -2325,6 +2325,10 @@ void update_display() {
         snprintf(b, sz, "%.1f A", a);
       };
 
+      auto fmt_signed_current = [](char* b, size_t sz, float a) {
+        snprintf(b, sz, "%c%.1f A", a >= 0 ? '+' : '-', fabsf(a));
+      };
+
       auto fmt_temp = [](char* b, size_t sz, float c) {
         snprintf(b, sz, "%.1f C", c);
       };
@@ -2371,13 +2375,15 @@ void update_display() {
       }
 
       if (sol.solark_last_update_ms > 0) {
-        fmt_signed_w(buf, sizeof(buf), sol.solark_battery_power_W);
+        float batt_display = -sol.solark_battery_power_W;  // Sunsynk: - = charge, + = discharge; flip for display (+ = into batt)
+        fmt_signed_w(buf, sizeof(buf), batt_display);
         solar_set_label_text_if_changed(lbl_solark_batt_power, buf);
         fmt_voltage(buf, sizeof(buf), sol.solark_battery_voltage_V);
         solar_set_label_text_if_changed(lbl_solark_voltage, buf);
         fmt_temp(buf, sizeof(buf), sol.solark_battery_temp_C);
         solar_set_label_text_if_changed(lbl_solark_temp, buf);
-        fmt_current(buf, sizeof(buf), sol.solark_total_battery_current_A);
+        float curr_display = -sol.solark_total_battery_current_A;  // Sunsynk: - = charge; flip for display (+ = into batt)
+        fmt_signed_current(buf, sizeof(buf), curr_display);
         solar_set_label_text_if_changed(lbl_solark_current, buf);
         fmt_w(buf, sizeof(buf), sol.solark_pv_power_W);
         solar_set_label_text_if_changed(lbl_solark_solar, buf);
@@ -2393,7 +2399,7 @@ void update_display() {
         solar_set_text_color_if_changed(lbl_solark_grid, solark_grid_text_color_cache,
                                         sol.solark_grid_power_W < 0 ? 0x7ee787 : 0xff7b72);
         solar_set_text_color_if_changed(lbl_solark_batt_power, solark_batt_text_color_cache,
-                                        sol.solark_battery_power_W >= 0 ? 0x58a6ff : 0xffa657);
+                                        batt_display >= 0 ? 0x58a6ff : 0xffa657);  // + charging blue, - discharging orange
         solar_update_soc_bar(bar_solark_soc, lbl_solark_soc_pct, solark_soc_render_cache,
                              (int)sol.solark_battery_soc_pct, true);
       } else {
