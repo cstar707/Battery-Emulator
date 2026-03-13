@@ -15,7 +15,7 @@ class TeslaHtmlRenderer : public BatteryHtmlRenderer {
     float battTempPct = static_cast<float>(datalayer_extended.tesla.battery_battTempPct) * 0.4f;
     float dcdcLvBusVolt = static_cast<float>(datalayer_extended.tesla.battery_dcdcLvBusVolt) * 0.0390625f;
     float dcdcHvBusVolt = static_cast<float>(datalayer_extended.tesla.battery_dcdcHvBusVolt) * 0.146484f;
-    float dcdcLvOutputCurrent = static_cast<float>(datalayer_extended.tesla.battery_dcdcLvOutputCurrent) * 0.1f;
+    float dcdcLvOutputCurrent = static_cast<float>(datalayer_extended.tesla.battery_dcdcLvOutputCurrent) * 0.01f;  // DBC 0.1 wrong; 0.01 gives plausible ~20A
     float nominal_full_pack_energy =
         static_cast<float>(datalayer_extended.tesla.battery_nominal_full_pack_energy) * 0.1f;
     float nominal_full_pack_energy_m0 =

@@ -881,8 +881,8 @@ void TeslaBattery::
   logging.printf(", Pyrotest: ");
   logging.println(getNoYes(battery_pyroTestInProgress));
 
-  logging.printf("HV: %.2f V, 12V: %.2f V, 12V current: %.2f A.\n", (battery_dcdcHvBusVolt * 0.146484),
-                 (battery_dcdcLvBusVolt * 0.0390625), (battery_dcdcLvOutputCurrent * 0.1));
+logging.printf("HV: %.2f V, 12V: %.2f V, 12V current: %.2f A.\n", (battery_dcdcHvBusVolt * 0.146484),
+               (battery_dcdcLvBusVolt * 0.0390625), (battery_dcdcLvOutputCurrent * 0.01));  // 0.01: DBC 0.1 gives implausible ~200A
 }
 
 void TeslaBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
@@ -1276,7 +1276,7 @@ void TeslaBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
       battery_dcdcHvBusVolt = (((rx_frame.data.u8[2] & 0x3F) << 6) |
                                ((rx_frame.data.u8[1] & 0xFC) >> 2));  //10|12@1+ (0.146484,0) [0|599.854] "V"
       battery_dcdcLvOutputCurrent =
-          (((rx_frame.data.u8[4] & 0x0F) << 8) | rx_frame.data.u8[3]);  //24|12@1+ (0.1,0) [0|400] "A"
+          (((rx_frame.data.u8[4] & 0x0F) << 8) | rx_frame.data.u8[3]);  //24|12@1+ DBC 0.1 but use *0.01 for display (0.1 gives implausible ~200A)
       break;
     case 0x292:  //BMS_socStatus
       datalayer.battery.status.CAN_battery_still_alive = CAN_STILL_ALIVE;

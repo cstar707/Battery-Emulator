@@ -285,7 +285,7 @@ void set_battery_attributes(JsonDocument& doc, const DATALAYER_BATTERY_TYPE& bat
     doc["contactor_state"] = get_tesla_contactor_state_text(datalayer_extended.tesla.BMS_contactorState);
     doc["contactor_state_code"] = datalayer_extended.tesla.BMS_contactorState;
     doc["battery_12v_voltage"] = ((float)datalayer_extended.tesla.battery_dcdcLvBusVolt) * 0.0390625f;
-    doc["battery_12v_current"] = ((float)datalayer_extended.tesla.battery_dcdcLvOutputCurrent) * 0.1f;
+    doc["battery_12v_current"] = ((float)datalayer_extended.tesla.battery_dcdcLvOutputCurrent) * 0.01f;  // DBC says 0.1 but 0.01 gives plausible ~20A vs implausible ~200A
   }
 
   if (supports_charged) {
