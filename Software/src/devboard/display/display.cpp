@@ -26,6 +26,7 @@ const char* get_display_ui_version() { return ""; }
 #endif
 
 #include <Arduino.h>
+#include <cmath>
 #include <cstring>
 #include <WiFi.h>
 #include <esp_wifi.h>
@@ -74,6 +75,10 @@ static lv_obj_t* lbl_cell_min;
 static lv_obj_t* lbl_cell_max;
 static lv_obj_t* lbl_status;
 static lv_obj_t* lbl_contactor;
+static lv_obj_t* contactor_led_dot;  // Top-bar LED: green=closed, blink red=open
+static lv_obj_t* lbl_contactor_uptime;  // Uptime while contactors closed
+static unsigned long contactors_closed_since_ms = 0;  // 0 = open or unknown
+static unsigned long contactors_last_uptime_ms = 0;   // when open: last known uptime (to show "Last: 2h 15m")
 static lv_obj_t* lbl_wifi;
 static lv_obj_t* lbl_batt_info;
 static lv_obj_t* lbl_sys_info;
@@ -1836,6 +1841,24 @@ static void create_ui() {
   make_solar_card(sk1 + (ecw2 + cg) * 2,  ey, ecw2, ech, "House Today",   &lbl_envoy_house);
   make_solar_card(sk1 + (ecw2 + cg) * 3,  ey, ecw2, ech, "Shed Today",    &lbl_envoy_shed);
   make_solar_card(sk1 + (ecw2 + cg) * 4,  ey, ecw2, ech, "Trailer Today", &lbl_envoy_trailer);
+
+  // Contactor status LED dot: beside Solis model tag (solid green=closed, blink red=open)
+  contactor_led_dot = lv_obj_create(screen_solar);
+  lv_obj_set_size(contactor_led_dot, 18, 18);
+  lv_obj_set_pos(contactor_led_dot, sl1 + 115 + 165, slr_logo_y + 9);  // Right of "S6-EH1P(11.4)K-H-US"
+  lv_obj_set_style_radius(contactor_led_dot, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_border_width(contactor_led_dot, 0, 0);
+  lv_obj_set_style_pad_all(contactor_led_dot, 0, 0);
+  lv_obj_set_style_bg_color(contactor_led_dot, lv_color_hex(0x8b949e), 0);  // Default gray
+  lv_obj_set_style_bg_opa(contactor_led_dot, LV_OPA_COVER, 0);
+  lv_obj_clear_flag(contactor_led_dot, LV_OBJ_FLAG_SCROLLABLE);
+
+  // Uptime timer: how long contactors have stayed closed (resets when they open)
+  lbl_contactor_uptime = lv_label_create(screen_solar);
+  lv_label_set_text(lbl_contactor_uptime, "--");
+  lv_obj_set_style_text_font(lbl_contactor_uptime, &lv_font_montserrat_12, 0);
+  lv_obj_set_style_text_color(lbl_contactor_uptime, lv_color_hex(0x8b949e), 0);
+  lv_obj_set_pos(lbl_contactor_uptime, sl1 + 115 + 165 + 18 + 6, slr_logo_y + 8);  // Right of LED
 }
 
 void init_display() {
@@ -1897,7 +1920,7 @@ void init_display() {
   disp_drv.ver_res = SCREEN_HEIGHT;
   disp_drv.flush_cb = disp_flush;
   disp_drv.draw_buf = &draw_buf;
-  disp_drv.full_refresh = 0;   // Partial refresh - only redraw changed areas
+  disp_drv.full_refresh = 0;   // Partial refresh
   disp_drv.direct_mode = 0;    // Not direct mode - use separate buffers
   lv_disp_drv_register(&disp_drv);
   DEBUG_PRINTF("LVGL display driver registered (partial refresh, double buffer)\n");
@@ -1939,6 +1962,69 @@ void update_display() {
   if (millis() - lastLvglMillis >= 33) {
     lastLvglMillis = millis();
     lv_timer_handler();
+
+    // Update contactor LED dot and uptime every frame (blink needs frame rate)
+    if (contactor_led_dot) {
+#ifdef HW_WAVESHARE7B_DISPLAY_ONLY
+      const TeslaSummaryData& tesla = mqtt_display_bridge::get_tesla_summary();
+      bool closed = tesla.has_contactor_state && tesla.contactor_state_code == 4;
+      bool known = tesla.has_contactor_state;
+#else
+      bool closed = datalayer.system.status.contactors_engaged;
+      bool known = true;
+#endif
+      if (closed) {
+        if (contactors_closed_since_ms == 0)
+          contactors_closed_since_ms = millis();
+        lv_obj_set_style_bg_color(contactor_led_dot, lv_color_hex(0x7ee787), 0);
+        lv_obj_set_style_bg_opa(contactor_led_dot, LV_OPA_COVER, 0);
+      } else {
+        if (contactors_closed_since_ms > 0) {
+          contactors_last_uptime_ms = millis() - contactors_closed_since_ms;
+        }
+        contactors_closed_since_ms = 0;
+        if (known) {
+          lv_obj_set_style_bg_color(contactor_led_dot, lv_color_hex(0xff7b72), 0);
+          lv_obj_set_style_bg_opa(contactor_led_dot, ((millis() / 500) % 2) ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+        } else {
+          lv_obj_set_style_bg_color(contactor_led_dot, lv_color_hex(0x8b949e), 0);
+          lv_obj_set_style_bg_opa(contactor_led_dot, LV_OPA_COVER, 0);
+        }
+      }
+      if (lbl_contactor_uptime) {
+        if (closed && contactors_closed_since_ms > 0) {
+          unsigned long elapsed_ms = millis() - contactors_closed_since_ms;
+          unsigned long secs = (elapsed_ms / 1000) % 60;
+          unsigned long mins = (elapsed_ms / 60000) % 60;
+          unsigned long hours = elapsed_ms / 3600000;
+          static char uptime_buf[16];
+          if (hours > 0)
+            snprintf(uptime_buf, sizeof(uptime_buf), "%luh %lum", hours, mins);
+          else if (mins > 0)
+            snprintf(uptime_buf, sizeof(uptime_buf), "%lum %lus", mins, secs);
+          else
+            snprintf(uptime_buf, sizeof(uptime_buf), "%lus", secs);
+          lv_label_set_text(lbl_contactor_uptime, uptime_buf);
+          lv_obj_set_style_text_color(lbl_contactor_uptime, lv_color_hex(0x7ee787), 0);
+        } else if (!closed && contactors_last_uptime_ms > 0) {
+          unsigned long secs = (contactors_last_uptime_ms / 1000) % 60;
+          unsigned long mins = (contactors_last_uptime_ms / 60000) % 60;
+          unsigned long hours = contactors_last_uptime_ms / 3600000;
+          static char uptime_buf[20];
+          if (hours > 0)
+            snprintf(uptime_buf, sizeof(uptime_buf), "Last: %luh %lum", hours, mins);
+          else if (mins > 0)
+            snprintf(uptime_buf, sizeof(uptime_buf), "Last: %lum %lus", mins, secs);
+          else
+            snprintf(uptime_buf, sizeof(uptime_buf), "Last: %lus", secs);
+          lv_label_set_text(lbl_contactor_uptime, uptime_buf);
+          lv_obj_set_style_text_color(lbl_contactor_uptime, lv_color_hex(0x8b949e), 0);
+        } else {
+          lv_label_set_text(lbl_contactor_uptime, "--");
+          lv_obj_set_style_text_color(lbl_contactor_uptime, lv_color_hex(0x8b949e), 0);
+        }
+      }
+    }
   }
   
   // Update UI values every 2000ms to minimize flicker
@@ -2281,12 +2367,18 @@ void update_display() {
       }
       lv_label_set_text(lbl_alerts, alerts_text);
       
-      // Update event log display
-      static char events_text[640];
+      // Update event log display (MAX_EVENTS*65 + nul = 650; use 768 for safety)
+      static char events_text[768];
       events_text[0] = '\0';
-      for (int i = 0; i < event_count && i < MAX_EVENTS; i++) {
-        strcat(events_text, event_log[i]);
-        strcat(events_text, "\n");
+      size_t pos = 0;
+      for (int i = 0; i < event_count && i < MAX_EVENTS && pos < sizeof(events_text) - 70; i++) {
+        size_t n = strlen(event_log[i]);
+        if (pos + n + 2 < sizeof(events_text)) {
+          memcpy(events_text + pos, event_log[i], n + 1);
+          pos += n;
+          events_text[pos++] = '\n';
+          events_text[pos] = '\0';
+        }
       }
       if (event_count == 0) {
         strcpy(events_text, "(no events)");
@@ -2300,7 +2392,9 @@ void update_display() {
       const SolarData& sol = mqtt_display_bridge::get_solar_data();
       static char buf[32];
 
-      auto fmt_w = [](char* b, size_t sz, float w) {
+      auto safe = [](float f) -> float { return (std::isnan(f) || std::isinf(f)) ? 0.0f : f; };
+      auto fmt_w = [&safe](char* b, size_t sz, float w) {
+        w = safe(w);
         if (fabsf(w) >= 1000.0f)
           snprintf(b, sz, "%.2f kW", w / 1000.0f);
         else
@@ -2310,35 +2404,37 @@ void update_display() {
       bool any_data = sol.solark_last_update_ms > 0 || sol.solis_last_update_ms > 0 ||
                       sol.envoy_last_update_ms > 0 || datalayer.battery.status.CAN_battery_still_alive > 0;
 
-      auto fmt_signed_w = [](char* b, size_t sz, float w) {
+      auto fmt_signed_w = [&safe](char* b, size_t sz, float w) {
+        w = safe(w);
         if (fabsf(w) >= 1000.0f)
           snprintf(b, sz, "%c%.2f kW", w >= 0 ? '+' : '-', fabsf(w) / 1000.0f);
         else
           snprintf(b, sz, "%c%.0f W", w >= 0 ? '+' : '-', fabsf(w));
       };
 
-      auto fmt_voltage = [](char* b, size_t sz, float v) {
-        snprintf(b, sz, "%.2f V", v);
+      auto fmt_voltage = [&safe](char* b, size_t sz, float v) {
+        snprintf(b, sz, "%.2f V", safe(v));
       };
 
-      auto fmt_current = [](char* b, size_t sz, float a) {
-        snprintf(b, sz, "%.1f A", a);
+      auto fmt_current = [&safe](char* b, size_t sz, float a) {
+        snprintf(b, sz, "%.1f A", safe(a));
       };
 
-      auto fmt_signed_current = [](char* b, size_t sz, float a) {
+      auto fmt_signed_current = [&safe](char* b, size_t sz, float a) {
+        a = safe(a);
         snprintf(b, sz, "%c%.1f A", a >= 0 ? '+' : '-', fabsf(a));
       };
 
-      auto fmt_temp = [](char* b, size_t sz, float c) {
-        snprintf(b, sz, "%.1f C", c);
+      auto fmt_temp = [&safe](char* b, size_t sz, float c) {
+        snprintf(b, sz, "%.1f C", safe(c));
       };
 
-      auto fmt_temp_range = [](char* b, size_t sz, float min_c, float max_c) {
-        snprintf(b, sz, "%.1f/%.1f C", min_c, max_c);
+      auto fmt_temp_range = [&safe](char* b, size_t sz, float min_c, float max_c) {
+        snprintf(b, sz, "%.1f/%.1f C", safe(min_c), safe(max_c));
       };
 
-      auto fmt_energy = [](char* b, size_t sz, float kwh) {
-        snprintf(b, sz, "%.2f kWh", kwh);
+      auto fmt_energy = [&safe](char* b, size_t sz, float kwh) {
+        snprintf(b, sz, "%.2f kWh", safe(kwh));
       };
 
       char solar_status_buf[96];
