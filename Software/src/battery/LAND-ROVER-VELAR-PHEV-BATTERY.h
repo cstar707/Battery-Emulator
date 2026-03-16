@@ -33,6 +33,9 @@ class LandRoverVelarPhevBattery : public CanBattery {
   unsigned long previousMillis10ms = 0;
   unsigned long previousMillis20ms = 0;
   unsigned long previousMillis50ms = 0;
+  unsigned long previousMillis100ms = 0;
+  unsigned long previousMillis200ms = 0;
+  unsigned long previousMillis500ms = 0;
   unsigned long closeRequestStartedMs = 0;
 
   uint8_t velar_counter_a2 = 0;
