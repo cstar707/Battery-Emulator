@@ -293,6 +293,13 @@ static void fetch_root_sensors_http() {
       }
       if (updated) {
         solar_data.solis_last_update_ms = millis();
+        solar_data.solis1_pv_power_W = solar_data.solis_pv_power_W;
+        solar_data.solis1_load_power_W = solar_data.solis_load_power_W;
+        solar_data.solis1_grid_power_W = solar_data.solis_grid_power_W;
+        solar_data.solis1_battery_power_W = solar_data.solis_battery_power_W;
+        solar_data.solis1_battery_soc_pct = solar_data.solis_battery_soc_pct;
+        solar_data.solis1_day_pv_energy_kWh = solar_data.solis_day_pv_energy_kWh;
+        solar_data.solis1_last_update_ms = solar_data.solis_last_update_ms;
         Serial.printf("[ROOT-SENSORS] tesla pv=%.0fW load=%.0fW grid=%.0fW\n",
           solar_data.solis_pv_power_W, solar_data.solis_load_power_W, solar_data.solis_grid_power_W);
       }
@@ -553,6 +560,8 @@ static void handle_be_info(const char* data, int data_len) {
     tesla_summary.contactor_state[sizeof(tesla_summary.contactor_state) - 1] = '\0';
     tesla_summary.has_contactor_state = true;
   }
+  // Dual Solis: inverter 1 contactor from BE/info (single BE for now). Inverter 2 stays false until BE/X.
+  solar_data.solis1_contactor_closed = (tesla_summary.contactor_state_code == 4);  // 4 = CLOSED
 
   tesla_summary.has_battery_12v_voltage = false;
   tesla_summary.battery_12v_voltage_V = 0.0f;
@@ -692,6 +701,15 @@ static void handle_solis_sensor(const char* suffix, const char* payload, int pay
   }
 
   solar_data.solis_last_update_ms = millis();
+
+  // Dual Solis: mirror current single Solis topic into Solis 1 (left). Solis 2 stays 0 until BE/X.
+  solar_data.solis1_pv_power_W = solar_data.solis_pv_power_W;
+  solar_data.solis1_load_power_W = solar_data.solis_load_power_W;
+  solar_data.solis1_grid_power_W = solar_data.solis_grid_power_W;
+  solar_data.solis1_battery_power_W = solar_data.solis_battery_power_W;
+  solar_data.solis1_battery_soc_pct = solar_data.solis_battery_soc_pct;
+  solar_data.solis1_day_pv_energy_kWh = solar_data.solis_day_pv_energy_kWh;
+  solar_data.solis1_last_update_ms = solar_data.solis_last_update_ms;
 }
 
 // ── envoy/summary/* handler (simple numeric values from server) ─────────────

@@ -25,6 +25,31 @@ struct SolarData {
   float solis_battery_soc_pct = 0.0f;
   float solis_day_pv_energy_kWh = 0.0f;
   unsigned long solis_last_update_ms = 0;
+
+  // Dual Solis: inverter 1 (left, e.g. BE/90 @ .16) and inverter 2 (right, e.g. BE/X @ .15)
+  float solis1_pv_power_W = 0.0f;
+  float solis1_load_power_W = 0.0f;
+  float solis1_grid_power_W = 0.0f;
+  float solis1_battery_power_W = 0.0f;
+  float solis1_battery_voltage_V = 0.0f;
+  float solis1_battery_temp_C = 0.0f;
+  float solis1_battery_current_A = 0.0f;
+  float solis1_battery_soc_pct = 0.0f;
+  float solis1_day_pv_energy_kWh = 0.0f;
+  unsigned long solis1_last_update_ms = 0;
+  bool solis1_contactor_closed = false;
+
+  float solis2_pv_power_W = 0.0f;
+  float solis2_load_power_W = 0.0f;
+  float solis2_grid_power_W = 0.0f;
+  float solis2_battery_power_W = 0.0f;
+  float solis2_battery_voltage_V = 0.0f;
+  float solis2_battery_temp_C = 0.0f;
+  float solis2_battery_current_A = 0.0f;
+  float solis2_battery_soc_pct = 0.0f;
+  float solis2_day_pv_energy_kWh = 0.0f;
+  unsigned long solis2_last_update_ms = 0;
+  bool solis2_contactor_closed = false;
   
   // Envoy summary data (pre-computed by server)
   float envoy_total_live_W = 0.0f;
