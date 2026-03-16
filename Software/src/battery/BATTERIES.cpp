@@ -107,7 +107,7 @@ const char* name_for_battery_type(BatteryType type) {
     case BatteryType::RjxzsBms:
       return RjxzsBms::Name;
     case BatteryType::RangeRoverPhev:
-      return RangeRoverPhevBattery::Name;
+      return LandRoverVelarPhevBattery::Name;
     case BatteryType::RelionBattery:
       return RelionBattery::Name;
     case BatteryType::RenaultKangoo:
@@ -220,7 +220,7 @@ Battery* create_battery(BatteryType type) {
     case BatteryType::RjxzsBms:
       return new RjxzsBms();
     case BatteryType::RangeRoverPhev:
-      return new RangeRoverPhevBattery();
+      return new LandRoverVelarPhevBattery();
     case BatteryType::RelionBattery:
       return new RelionBattery();
     case BatteryType::RenaultKangoo:
