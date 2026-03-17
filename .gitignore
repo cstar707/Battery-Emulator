@@ -34,3 +34,7 @@ compile.bat
 
 # Ignore secret file
 USER_SECRETS.h
+
+# Python
+**/.venv/
+**/__pycache__/
