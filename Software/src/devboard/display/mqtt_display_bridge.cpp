@@ -296,14 +296,9 @@ static void fetch_root_sensors_http() {
         solar_data.solis1_pv_power_W = solar_data.solis_pv_power_W;
         solar_data.solis1_load_power_W = solar_data.solis_load_power_W;
         solar_data.solis1_grid_power_W = solar_data.solis_grid_power_W;
-        solar_data.solis1_battery_power_W = solar_data.solis_battery_power_W;
-        solar_data.solis1_battery_soc_pct = solar_data.solis_battery_soc_pct;
         solar_data.solis1_day_pv_energy_kWh = solar_data.solis_day_pv_energy_kWh;
         solar_data.solis1_last_update_ms = solar_data.solis_last_update_ms;
-        // Solis 1 battery V/temp/current from datalayer so API matches 7" display
-        solar_data.solis1_battery_voltage_V = datalayer.battery.status.voltage_dV / 10.0f;
-        solar_data.solis1_battery_temp_C = (datalayer.battery.status.temperature_min_dC + datalayer.battery.status.temperature_max_dC) / 20.0f;
-        solar_data.solis1_battery_current_A = datalayer.battery.status.current_dA / 10.0f;
+        // Do NOT overwrite solis1_battery_* — handle_be_info() is the only source for Solis 1 battery.
         Serial.printf("[ROOT-SENSORS] tesla pv=%.0fW load=%.0fW grid=%.0fW\n",
           solar_data.solis_pv_power_W, solar_data.solis_load_power_W, solar_data.solis_grid_power_W);
       }
@@ -567,6 +562,14 @@ static void handle_be_info(const char* data, int data_len) {
   // Dual Solis: inverter 1 contactor from BE/info (single BE for now). Inverter 2 stays false until BE/X.
   solar_data.solis1_contactor_closed = (tesla_summary.contactor_state_code == 4);  // 4 = CLOSED
 
+  // Web UI parity: sync solis1 battery data from datalayer so web shows same values as 7" display
+  solar_data.solis1_battery_power_W = (float)datalayer.battery.status.active_power_W;
+  solar_data.solis1_battery_voltage_V = datalayer.battery.status.voltage_dV / 10.0f;
+  solar_data.solis1_battery_temp_C = (datalayer.battery.status.temperature_min_dC + datalayer.battery.status.temperature_max_dC) / 20.0f;
+  solar_data.solis1_battery_current_A = datalayer.battery.status.current_dA / 10.0f;
+  solar_data.solis1_battery_soc_pct = (float)(datalayer.battery.status.reported_soc / 100);
+  solar_data.solis1_last_update_ms = millis();
+
   tesla_summary.has_battery_12v_voltage = false;
   tesla_summary.battery_12v_voltage_V = 0.0f;
   JsonVariantConst battery_12v_voltage = doc["battery_12v_voltage"];
@@ -706,18 +709,14 @@ static void handle_solis_sensor(const char* suffix, const char* payload, int pay
 
   solar_data.solis_last_update_ms = millis();
 
-  // Dual Solis: mirror current single Solis topic into Solis 1 (left). Solis 2 stays 0 until BE/X.
-  // Battery V/temp/current: use datalayer so API and display show the same Solis 1 battery as on screen.
+  // Dual Solis: mirror PV/load/grid/day into Solis 1. Battery power/V/temp/current/SOC come ONLY from
+  // BE/90/info (datalayer) — single source of truth to avoid flickering between MQTT and BE.
   solar_data.solis1_pv_power_W = solar_data.solis_pv_power_W;
   solar_data.solis1_load_power_W = solar_data.solis_load_power_W;
   solar_data.solis1_grid_power_W = solar_data.solis_grid_power_W;
-  solar_data.solis1_battery_power_W = solar_data.solis_battery_power_W;
-  solar_data.solis1_battery_soc_pct = solar_data.solis_battery_soc_pct;
   solar_data.solis1_day_pv_energy_kWh = solar_data.solis_day_pv_energy_kWh;
   solar_data.solis1_last_update_ms = solar_data.solis_last_update_ms;
-  solar_data.solis1_battery_voltage_V = datalayer.battery.status.voltage_dV / 10.0f;
-  solar_data.solis1_battery_temp_C = (datalayer.battery.status.temperature_min_dC + datalayer.battery.status.temperature_max_dC) / 20.0f;
-  solar_data.solis1_battery_current_A = datalayer.battery.status.current_dA / 10.0f;
+  // Do NOT overwrite solis1_battery_* — handle_be_info() is the only source for Solis 1 battery data.
 }
 
 // ── envoy/summary/* handler (simple numeric values from server) ─────────────
