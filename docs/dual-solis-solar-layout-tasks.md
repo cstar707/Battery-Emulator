@@ -1,5 +1,17 @@
 # Dual Solis + Solark + Envoy Screen Layout — Staged Tasks
 
+**Scope:** This doc covers **both** the **7" display** (firmware in other worktree, branch `feature/dual-solis-display-S3-1024`) and the **server/Solis S6 app** (this repo, branch `feature/solis-s6-app`). See `docs/solis-app-vs-display.md` for which branch to use for which work.
+
+**Where each stage lives (don’t mix them up):**
+
+| Stage | System | Where to work |
+|-------|--------|----------------|
+| 0 | Mostly **display** (0.2, 0.5, 0.6), plus shared doc (0.4) and parity (0.3) | Display: other worktree, `feature/dual-solis-display-S3-1024`. 0.3 “web UI” = display device’s web UI. |
+| 1 | **BE firmware** (boards at .90, .X) | BE firmware repo/worktree (not this Solis app repo). |
+| 2–5 | **Display** (MQTT subscribe, layout, master SOC, testing) | Display worktree, `feature/dual-solis-display-S3-1024`. |
+| 6 | **Display** (7" + web UI parity, Tesla-1/2 tabs) | Display worktree, `feature/dual-solis-display-S3-1024`. |
+| **Solis S6 app** | **Server only** (Modbus poll, MQTT publish, web dashboard) | **This repo**, `feature/solis-s6-app`. Not broken out as stages here; app publishes data so display can subscribe. |
+
 **Goal:** Two Solis inverters (left/right) with identical 8-card blocks + contactor LEDs; Solark below (Envoy-style layout); Envoy below Solark. Per–battery-emulator MQTT (last-octet topics) so data does not overwrite. **Master SOC = average of all three battery systems** (Solis 1, Solis 2, Solark). All fits on 7" (1024×600) without scrolling. **Display stays lightweight:** all processing and number-crunching on remote server (e.g. solis_s6 app); this device only displays data to remain stable. Changes must be **clean and stable** — no crashing.
  **Device mapping:**
 - **Inverter 1:** Solis modbus `10.10.53.16` ↔ BE board `10.10.53.90` (MQTT last octet `90`)
