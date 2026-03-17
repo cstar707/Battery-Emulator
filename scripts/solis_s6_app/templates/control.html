@@ -1,0 +1,314 @@
+{% extends "base.html" %}
+{% block title %}Control{% endblock %}
+{% block content %}
+  <p class="muted" style="margin-bottom: 1rem;">All inverter controls and buttons are on this page. Use the sections below to change mode, export, charging, and storage/hybrid bits.</p>
+
+  <div id="ctrl-toast" style="display:none; position:fixed; top:1rem; right:1rem; z-index:999; padding:0.6rem 1rem; border-radius:6px; font-weight:600; font-size:0.95rem;"></div>
+
+  <div class="card">
+    <h2>Work Mode</h2>
+    <p class="muted">Primary Solis work-mode controls. Use these buttons to switch modes without manually toggling raw bits.</p>
+    <p class="muted" style="margin: 0 0 0.75rem 0; font-size: 0.85rem;">These four modes are mutually exclusive — switching to one clears the other three in a single atomic write.</p>
+    <div style="display:flex; flex-wrap:wrap; gap:1.5rem; align-items:flex-start;">
+      <div style="min-width:220px;">
+        <strong>Self-Use Mode</strong>
+        <span id="state-storage-0" style="margin-left:0.5rem;">{% if storage_bits.self_use %}<span class="status-ok">On</span>{% else %}<span class="muted">Off</span>{% endif %}</span>
+        <p class="muted" style="margin: 0.2rem 0 0.5rem; font-size:0.8rem;">Solar → load → battery. Use local solar first.</p>
+        <button id="btn-storage-0"
+          class="btn ctrl-btn mode-btn"
+          data-register="storage" data-bit="0" data-on="true" data-active="{{ 'true' if storage_bits.self_use else 'false' }}" data-mode-button="true"
+          style="background:{% if storage_bits.self_use %}var(--green){% else %}#30363d{% endif %};">
+          {{ '✓ Self-Use Active' if storage_bits.self_use else '⚡ Switch to Self-Use' }}
+        </button>
+      </div>
+      <div style="min-width:220px;">
+        <strong>Feed-In Priority</strong>
+        <span id="state-storage-6" style="margin-left:0.5rem;">{% if storage_bits.feed_in_priority %}<span class="status-ok">On</span>{% else %}<span class="muted">Off</span>{% endif %}</span>
+        <p class="muted" style="margin: 0.2rem 0 0.5rem; font-size:0.8rem;">Export solar first when available.</p>
+        <button id="btn-storage-6"
+          class="btn ctrl-btn mode-btn"
+          data-register="storage" data-bit="6" data-on="true" data-active="{{ 'true' if storage_bits.feed_in_priority else 'false' }}" data-mode-button="true"
+          style="background:{% if storage_bits.feed_in_priority %}var(--accent){% else %}#30363d{% endif %};">
+          {{ '✓ Feed-In Active' if storage_bits.feed_in_priority else '↑ Switch to Feed-In' }}
+        </button>
+      </div>
+      <div style="min-width:220px;">
+        <strong>Peak-Shaving Mode</strong>
+        <span id="state-storage-11" style="margin-left:0.5rem;">{% if storage_bits.peak_shaving %}<span class="status-ok">On</span>{% else %}<span class="muted">Off</span>{% endif %}</span>
+        <p class="muted" style="margin: 0.2rem 0 0.5rem; font-size:0.8rem;">Limit grid draw during peak load conditions.</p>
+        <button id="btn-storage-11"
+          class="btn ctrl-btn mode-btn"
+          data-register="storage" data-bit="11" data-on="true" data-active="{{ 'true' if storage_bits.peak_shaving else 'false' }}" data-mode-button="true"
+          style="background:{% if storage_bits.peak_shaving %}var(--orange){% else %}#30363d{% endif %};">
+          {{ '✓ Peak-Shaving Active' if storage_bits.peak_shaving else '⛰ Switch to Peak-Shaving' }}
+        </button>
+      </div>
+      <div style="min-width:220px;">
+        <strong>Off-Grid Mode</strong>
+        <span id="state-storage-2" style="margin-left:0.5rem;">{% if storage_bits.off_grid %}<span class="status-ok">On</span>{% else %}<span class="muted">Off</span>{% endif %}</span>
+        <p class="muted" style="margin: 0.2rem 0 0.5rem; font-size:0.8rem;">Prioritize isolated operation away from the grid. Forces Export and Grid Charge off.</p>
+        <button id="btn-storage-2"
+          class="btn ctrl-btn mode-btn"
+          data-register="storage" data-bit="2" data-on="true" data-active="{{ 'true' if storage_bits.off_grid else 'false' }}" data-mode-button="true"
+          style="background:{% if storage_bits.off_grid %}var(--red){% else %}#30363d{% endif %};">
+          {{ '✓ Off-Grid Active' if storage_bits.off_grid else '⛔ Switch to Off-Grid' }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Export &amp; charging (load-based)</h2>
+    <p class="muted">Control whether solar is exported to grid or used for load/battery. &quot;Use all solar&quot; = self-use, no export (load-based).</p>
+    <div style="margin-bottom:1rem;">
+      <button class="btn preset-btn" data-preset="use_all_solar" style="background:var(--green);">Use all solar (self-use, no export)</button>
+    </div>
+    <table style="width:100%; border-collapse: collapse;">
+      <tr><th class="muted" style="text-align:left;">Control</th><th class="muted">State</th><th>Action</th></tr>
+      <tr>
+        <td><strong>Allow export to grid</strong> <span class="muted">(43483) — off = load-based, no export</span></td>
+        <td><span id="state-hybrid-3">{% if hybrid_bits.allow_export %}✓ On{% else %}— Off{% endif %}</span></td>
+        <td><button class="ctrl-btn" data-register="hybrid" data-bit="3" data-on="{{ 'false' if hybrid_bits.allow_export else 'true' }}">{{ 'Disable export' if hybrid_bits.allow_export else 'Enable export' }}</button></td>
+      </tr>
+      <tr>
+        <td><strong>Allow grid to charge battery</strong> <span class="muted">(43110)</span></td>
+        <td><span id="state-storage-5">{% if storage_bits.allow_grid_charge %}✓ On{% else %}— Off{% endif %}</span></td>
+        <td><button class="ctrl-btn" data-register="storage" data-bit="5" data-on="{{ 'false' if storage_bits.allow_grid_charge else 'true' }}">{{ 'Disable grid charge' if storage_bits.allow_grid_charge else 'Enable grid charge' }}</button></td>
+      </tr>
+      <tr>
+        <td><strong>Self-use mode</strong> <span class="muted">(43110) — solar for load then battery</span></td>
+        <td><span id="state-storage-0b">{% if storage_bits.self_use %}✓ On{% else %}— Off{% endif %}</span></td>
+        <td><button class="ctrl-btn" data-register="storage" data-bit="0" data-on="{{ 'false' if storage_bits.self_use else 'true' }}">{{ 'Turn off' if storage_bits.self_use else 'Turn on' }}</button></td>
+      </tr>
+      <tr>
+        <td><strong>Grid peak-shaving</strong> <span class="muted">(43483) — limit grid draw</span></td>
+        <td><span id="state-hybrid-7">{% if hybrid_bits.grid_peakshaving %}✓ On{% else %}— Off{% endif %}</span></td>
+        <td><button class="ctrl-btn" data-register="hybrid" data-bit="7" data-on="{{ 'false' if hybrid_bits.grid_peakshaving else 'true' }}">{{ 'Turn off' if hybrid_bits.grid_peakshaving else 'Turn on' }}</button></td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Solis storage mode (register 43110)</h2>
+    <p class="muted">Toggle one bit at a time. Read → modify bit → write back so other modes are preserved.</p>
+    <table style="width:100%; border-collapse: collapse;">
+      <tr><th class="muted" style="text-align:left;">Mode</th><th class="muted">On</th><th>Action</th></tr>
+      {% set sbits = [
+        (0,  'Self-Use',                  storage_bits.self_use),
+        (1,  'Time Of Use (TOU)',          storage_bits.time_of_use),
+        (2,  'OFF-Grid',                   storage_bits.off_grid),
+        (3,  'Battery Wakeup',             storage_bits.battery_wakeup),
+        (4,  'Reserve Battery (Backup)',   storage_bits.reserve_battery),
+        (5,  'Allow Grid To Charge',       storage_bits.allow_grid_charge),
+        (6,  'Feed In Priority',           storage_bits.feed_in_priority),
+        (7,  'Batt OVC',                   storage_bits.batt_ovc),
+        (8,  'Forcecharge Peakshaving',    storage_bits.forcecharge_peakshaving),
+        (9,  'Battery current correction', storage_bits.battery_current_correction),
+        (10, 'Battery healing',            storage_bits.battery_healing),
+        (11, 'Peak-shaving',               storage_bits.peak_shaving)
+      ] %}
+      {% for bit, label, state in sbits %}
+      <tr>
+        <td>{{ label }}</td>
+        <td><span id="state-s{{ bit }}">{% if state %}✓{% else %}—{% endif %}</span></td>
+        <td><button class="ctrl-btn" data-register="storage" data-bit="{{ bit }}" data-on="{{ 'false' if state else 'true' }}">{{ 'Turn off' if state else 'Turn on' }}</button></td>
+      </tr>
+      {% endfor %}
+    </table>
+    <p class="muted" style="margin-top:1rem;">Raw value: <span id="storage-raw">{{ data.storage_control_raw | default(0) }}</span></p>
+  </div>
+
+  <div class="card">
+    <h2>Solis hybrid mode (register 43483)</h2>
+    <p class="muted">Export, peak-shaving, backup/AC coupling, etc. Toggle one bit at a time.</p>
+    <table style="width:100%; border-collapse: collapse;">
+      <tr><th class="muted" style="text-align:left;">Mode</th><th class="muted">On</th><th>Action</th></tr>
+      {% set hbits = [
+        (0, 'Dual backup',             hybrid_bits.dual_backup),
+        (1, 'AC coupling',             hybrid_bits.ac_coupling),
+        (2, 'Smart load forced',       hybrid_bits.smart_load_forced),
+        (3, 'Allow export to grid',    hybrid_bits.allow_export),
+        (4, 'Backup to load auto',     hybrid_bits.backup2load_auto),
+        (5, 'Backup to load manual',   hybrid_bits.backup2load_manual),
+        (6, 'Smart load off-grid stop',hybrid_bits.smart_load_offgrid_stop),
+        (7, 'Grid peak-shaving',       hybrid_bits.grid_peakshaving)
+      ] %}
+      {% for bit, label, state in hbits %}
+      <tr>
+        <td>{{ label }}</td>
+        <td><span id="state-h{{ bit }}">{% if state %}✓{% else %}—{% endif %}</span></td>
+        <td><button class="ctrl-btn" data-register="hybrid" data-bit="{{ bit }}" data-on="{{ 'false' if state else 'true' }}">{{ 'Turn off' if state else 'Turn on' }}</button></td>
+      </tr>
+      {% endfor %}
+    </table>
+    <p class="muted" style="margin-top:1rem;">Raw value: <span id="hybrid-raw">{{ data.hybrid_control_raw | default(0) }}</span></p>
+  </div>
+
+  <script>
+  (function() {
+    var toast = document.getElementById('ctrl-toast');
+    var toastTimer = null;
+
+    function showToast(msg, color) {
+      toast.textContent = msg;
+      toast.style.background = color;
+      toast.style.color = '#fff';
+      toast.style.display = 'block';
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(function() { toast.style.display = 'none'; }, 3000);
+    }
+
+    function setBtnState(btn, state, text) {
+      // states: idle | sending | ok | err
+      btn.disabled = (state === 'sending');
+      btn.textContent = text;
+      btn.style.transition = 'background 0.2s';
+      if (state === 'sending') { btn.style.background = '#b8860b'; btn.style.opacity = '0.85'; }
+      else if (state === 'ok')  { btn.style.background = 'var(--green)'; btn.style.opacity = '1'; }
+      else if (state === 'err') { btn.style.background = 'var(--red, #c0392b)'; btn.style.opacity = '1'; }
+      else                       { btn.style.background = ''; btn.style.opacity = '1'; }
+    }
+
+    function refreshState(btn, register, bit, turnedOn) {
+      // After a successful write, re-read the dashboard and update all state spans + buttons
+      fetch('/api/dashboard').then(function(r){ return r.json(); }).then(function(d) {
+        var solis = d.solis || {};
+        var data = solis.data || {};
+        var sbits = (data.storage_bits) || {};
+        var hbits = (data.hybrid_bits)  || {};
+
+        // Map bit names to indices for storage
+        var sNames = ['self_use','time_of_use','off_grid','battery_wakeup','reserve_battery',
+                      'allow_grid_charge','feed_in_priority','batt_ovc','forcecharge_peakshaving',
+                      'battery_current_correction','battery_healing','peak_shaving'];
+        var hNames = ['dual_backup','ac_coupling','smart_load_forced','allow_export',
+                      'backup2load_auto','backup2load_manual','smart_load_offgrid_stop','grid_peakshaving'];
+
+        sNames.forEach(function(name, i) {
+          var on = !!sbits[name];
+          var el = document.getElementById('state-s' + i);
+          if (el) el.textContent = on ? '✓' : '—';
+          // update all ctrl-btns targeting this storage bit
+          document.querySelectorAll('.ctrl-btn[data-register="storage"][data-bit="' + i + '"]').forEach(function(b) {
+            b.dataset.on = on ? 'false' : 'true';
+            b.textContent = on ? 'Turn off' : 'Turn on';
+            b.style.background = '';
+          });
+        });
+
+        hNames.forEach(function(name, i) {
+          var on = !!hbits[name];
+          var el = document.getElementById('state-h' + i);
+          if (el) el.textContent = on ? '✓' : '—';
+          document.querySelectorAll('.ctrl-btn[data-register="hybrid"][data-bit="' + i + '"]').forEach(function(b) {
+            b.dataset.on = on ? 'false' : 'true';
+            b.textContent = on ? 'Turn off' : 'Turn on';
+            b.style.background = '';
+          });
+        });
+
+        // Top-card named states
+        var s0 = !!sbits['self_use'], s2 = !!sbits['off_grid'], s6 = !!sbits['feed_in_priority'], s11 = !!sbits['peak_shaving'];
+        ['state-storage-0','state-storage-0b'].forEach(function(id){
+          var el = document.getElementById(id);
+          if (el) el.innerHTML = s0 ? '<span class="status-ok">On</span>' : '<span class="muted">Off</span>';
+        });
+        var el2 = document.getElementById('state-storage-2');
+        if (el2) el2.innerHTML = s2 ? '<span class="status-ok">On</span>' : '<span class="muted">Off</span>';
+        var el6 = document.getElementById('state-storage-6');
+        if (el6) el6.innerHTML = s6 ? '<span class="status-ok">On</span>' : '<span class="muted">Off</span>';
+        var el11 = document.getElementById('state-storage-11');
+        if (el11) el11.innerHTML = s11 ? '<span class="status-ok">On</span>' : '<span class="muted">Off</span>';
+        var b0 = document.getElementById('btn-storage-0');
+        if (b0) { b0.dataset.on = 'true'; b0.dataset.active = s0 ? 'true' : 'false'; b0.textContent = s0?'✓ Self-Use Active':'⚡ Switch to Self-Use'; b0.style.background = s0?'var(--green)':'#30363d'; }
+        var b2 = document.getElementById('btn-storage-2');
+        if (b2) { b2.dataset.on = 'true'; b2.dataset.active = s2 ? 'true' : 'false'; b2.textContent = s2?'✓ Off-Grid Active':'⛔ Switch to Off-Grid'; b2.style.background = s2?'var(--red)':'#30363d'; }
+        var b6 = document.getElementById('btn-storage-6');
+        if (b6) { b6.dataset.on = 'true'; b6.dataset.active = s6 ? 'true' : 'false'; b6.textContent = s6?'✓ Feed-In Active':'↑ Switch to Feed-In'; b6.style.background = s6?'var(--accent)':'#30363d'; }
+        var b11 = document.getElementById('btn-storage-11');
+        if (b11) { b11.dataset.on = 'true'; b11.dataset.active = s11 ? 'true' : 'false'; b11.textContent = s11?'✓ Peak-Shaving Active':'⛰ Switch to Peak-Shaving'; b11.style.background = s11?'var(--orange)':'#30363d'; }
+
+        // State spans in the export table
+        var h3el = document.getElementById('state-hybrid-3'); if(h3el) h3el.textContent = hbits.allow_export ? '✓ On' : '— Off';
+        var s5el = document.getElementById('state-storage-5'); if(s5el) s5el.textContent = sbits.allow_grid_charge ? '✓ On' : '— Off';
+        var s0bel = document.getElementById('state-storage-0b'); if(s0bel) s0bel.textContent = sbits.self_use ? '✓ On' : '— Off';
+        var h7el = document.getElementById('state-hybrid-7'); if(h7el) h7el.textContent = hbits.grid_peakshaving ? '✓ On' : '— Off';
+
+        if (data.storage_control_raw != null) { var sr = document.getElementById('storage-raw'); if(sr) sr.textContent = data.storage_control_raw; }
+        if (data.hybrid_control_raw  != null) { var hr = document.getElementById('hybrid-raw');  if(hr) hr.textContent = data.hybrid_control_raw; }
+
+        setBtnState(btn, 'ok', btn.textContent);
+        setTimeout(function() { setBtnState(btn, 'idle', btn.textContent); }, 1500);
+      }).catch(function() {
+        setBtnState(btn, 'ok', btn.textContent);
+        setTimeout(function() { setBtnState(btn, 'idle', btn.textContent); }, 1500);
+      });
+    }
+
+    function doControl(btn, payload) {
+      var origText = btn.textContent;
+      setBtnState(btn, 'sending', '⏳ Sending…');
+      fetch('/api/control', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      }).then(function(r){ return r.json(); }).then(function(res) {
+        if (res.ok) {
+          showToast('✓ Done', '#27ae60');
+          refreshState(btn, payload.register, payload.bit_index, payload.on);
+        } else {
+          var msg = {timeout:'Timed out', write_failed:'Write failed — check inverter', invalid_bit:'Invalid bit', off_grid_policy:'Off-Grid keeps Export and Grid Charge off', server_error:'Server error'}[res.error] || res.error || 'Failed';
+          showToast('✗ ' + msg, '#c0392b');
+          setBtnState(btn, 'err', '✗ Failed');
+          setTimeout(function() { setBtnState(btn, 'idle', origText); }, 3000);
+        }
+      }).catch(function(e) {
+        showToast('✗ Network error', '#c0392b');
+        setBtnState(btn, 'err', '✗ Error');
+        setTimeout(function() { setBtnState(btn, 'idle', origText); }, 3000);
+      });
+    }
+
+    // Wire up all control buttons
+    document.querySelectorAll('.ctrl-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        if (btn.dataset.modeButton === 'true' && btn.dataset.active === 'true') {
+          showToast('Mode already active', '#58a6ff');
+          return;
+        }
+        var register = btn.dataset.register;
+        var bit = parseInt(btn.dataset.bit, 10);
+        var on = (btn.dataset.modeButton === 'true') ? true : (btn.dataset.on === 'true');
+        doControl(btn, {register: register, bit_index: bit, on: on});
+      });
+    });
+
+    // Preset buttons
+    document.querySelectorAll('.preset-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var preset = btn.dataset.preset;
+        var origText = btn.textContent;
+        setBtnState(btn, 'sending', '⏳ Sending…');
+        fetch('/api/control', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({preset: preset})
+        }).then(function(r){ return r.json(); }).then(function(res) {
+          if (res.ok) {
+            showToast('✓ Preset applied', '#27ae60');
+            refreshState(btn, null, null, null);
+          } else {
+            showToast('✗ Preset failed', '#c0392b');
+            setBtnState(btn, 'err', '✗ Failed');
+            setTimeout(function() { setBtnState(btn, 'idle', origText); }, 3000);
+          }
+        }).catch(function() {
+          showToast('✗ Network error', '#c0392b');
+          setBtnState(btn, 'err', '✗ Error');
+          setTimeout(function() { setBtnState(btn, 'idle', origText); }, 3000);
+        });
+      });
+    });
+  })();
+  </script>
+{% endblock %}

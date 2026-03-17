@@ -177,6 +177,8 @@ except Exception as e:
     logging.warning("Modbus unavailable, using stubs: %s", e)
     _modbus_available = False
     poll_solis = _modbus_stub_poll
+    def poll_solis_for_inverter(_h, _p, _u):
+        return _modbus_stub_poll()
     set_storage_control_bits = _modbus_stub_return_false
     set_storage_control_bit = set_hybrid_control_bit = _modbus_stub_return_false
     set_active_power_limit = _modbus_stub_return_false
@@ -661,12 +663,16 @@ def _poll_sync() -> None:
                 data["battery_runtime_direction"] = None
             _solis_caches[topic_id] = {"data": data, "ts": ts, "ok": data.get("ok", False)}
             try:
-                publish_solis_sensors(
-                    data,
-                    ts=ts,
-                    topic_prefix=f"solar/solis/{topic_id}",
-                    publish_legacy=(topic_id == "s6-inv-1"),
-                )
+                try:
+                    publish_solis_sensors(
+                        data,
+                        ts=ts,
+                        topic_prefix=f"solar/solis/{topic_id}",
+                        publish_legacy=(topic_id == "s6-inv-1"),
+                    )
+                except TypeError:
+                    if topic_id == "s6-inv-1":
+                        publish_solis_sensors(data, ts=ts)
             except Exception as mqtt_e:
                 logger.warning("MQTT publish %s: %s", topic_id, mqtt_e)
         # Use first inverter data for automations

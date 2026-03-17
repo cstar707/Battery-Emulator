@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block content %}
+  {% if request.query_params.get('saved') == '1' %}
+  <div class="flash flash-ok">Settings saved. Solis/Solark polling uses the new endpoint values on the next cycle. Saved battery-source MQTT topic changes are picked up on <code>:3008</code> automatically; MQTT broker/topic changes on <code>:3007</code> still require a controlled restart.</div>
+  {% endif %}
+  {% if flash_error %}
+  <div class="flash flash-err">{{ flash_error }}</div>
+  {% elif request.query_params.get('error') %}
+  <div class="flash flash-err">Save failed: {{ request.query_params.get('error') }}</div>
+  {% endif %}
+
+  <div class="card">
+    <h2>Integration endpoints</h2>
+    <p class="muted">This admin page owns editable integration endpoints for the staged dashboard flow. Values are saved to <code>settings.json</code> in <code>solis_s6_app</code>. Environment variables still override saved values at runtime.</p>
+    <form method="post" action="/settings">
+      <h3 style="margin-top: 0; margin-bottom: 0.75rem; font-size: 1rem; color: var(--muted);">Solis (Modbus TCP)</h3>
+      <div class="settings-row"><label for="solis_host">Solis IP / host</label><input type="text" id="solis_host" name="solis_host" value="{{ solis_host }}" placeholder="10.10.53.16" /></div>
+      <div class="settings-row"><label for="solis_port">Solis port</label><input type="number" id="solis_port" name="solis_port" value="{{ solis_port }}" min="1" max="65535" /></div>
+      <div class="settings-row"><label for="solis_modbus_unit">Solis Modbus ID</label><input type="number" id="solis_modbus_unit" name="solis_modbus_unit" value="{{ solis_modbus_unit }}" min="1" max="247" /></div>
+
+      <h3 style="margin-top: 1.25rem; margin-bottom: 0.75rem; font-size: 1rem; color: var(--muted);">Solark board</h3>
+      <div class="settings-row"><label for="solark1_host">Solark board IP / host</label><input type="text" id="solark1_host" name="solark1_host" value="{{ solark1_host }}" placeholder="e.g. 10.10.53.48" /></div>
+      <div class="settings-row"><label for="solark1_port">Solark Modbus port</label><input type="number" id="solark1_port" name="solark1_port" value="{{ solark1_port }}" min="1" max="65535" /></div>
+      <div class="settings-row"><label for="solark1_http_port">Solark HTTP port</label><input type="number" id="solark1_http_port" name="solark1_http_port" value="{{ solark1_http_port }}" min="1" max="65535" /></div>
+      <div class="settings-row"><label for="solark1_modbus_unit">Solark1 Modbus ID</label><input type="number" id="solark1_modbus_unit" name="solark1_modbus_unit" value="{{ solark1_modbus_unit }}" min="1" max="247" /></div>
+      <div class="settings-row"><label for="solark2_modbus_unit">Solark2 Modbus ID</label><input type="number" id="solark2_modbus_unit" name="solark2_modbus_unit" value="{{ solark2_modbus_unit }}" min="1" max="247" /></div>
+
+      <h3 style="margin-top: 1.25rem; margin-bottom: 0.75rem; font-size: 1rem; color: var(--muted);">Solark fallbacks</h3>
+      <div class="settings-row"><label for="esphome_solark_host">ESPHome IP / host</label><input type="text" id="esphome_solark_host" name="esphome_solark_host" value="{{ esphome_solark_host }}" placeholder="e.g. 10.10.53.48" /></div>
+      <div class="settings-row"><label for="esphome_solark_port">ESPHome port</label><input type="number" id="esphome_solark_port" name="esphome_solark_port" value="{{ esphome_solark_port }}" min="1" max="65535" /></div>
+      <div class="settings-row"><label for="solark_mqtt_topic">Solark MQTT topic</label><input type="text" id="solark_mqtt_topic" name="solark_mqtt_topic" value="{{ solark_mqtt_topic }}" placeholder="solar/solark" /></div>
+      <p class="muted" style="margin-top: 0.75rem;">Priority order stays: <strong>1)</strong> Solark board HTTP (<code>/solark_data</code>), <strong>2)</strong> ESPHome HTTP, <strong>3)</strong> Solark MQTT topic. Credentials remain env-only.</p>
+
+      <h3 style="margin-top: 1.25rem; margin-bottom: 0.75rem; font-size: 1rem; color: var(--muted);">MQTT broker</h3>
+      <div class="settings-row"><label for="mqtt_host">Broker IP / host</label><input type="text" id="mqtt_host" name="mqtt_host" value="{{ mqtt_host }}" placeholder="10.10.53.92" /></div>
+      <div class="settings-row"><label for="mqtt_port">Broker port</label><input type="number" id="mqtt_port" name="mqtt_port" value="{{ mqtt_port }}" min="1" max="65535" /></div>
+      <p class="muted" style="margin-top: 0.75rem;">MQTT credentials remain env-only. The Battery Emulator publishes Tesla battery data into this broker for dashboard/service consumers. Changing broker host/port persists now, but the running <code>:3007</code> process must restart to reconnect to a different broker/topic safely.</p>
+
+      <h3 style="margin-top: 1.25rem; margin-bottom: 0.75rem; font-size: 1rem; color: var(--muted);">Tesla battery source</h3>
+      <div class="settings-row"><label for="tesla_source_enabled" style="display:flex; align-items:center; gap:0.5rem; min-width:auto;"><input type="checkbox" id="tesla_source_enabled" name="tesla_source_enabled" value="on" {% if tesla_source_enabled %}checked{% endif %} />Enable Tesla battery source</label></div>
+      <div class="settings-row"><label for="tesla_source_type">Tesla source mode</label><select id="tesla_source_type" name="tesla_source_type">{% for option in source_type_options %}<option value="{{ option }}" {% if tesla_source_type == option %}selected{% endif %}>{{ option }}</option>{% endfor %}</select></div>
+      <div class="settings-row"><label for="tesla_source_info_topic">Tesla MQTT info topic</label><input type="text" id="tesla_source_info_topic" name="tesla_source_info_topic" value="{{ tesla_source_info_topic }}" placeholder="BE/info" /></div>
+      <div class="settings-row"><label for="tesla_source_spec_topic">Tesla MQTT cell topic</label><input type="text" id="tesla_source_spec_topic" name="tesla_source_spec_topic" value="{{ tesla_source_spec_topic }}" placeholder="BE/spec_data" /></div>
+      <div class="settings-row"><label for="tesla_source_balancing_topic">Tesla MQTT balancing topic</label><input type="text" id="tesla_source_balancing_topic" name="tesla_source_balancing_topic" value="{{ tesla_source_balancing_topic }}" placeholder="BE/balancing_data" /></div>
+      <div class="settings-row"><label for="tesla_source_host">Tesla direct HTTP host</label><input type="text" id="tesla_source_host" name="tesla_source_host" value="{{ tesla_source_host }}" placeholder="10.10.53.90" /></div>
+      <div class="settings-row"><label for="tesla_source_port">Tesla direct HTTP port</label><input type="number" id="tesla_source_port" name="tesla_source_port" value="{{ tesla_source_port }}" min="1" max="65535" /></div>
+      <div class="settings-row"><label for="tesla_source_base_path">Tesla direct HTTP base path</label><input type="text" id="tesla_source_base_path" name="tesla_source_base_path" value="{{ tesla_source_base_path }}" placeholder="/" /></div>
+      <p class="muted" style="margin-top: 0.75rem;">Intended live Tesla path: <strong>Battery Emulator → MQTT broker → dashboard/service consumers</strong>. Use MQTT for the working Tesla feed. <code>direct_http</code> settings are stored only so the endpoint remains operator-editable for future use; <code>:3008</code> reports a clear runtime error until a live direct-HTTP adapter exists.</p>
+
+      <h3 style="margin-top: 1.25rem; margin-bottom: 0.75rem; font-size: 1rem; color: var(--muted);">Ruxiu battery source</h3>
+      <div class="settings-row"><label for="ruxiu_source_enabled" style="display:flex; align-items:center; gap:0.5rem; min-width:auto;"><input type="checkbox" id="ruxiu_source_enabled" name="ruxiu_source_enabled" value="on" {% if ruxiu_source_enabled %}checked{% endif %} />Enable Ruxiu battery source</label></div>
+      <div class="settings-row"><label for="ruxiu_source_type">Ruxiu source mode</label><select id="ruxiu_source_type" name="ruxiu_source_type">{% for option in source_type_options %}<option value="{{ option }}" {% if ruxiu_source_type == option %}selected{% endif %}>{{ option }}</option>{% endfor %}</select></div>
+      <div class="settings-row"><label for="ruxiu_source_info_topic">Ruxiu MQTT info topic</label><input type="text" id="ruxiu_source_info_topic" name="ruxiu_source_info_topic" value="{{ ruxiu_source_info_topic }}" placeholder="optional" /></div>
+      <div class="settings-row"><label for="ruxiu_source_spec_topic">Ruxiu MQTT cell topic</label><input type="text" id="ruxiu_source_spec_topic" name="ruxiu_source_spec_topic" value="{{ ruxiu_source_spec_topic }}" placeholder="optional" /></div>
+      <div class="settings-row"><label for="ruxiu_source_balancing_topic">Ruxiu MQTT balancing topic</label><input type="text" id="ruxiu_source_balancing_topic" name="ruxiu_source_balancing_topic" value="{{ ruxiu_source_balancing_topic }}" placeholder="optional" /></div>
+      <div class="settings-row"><label for="ruxiu_source_host">Ruxiu direct HTTP host</label><input type="text" id="ruxiu_source_host" name="ruxiu_source_host" value="{{ ruxiu_source_host }}" placeholder="10.10.53.151" /></div>
+      <div class="settings-row"><label for="ruxiu_source_port">Ruxiu direct HTTP port</label><input type="number" id="ruxiu_source_port" name="ruxiu_source_port" value="{{ ruxiu_source_port }}" min="1" max="65535" /></div>
+      <div class="settings-row"><label for="ruxiu_source_base_path">Ruxiu direct HTTP base path</label><input type="text" id="ruxiu_source_base_path" name="ruxiu_source_base_path" value="{{ ruxiu_source_base_path }}" placeholder="/" /></div>
+      <p class="muted" style="margin-top: 0.75rem;">Ruxiu remains safest in <code>mock</code> mode unless a live MQTT feed is intentionally configured.</p>
+
+      <h3 style="margin-top: 1.25rem; margin-bottom: 0.75rem; font-size: 1rem; color: var(--muted);">Grid status · generation today</h3>
+      <div class="settings-row"><label for="tabuchi_today_pv_kwh">Tabuchi today PV (kWh)</label><input type="number" id="tabuchi_today_pv_kwh" name="tabuchi_today_pv_kwh" value="{{ tabuchi_today_pv_kwh }}" min="0" max="100" step="0.1" placeholder="3" /> <span class="muted">Static value used when totalling systems (e.g. 3 not 15). Used by grid-status / dashboard total.</span></div>
+
+      <h3 style="margin-top: 1.25rem; margin-bottom: 0.75rem; font-size: 1rem; color: var(--muted);">Automation</h3>
+      <div class="settings-row"><label for="solark_soc_automation_enabled" style="display:flex; align-items:center; gap:0.5rem; min-width:auto;"><input type="checkbox" id="solark_soc_automation_enabled" name="solark_soc_automation_enabled" value="on" {% if solark_soc_automation_enabled %}checked{% endif %} />When Solark SOC ≥ 98%, switch Solis to self-use (and back to feed-in below 95%)</label></div>
+
+      <div style="margin-top: 1.25rem;"><button type="submit">Save integration settings</button></div>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Battery source runtime status (<code>:3008</code>)</h2>
+    {% if battery_source_status_error %}
+    <p class="status-fail">{{ battery_source_status_error }}</p>
+    {% elif battery_source_statuses %}
+    <table style="width:100%; border-collapse: collapse;">
+      <thead><tr><th style="text-align:left; padding-bottom:0.5rem;">Battery</th><th style="text-align:left; padding-bottom:0.5rem;">Mode</th><th style="text-align:left; padding-bottom:0.5rem;">Status</th><th style="text-align:left; padding-bottom:0.5rem;">Freshness</th><th style="text-align:left; padding-bottom:0.5rem;">Endpoint</th><th style="text-align:left; padding-bottom:0.5rem;">Error</th></tr></thead>
+      <tbody>
+        {% for source in battery_source_statuses %}
+        <tr>
+          <td style="padding:0.35rem 0; vertical-align:top;">{{ source.displayName }}</td>
+          <td style="padding:0.35rem 0; vertical-align:top;">{{ source.type }}</td>
+          <td style="padding:0.35rem 0; vertical-align:top;"><span class="{{ source.status_class }}">{{ source.status }}</span></td>
+          <td style="padding:0.35rem 0; vertical-align:top;">{{ source.freshness_text }}</td>
+          <td style="padding:0.35rem 0; vertical-align:top; word-break:break-word;">{{ source.endpoint_text }}</td>
+          <td style="padding:0.35rem 0; vertical-align:top; word-break:break-word;">{{ source.error_text }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="muted" style="margin-top: 0.75rem;">Battery-source MQTT topic changes on <code>:3008</code> are picked up automatically. Broker host/port changes are persisted but still need a controlled service restart to reconnect.</p>
+    {% else %}
+    <p class="muted">No battery-source runtime data is available.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Current config summary</h2>
+    <table style="width:100%; border-collapse: collapse;">
+      <tr><td class="muted">Saved MQTT broker</td><td>{{ mqtt_host }}:{{ mqtt_port }}</td></tr>
+      <tr><td class="muted">Running <code>:3007</code> MQTT broker</td><td>{{ runtime_mqtt_host }}:{% if runtime_mqtt_port %}{{ runtime_mqtt_port }}{% else %}—{% endif %}</td></tr>
+      <tr><td class="muted">Running <code>:3007</code> Solark MQTT topic</td><td>{{ runtime_solark_mqtt_topic or '(disabled)' }}</td></tr>
+      <tr><td class="muted">Solark board HTTP</td><td>{{ solark1_host or '(not set)' }}:{{ solark1_http_port }}</td></tr>
+      <tr><td class="muted">ESPHome fallback</td><td>{% if esphome_solark_host %}{{ esphome_solark_host }}:{{ esphome_solark_port }}{% else %}(not set){% endif %}</td></tr>
+      <tr><td class="muted">Solis Modbus</td><td>{{ solis_host }}:{{ solis_port }} (unit {{ solis_modbus_unit }})</td></tr>
+      <tr><td class="muted">Solark SOC automation</td><td>{% if solark_soc_automation_enabled %}<span class="status-ok">On</span>{% else %}<span class="muted">Off</span>{% endif %}</td></tr>
+    </table>
+    {% if mqtt_runtime_restart_pending %}
+    <p class="status-fail" style="margin-top: 0.75rem;">Saved MQTT connection settings differ from the running <code>:3007</code> runtime. Restart <code>solis-s6-ui.service</code> when you want that process to reconnect using the saved broker/topic.</p>
+    {% else %}
+    <p class="muted" style="margin-top: 0.75rem;">Saved MQTT connection settings match the current <code>:3007</code> runtime.</p>
+    {% endif %}
+  </div>
+{% endblock %}

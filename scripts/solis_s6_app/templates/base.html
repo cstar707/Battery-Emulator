@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Solis / Solark{% endblock %} | 10.10.53.92</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --card: #1a2332;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --green: #3fb950;
+      --orange: #d29922;
+      --red: #f85149;
+    }
+    * { box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 0; min-height: 100vh; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .nav { background: var(--card); padding: 0.75rem 1.5rem; display: flex; gap: 1.5rem; align-items: center; border-bottom: 1px solid #30363d; }
+    .nav a { color: var(--text); }
+    .nav a.active { color: var(--accent); font-weight: 600; }
+    .container { max-width: 960px; margin: 0 auto; padding: 1.5rem; }
+    .card { background: var(--card); border-radius: 8px; padding: 1.25rem; margin-bottom: 1rem; border: 1px solid #30363d; }
+    .card h2 { margin: 0 0 0.75rem 0; font-size: 1.1rem; color: var(--muted); }
+    .status-ok { color: var(--green); }
+    .status-fail { color: var(--red); }
+    .muted { color: var(--muted); font-size: 0.9rem; }
+    .grid2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 1rem; }
+    .kpi { text-align: center; }
+    .kpi .val { font-size: 1.5rem; font-weight: 600; }
+    .kpi .unit { font-size: 0.85rem; color: var(--muted); }
+    form.inline { display: inline; }
+    button, .btn { background: var(--accent); color: #fff; border: none; padding: 0.5rem 1rem; border-radius: 6px; cursor: pointer; font-size: 0.95rem; font-weight: 500; min-height: 2rem; box-shadow: 0 1px 3px rgba(0,0,0,0.3); }
+    button:hover, .btn:hover { opacity: 0.95; filter: brightness(1.1); }
+    button.secondary { background: var(--muted); }
+    table button, table .btn { padding: 0.35rem 0.75rem; font-size: 0.9rem; }
+    .flash { margin-bottom: 0.75rem; }
+    .flash-ok { border-left: 4px solid var(--green); background: rgba(63, 185, 80, 0.1); }
+    .flash-err { border-left: 4px solid var(--red); background: rgba(248, 81, 73, 0.1); }
+    label { display: inline-block; margin-right: 0.5rem; }
+    input[type="checkbox"] { margin-right: 0.25rem; }
+    input[type="text"], input[type="number"], select {
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 0.5rem 0.6rem;
+      font-size: 1rem;
+      min-width: 8rem;
+    }
+    input[type="text"]:focus, input[type="number"]:focus, select:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.25);
+    }
+    .service-shell {
+      padding: 0.9rem 1.5rem 1rem;
+      border-bottom: 1px solid #30363d;
+      background: linear-gradient(180deg, rgba(15,20,25,0.98), rgba(20,28,40,0.94));
+      box-shadow: 0 10px 24px rgba(0,0,0,0.18);
+    }
+    .service-shell__row {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem 1.25rem;
+      flex-wrap: wrap;
+    }
+    .service-shell__identity {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      max-width: 52rem;
+    }
+    .service-shell__eyebrow {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+    .service-shell__title {
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--text);
+    }
+    .service-shell__desc {
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+    .service-shell__chips {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .service-chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 2rem;
+      padding: 0.4rem 0.75rem;
+      border-radius: 999px;
+      border: 1px solid #30363d;
+      background: rgba(15,20,25,0.65);
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .service-chip:hover {
+      text-decoration: none;
+      color: var(--text);
+      border-color: rgba(230,237,243,0.22);
+      background: rgba(15,20,25,0.88);
+    }
+    .service-chip--primary {
+      color: var(--accent);
+      border-color: rgba(88,166,255,0.28);
+      background: rgba(88,166,255,0.08);
+    }
+    .service-chip--support {
+      color: #86efac;
+      border-color: rgba(63,185,80,0.28);
+    }
+    .service-chip--legacy {
+      color: #fcd34d;
+      border-color: rgba(210,153,34,0.28);
+    }
+    .service-chip--neutral {
+      color: #cbd5e1;
+      border-color: rgba(139,148,158,0.28);
+    }
+    .settings-row { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.75rem; flex-wrap: wrap; }
+    .settings-row label { min-width: 10rem; margin: 0; }
+    .settings-row input, .settings-row select { flex: 1; min-width: 10rem; max-width: 20rem; }
+    @media (max-width: 900px) {
+      .nav { flex-wrap: wrap; }
+      .service-shell { padding: 0.9rem 1rem; }
+      .service-shell__chips { justify-content: flex-start; }
+    }
+    @media (max-width: 640px) {
+      .service-chip {
+        flex: 1 1 calc(50% - 0.5rem);
+        justify-content: center;
+        text-align: center;
+      }
+      .container { padding: 1rem; }
+    }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <section class="service-shell">
+    <div class="service-shell__row">
+      <div class="service-shell__identity">
+        <span class="service-shell__eyebrow">Consolidated dashboard shell · admin owner</span>
+        <span class="service-shell__title">Controls, settings, curtailment, and debug stay on :3007</span>
+        <span class="service-shell__desc">Keep <strong>:3008</strong> as the status/read-only surface. Retained support services stay separate and clearly labeled while port 80 remains the current main entry owner.</span>
+      </div>
+      <div class="service-shell__chips">
+        <a href="http://10.10.53.92:3008/" class="service-chip service-chip--primary">Status &amp; Overview · :3008</a>
+        <a href="http://10.10.53.92:3004/" class="service-chip service-chip--support" target="_blank" rel="noopener noreferrer">Envoy Diagnostics · :3004</a>
+        <a href="http://10.10.53.92:3002/" class="service-chip service-chip--support" target="_blank" rel="noopener noreferrer">SolarK Support · :3002</a>
+        <a href="http://10.10.53.92:3001/" class="service-chip service-chip--legacy" target="_blank" rel="noopener noreferrer">Legacy Dashboard · :3001</a>
+        <a href="http://10.10.53.92/" class="service-chip service-chip--neutral" target="_blank" rel="noopener noreferrer">Port 80 Current Entry</a>
+      </div>
+    </div>
+  </section>
+  <nav class="nav">
+    <a href="/" class="{% if request.url.path == '/' %}active{% endif %}">Admin Home</a>
+    <a href="/sensors" class="{% if request.url.path == '/sensors' %}active{% endif %}">Sensors</a>
+    <a href="/control" class="{% if request.url.path == '/control' %}active{% endif %}" title="All inverter controls and buttons">Controls</a>
+    <a href="/settings" class="{% if request.url.path == '/settings' %}active{% endif %}">Settings</a>
+    <a href="/envoys" class="{% if request.url.path == '/envoys' %}active{% endif %}" title="Enphase micro-inverter live data">Envoy Summary</a>
+    <a href="/curtailment" class="{% if request.url.path == '/curtailment' %}active{% endif %}" title="Curtailment switch control">Curtailment</a>
+    <a href="/grid-status" class="{% if request.url.path == '/grid-status' %}active{% endif %}" title="Generation today + battery remaining/runtime">Grid status</a>
+    <a href="/debug" class="{% if request.url.path == '/debug' %}active{% endif %}" title="Modbus debug stream">Debug</a>
+    <span class="muted" style="margin-left: auto;">{{ inverter_label }}</span>
+    <span class="muted" style="margin-left: 0.5rem;" title="UI version">v{{ app_version | default('?') }}</span>
+  </nav>
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>
