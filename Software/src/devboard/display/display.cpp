@@ -133,7 +133,8 @@ static lv_obj_t* screen_main;
 static lv_obj_t* screen_alerts;
 #ifdef HW_WAVESHARE7B_DISPLAY_ONLY
 static lv_obj_t* screen_solar = NULL;
-static lv_obj_t* tab_btns[3] = {NULL, NULL, NULL};
+static lv_obj_t* tab_btns[4] = {NULL, NULL, NULL, NULL};  // Tesla-1, Tesla-2, Solar, Alerts
+static uint8_t current_tesla_board = 1;  // 1 = board 1 (Tesla-1), 2 = board 2 (Tesla-2, placeholder)
 // Solar tab labels
 static lv_obj_t* lbl_solar_pv;
 static lv_obj_t* lbl_solar_load;
@@ -647,8 +648,12 @@ static void btn_close_settings_cb(lv_event_t* e) {
 static void btn_settings_cb(lv_event_t* e) {
   if (settings_panel) {
     if (lv_obj_has_flag(settings_panel, LV_OBJ_FLAG_HIDDEN)) {
-      if (settings_backdrop) lv_obj_clear_flag(settings_backdrop, LV_OBJ_FLAG_HIDDEN);
+      if (settings_backdrop) {
+        lv_obj_clear_flag(settings_backdrop, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_move_foreground(settings_backdrop);
+      }
       lv_obj_clear_flag(settings_panel, LV_OBJ_FLAG_HIDDEN);
+      lv_obj_move_foreground(settings_panel);
     } else {
       lv_obj_add_flag(settings_panel, LV_OBJ_FLAG_HIDDEN);
       if (settings_backdrop) lv_obj_add_flag(settings_backdrop, LV_OBJ_FLAG_HIDDEN);
@@ -658,8 +663,14 @@ static void btn_settings_cb(lv_event_t* e) {
 
 // Reboot button callback
 static void btn_reboot_cb(lv_event_t* e) {
-  if (reboot_backdrop) lv_obj_clear_flag(reboot_backdrop, LV_OBJ_FLAG_HIDDEN);
-  if (reboot_confirm_panel) lv_obj_clear_flag(reboot_confirm_panel, LV_OBJ_FLAG_HIDDEN);
+  if (reboot_backdrop) {
+    lv_obj_clear_flag(reboot_backdrop, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(reboot_backdrop);
+  }
+  if (reboot_confirm_panel) {
+    lv_obj_clear_flag(reboot_confirm_panel, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(reboot_confirm_panel);
+  }
 }
 
 // Actually reboot
@@ -738,61 +749,70 @@ static void set_main_bottom_row_hidden(bool hidden) {
     if (hidden) lv_obj_add_flag(card_system_status, LV_OBJ_FLAG_HIDDEN);
     else lv_obj_clear_flag(card_system_status, LV_OBJ_FLAG_HIDDEN);
   }
-  if (btn_wifi_ap) {
-    if (hidden) lv_obj_add_flag(btn_wifi_ap, LV_OBJ_FLAG_HIDDEN);
-    else lv_obj_clear_flag(btn_wifi_ap, LV_OBJ_FLAG_HIDDEN);
-  }
-  if (btn_reboot) {
-    if (hidden) lv_obj_add_flag(btn_reboot, LV_OBJ_FLAG_HIDDEN);
-    else lv_obj_clear_flag(btn_reboot, LV_OBJ_FLAG_HIDDEN);
-  }
-  if (btn_contactors) {
-    if (hidden) lv_obj_add_flag(btn_contactors, LV_OBJ_FLAG_HIDDEN);
-    else lv_obj_clear_flag(btn_contactors, LV_OBJ_FLAG_HIDDEN);
-  }
-  if (btn_settings) {
-    if (hidden) lv_obj_add_flag(btn_settings, LV_OBJ_FLAG_HIDDEN);
-    else lv_obj_clear_flag(btn_settings, LV_OBJ_FLAG_HIDDEN);
-  }
+  // Settings and Reboot are in the top bar and stay visible on all tabs
 }
 
 #ifdef HW_WAVESHARE7B_DISPLAY_ONLY
+static void show_screen_tesla1(lv_event_t* e) {
+  current_tesla_board = 1;
+  if (screen_main) lv_obj_clear_flag(screen_main, LV_OBJ_FLAG_HIDDEN);
+  if (screen_alerts) lv_obj_add_flag(screen_alerts, LV_OBJ_FLAG_HIDDEN);
+  if (screen_solar) lv_obj_add_flag(screen_solar, LV_OBJ_FLAG_HIDDEN);
+  set_main_bottom_row_hidden(false);
+  current_screen = 1;
+  lastUpdateMillis = 0;
+  for (int i = 0; i < 4; i++) lv_obj_set_style_bg_color(tab_btns[i], lv_color_hex(i == 0 ? 0x1f6feb : 0x21262d), 0);
+}
+static void show_screen_tesla2(lv_event_t* e) {
+  current_tesla_board = 2;
+  if (screen_main) lv_obj_clear_flag(screen_main, LV_OBJ_FLAG_HIDDEN);
+  if (screen_alerts) lv_obj_add_flag(screen_alerts, LV_OBJ_FLAG_HIDDEN);
+  if (screen_solar) lv_obj_add_flag(screen_solar, LV_OBJ_FLAG_HIDDEN);
+  set_main_bottom_row_hidden(false);
+  current_screen = 1;  // same "main" screen, data from board 2 (placeholder)
+  lastUpdateMillis = 0;
+  for (int i = 0; i < 4; i++) lv_obj_set_style_bg_color(tab_btns[i], lv_color_hex(i == 1 ? 0x1f6feb : 0x21262d), 0);
+}
 static void show_screen_solar(lv_event_t* e) {
   if (screen_main) lv_obj_add_flag(screen_main, LV_OBJ_FLAG_HIDDEN);
   if (screen_alerts) lv_obj_add_flag(screen_alerts, LV_OBJ_FLAG_HIDDEN);
   if (screen_solar) lv_obj_clear_flag(screen_solar, LV_OBJ_FLAG_HIDDEN);
   set_main_bottom_row_hidden(true);
   current_screen = 0;
-  lv_obj_set_style_bg_color(tab_btns[0], lv_color_hex(0x1f6feb), 0);
-  lv_obj_set_style_bg_color(tab_btns[1], lv_color_hex(0x21262d), 0);
-  lv_obj_set_style_bg_color(tab_btns[2], lv_color_hex(0x21262d), 0);
+  for (int i = 0; i < 4; i++) lv_obj_set_style_bg_color(tab_btns[i], lv_color_hex(i == 2 ? 0x1f6feb : 0x21262d), 0);
 }
 #endif
 
 static void show_screen_main(lv_event_t* e) {
+#ifdef HW_WAVESHARE7B_DISPLAY_ONLY
+  current_tesla_board = 1;
+#endif
   if (screen_main) lv_obj_clear_flag(screen_main, LV_OBJ_FLAG_HIDDEN);
   if (screen_alerts) lv_obj_add_flag(screen_alerts, LV_OBJ_FLAG_HIDDEN);
   set_main_bottom_row_hidden(false);
 #ifdef HW_WAVESHARE7B_DISPLAY_ONLY
   if (screen_solar) lv_obj_add_flag(screen_solar, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_set_style_bg_color(tab_btns[0], lv_color_hex(0x21262d), 0);
-  lv_obj_set_style_bg_color(tab_btns[2], lv_color_hex(0x21262d), 0);
+  for (int i = 0; i < 4; i++) lv_obj_set_style_bg_color(tab_btns[i], lv_color_hex(i == 0 ? 0x1f6feb : 0x21262d), 0);
 #endif
   current_screen = 1;
   lastUpdateMillis = 0;
-  lv_obj_set_style_bg_color(tab_btns[1], lv_color_hex(0x1f6feb), 0);
+#ifndef HW_WAVESHARE7B_DISPLAY_ONLY
+  lv_obj_set_style_bg_color(tab_btns[0], lv_color_hex(0x1f6feb), 0);
+#endif
 }
 
 static void show_screen_alerts(lv_event_t* e) {
+  (void)e;
   if (screen_main) lv_obj_add_flag(screen_main, LV_OBJ_FLAG_HIDDEN);
   if (screen_alerts) lv_obj_clear_flag(screen_alerts, LV_OBJ_FLAG_HIDDEN);
 #ifdef HW_WAVESHARE7B_DISPLAY_ONLY
   if (screen_solar) lv_obj_add_flag(screen_solar, LV_OBJ_FLAG_HIDDEN);
-  lv_obj_set_style_bg_color(tab_btns[0], lv_color_hex(0x21262d), 0);
-  lv_obj_set_style_bg_color(tab_btns[1], lv_color_hex(0x21262d), 0);
+  for (int i = 0; i < 4; i++) lv_obj_set_style_bg_color(tab_btns[i], lv_color_hex(i == 3 ? 0x1f6feb : 0x21262d), 0);
 #endif
   current_screen = 2;
-  lv_obj_set_style_bg_color(tab_btns[2], lv_color_hex(0x1f6feb), 0);
+#ifndef HW_WAVESHARE7B_DISPLAY_ONLY
+  lv_obj_set_style_bg_color(tab_btns[1], lv_color_hex(0x1f6feb), 0);
+#endif
 }
 
 static void create_ui() {
@@ -1121,13 +1141,11 @@ static void create_ui() {
   // Store reference for updates
   lbl_can_status = lbl_can_detail;
   
-  // ===== CONTROL BUTTONS =====
+  // ===== CONTROL BUTTONS (display-only: AP off and Contactors removed; Settings/Reboot moved to top bar) =====
+#ifndef HW_WAVESHARE7B_DISPLAY_ONLY
   int btn_x = 20 + (info_w + gap) * 2;
   int btn_w = 95;
   int btn_h = 45;
-  
-  // WiFi AP Toggle Button
-  // WiFi AP toggle button
   btn_wifi_ap = lv_btn_create(lv_scr_act());
   lv_obj_set_pos(btn_wifi_ap, btn_x, row5_y);
   lv_obj_set_size(btn_wifi_ap, btn_w, btn_h);
@@ -1135,58 +1153,45 @@ static void create_ui() {
   lv_obj_set_style_bg_color(btn_wifi_ap, lv_color_hex(0x30363d), LV_STATE_PRESSED);
   lv_obj_set_style_radius(btn_wifi_ap, 8, 0);
   lv_obj_add_event_cb(btn_wifi_ap, btn_wifi_ap_cb, LV_EVENT_CLICKED, NULL);
-  
   lbl_btn_wifi = lv_label_create(btn_wifi_ap);
   lv_label_set_text(lbl_btn_wifi, "AP: OFF");
   lv_obj_set_style_text_font(lbl_btn_wifi, &lv_font_montserrat_14, 0);
   lv_obj_center(lbl_btn_wifi);
-  
-  // Reboot Button (top right of button block)
   btn_reboot = lv_btn_create(lv_scr_act());
   lv_obj_set_pos(btn_reboot, btn_x + btn_w + 10, row5_y);
   lv_obj_set_size(btn_reboot, btn_w, btn_h);
-  lv_obj_set_style_bg_color(btn_reboot, lv_color_hex(0xda3633), 0);  // Red
+  lv_obj_set_style_bg_color(btn_reboot, lv_color_hex(0xda3633), 0);
   lv_obj_set_style_bg_color(btn_reboot, lv_color_hex(0xf85149), LV_STATE_PRESSED);
   lv_obj_set_style_radius(btn_reboot, 8, 0);
   lv_obj_add_event_cb(btn_reboot, btn_reboot_cb, LV_EVENT_CLICKED, NULL);
-  
   lv_obj_t* lbl_reboot = lv_label_create(btn_reboot);
   lv_label_set_text(lbl_reboot, "Reboot");
   lv_obj_set_style_text_font(lbl_reboot, &lv_font_montserrat_14, 0);
   lv_obj_center(lbl_reboot);
-  
-  // Contactors Button (bottom left) - greyed out when not available, green when allowed
   btn_contactors = lv_btn_create(lv_scr_act());
   lv_obj_set_pos(btn_contactors, btn_x, row5_y + btn_h + 10);
   lv_obj_set_size(btn_contactors, btn_w, btn_h);
-  lv_obj_set_style_bg_color(btn_contactors, lv_color_hex(0x238636), 0);  // Green when enabled
+  lv_obj_set_style_bg_color(btn_contactors, lv_color_hex(0x238636), 0);
   lv_obj_set_style_bg_color(btn_contactors, lv_color_hex(0x2ea043), LV_STATE_PRESSED);
   lv_obj_set_style_radius(btn_contactors, 8, 0);
-  lv_obj_set_style_bg_color(btn_contactors, lv_color_hex(0x484f58), LV_STATE_DISABLED);  // Grey when not available
-  lv_obj_set_style_text_color(btn_contactors, lv_color_hex(0x8b949e), LV_STATE_DISABLED);
   lv_obj_add_event_cb(btn_contactors, btn_contactors_cb, LV_EVENT_CLICKED, NULL);
   lbl_contactors_btn = lv_label_create(btn_contactors);
   lv_label_set_text(lbl_contactors_btn, "Contactors");
   lv_obj_set_style_text_font(lbl_contactors_btn, &lv_font_montserrat_12, 0);
   lv_obj_center(lbl_contactors_btn);
-  lv_obj_set_style_text_color(lbl_contactors_btn, lv_color_hex(0x8b949e), LV_STATE_DISABLED);  // Grey label when disabled
-  lv_obj_add_state(btn_contactors, LV_STATE_DISABLED);  // Start greyed out until battery supports contactors
-  lv_obj_add_state(lbl_contactors_btn, LV_STATE_DISABLED);
-  
-  // Settings Button (last spot: bottom right corner)
   btn_settings = lv_btn_create(lv_scr_act());
   lv_obj_set_pos(btn_settings, btn_x + btn_w + 10, row5_y + btn_h + 10);
   lv_obj_set_size(btn_settings, btn_w, btn_h);
-  lv_obj_set_style_bg_color(btn_settings, lv_color_hex(0x1f6feb), 0);  // Blue
+  lv_obj_set_style_bg_color(btn_settings, lv_color_hex(0x1f6feb), 0);
   lv_obj_set_style_bg_color(btn_settings, lv_color_hex(0x388bfd), LV_STATE_PRESSED);
   lv_obj_set_style_radius(btn_settings, 8, 0);
   lv_obj_add_event_cb(btn_settings, btn_settings_cb, LV_EVENT_CLICKED, NULL);
-  
   lv_obj_t* lbl_settings = lv_label_create(btn_settings);
   lv_label_set_text(lbl_settings, "Settings");
   lv_obj_set_style_text_font(lbl_settings, &lv_font_montserrat_14, 0);
   lv_obj_center(lbl_settings);
-  
+#endif
+
   // ===== SETTINGS PANEL (overlay, hidden by default) =====
   settings_backdrop = create_modal_backdrop();
   lv_obj_add_event_cb(settings_backdrop, modal_backdrop_click_cb, LV_EVENT_CLICKED, NULL);
@@ -1285,13 +1290,13 @@ static void create_ui() {
   lv_obj_clear_flag(reboot_confirm_panel, LV_OBJ_FLAG_SCROLLABLE);
   
   lv_obj_t* reboot_title = lv_label_create(reboot_confirm_panel);
-  lv_label_set_text(reboot_title, "Confirm Reboot?");
+  lv_label_set_text(reboot_title, "Reboot battery monitor?");
   lv_obj_set_style_text_font(reboot_title, &lv_font_montserrat_20, 0);
   lv_obj_set_style_text_color(reboot_title, lv_color_hex(0xff7b72), 0);
   lv_obj_align(reboot_title, LV_ALIGN_TOP_MID, 0, 10);
   
   lv_obj_t* reboot_msg = lv_label_create(reboot_confirm_panel);
-  lv_label_set_text(reboot_msg, "System will restart");
+  lv_label_set_text(reboot_msg, "Battery monitor will restart");
   lv_obj_set_style_text_font(reboot_msg, &lv_font_montserrat_14, 0);
   lv_obj_set_style_text_color(reboot_msg, lv_color_hex(0x8b949e), 0);
   lv_obj_align(reboot_msg, LV_ALIGN_TOP_MID, 0, 45);
@@ -1582,8 +1587,14 @@ static void create_ui() {
   screen_main = NULL;  // Main content uses lv_scr_act() directly
   
   // ===== TAB BUTTONS (top right) =====
-  int tab_w = 80, tab_h = 30;
-  int tab_x = 550;  // Shifted left so status label (ACTIVE/STANDBY/FAULT) at x=900 is visible
+  int tab_h = 30;
+#ifdef HW_WAVESHARE7B_DISPLAY_ONLY
+  int tab_w = 64, tab_gap = 4;
+  int tab_x = 520;  // Fit 4 tabs + Settings + Reboot
+#else
+  int tab_w = 80;
+  int tab_x = 550;
+#endif
 
 #ifdef HW_WAVESHARE7B_DISPLAY_ONLY
   lbl_ui_build_marker = lv_label_create(lv_scr_act());
@@ -1594,41 +1605,79 @@ static void create_ui() {
   lv_obj_set_style_text_align(lbl_ui_build_marker, LV_TEXT_ALIGN_RIGHT, 0);
   lv_obj_set_style_text_font(lbl_ui_build_marker, &lv_font_montserrat_12, 0);
   lv_obj_set_style_text_color(lbl_ui_build_marker, lv_color_hex(0x79c0ff), 0);
-  lv_obj_set_pos(lbl_ui_build_marker, tab_x - 125, 14);
+  lv_obj_set_pos(lbl_ui_build_marker, tab_x - 95, 14);
 
-  // Order: Solar | Tesla | Alerts  (Solar is leftmost and default)
+  // Order: Tesla-1 | Tesla-2 | Solar | Alerts (Solar default on boot)
   tab_btns[0] = lv_btn_create(lv_scr_act());
   lv_obj_set_pos(tab_btns[0], tab_x, 8);
   lv_obj_set_size(tab_btns[0], tab_w, tab_h);
-  lv_obj_set_style_bg_color(tab_btns[0], lv_color_hex(0x1f6feb), 0);  // Active on boot
+  lv_obj_set_style_bg_color(tab_btns[0], lv_color_hex(0x21262d), 0);
   lv_obj_set_style_radius(tab_btns[0], 6, 0);
-  lv_obj_add_event_cb(tab_btns[0], show_screen_solar, LV_EVENT_CLICKED, NULL);
+  lv_obj_add_event_cb(tab_btns[0], show_screen_tesla1, LV_EVENT_CLICKED, NULL);
   lv_obj_t* lbl_tab0 = lv_label_create(tab_btns[0]);
-  lv_label_set_text(lbl_tab0, "Solar");
+  lv_label_set_text(lbl_tab0, "Tesla-1");
   lv_obj_set_style_text_font(lbl_tab0, &lv_font_montserrat_12, 0);
   lv_obj_center(lbl_tab0);
 
   tab_btns[1] = lv_btn_create(lv_scr_act());
-  lv_obj_set_pos(tab_btns[1], tab_x + tab_w + 5, 8);
+  lv_obj_set_pos(tab_btns[1], tab_x + (tab_w + tab_gap), 8);
   lv_obj_set_size(tab_btns[1], tab_w, tab_h);
   lv_obj_set_style_bg_color(tab_btns[1], lv_color_hex(0x21262d), 0);
   lv_obj_set_style_radius(tab_btns[1], 6, 0);
-  lv_obj_add_event_cb(tab_btns[1], show_screen_main, LV_EVENT_CLICKED, NULL);
+  lv_obj_add_event_cb(tab_btns[1], show_screen_tesla2, LV_EVENT_CLICKED, NULL);
   lv_obj_t* lbl_tab1 = lv_label_create(tab_btns[1]);
-  lv_label_set_text(lbl_tab1, "Tesla");
+  lv_label_set_text(lbl_tab1, "Tesla-2");
   lv_obj_set_style_text_font(lbl_tab1, &lv_font_montserrat_12, 0);
   lv_obj_center(lbl_tab1);
 
   tab_btns[2] = lv_btn_create(lv_scr_act());
-  lv_obj_set_pos(tab_btns[2], tab_x + (tab_w + 5) * 2, 8);
+  lv_obj_set_pos(tab_btns[2], tab_x + (tab_w + tab_gap) * 2, 8);
   lv_obj_set_size(tab_btns[2], tab_w, tab_h);
-  lv_obj_set_style_bg_color(tab_btns[2], lv_color_hex(0x21262d), 0);
+  lv_obj_set_style_bg_color(tab_btns[2], lv_color_hex(0x1f6feb), 0);  // Active on boot (Solar default)
   lv_obj_set_style_radius(tab_btns[2], 6, 0);
-  lv_obj_add_event_cb(tab_btns[2], show_screen_alerts, LV_EVENT_CLICKED, NULL);
+  lv_obj_add_event_cb(tab_btns[2], show_screen_solar, LV_EVENT_CLICKED, NULL);
   lv_obj_t* lbl_tab2 = lv_label_create(tab_btns[2]);
-  lv_label_set_text(lbl_tab2, "Alerts");
+  lv_label_set_text(lbl_tab2, "Solar");
   lv_obj_set_style_text_font(lbl_tab2, &lv_font_montserrat_12, 0);
   lv_obj_center(lbl_tab2);
+
+  tab_btns[3] = lv_btn_create(lv_scr_act());
+  lv_obj_set_pos(tab_btns[3], tab_x + (tab_w + tab_gap) * 3, 8);
+  lv_obj_set_size(tab_btns[3], tab_w, tab_h);
+  lv_obj_set_style_bg_color(tab_btns[3], lv_color_hex(0x21262d), 0);
+  lv_obj_set_style_radius(tab_btns[3], 6, 0);
+  lv_obj_add_event_cb(tab_btns[3], show_screen_alerts, LV_EVENT_CLICKED, NULL);
+  lv_obj_t* lbl_tab3 = lv_label_create(tab_btns[3]);
+  lv_label_set_text(lbl_tab3, "Alerts");
+  lv_obj_set_style_text_font(lbl_tab3, &lv_font_montserrat_12, 0);
+  lv_obj_center(lbl_tab3);
+
+  // Settings and Reboot on same top row (right of tabs)
+  int top_btn_w = 68, top_btn_h = 28;
+  int top_btn_x = tab_x + (tab_w + tab_gap) * 4 + 6;
+  btn_settings = lv_btn_create(lv_scr_act());
+  lv_obj_set_pos(btn_settings, top_btn_x, 10);
+  lv_obj_set_size(btn_settings, top_btn_w, top_btn_h);
+  lv_obj_set_style_bg_color(btn_settings, lv_color_hex(0x1f6feb), 0);
+  lv_obj_set_style_bg_color(btn_settings, lv_color_hex(0x388bfd), LV_STATE_PRESSED);
+  lv_obj_set_style_radius(btn_settings, 6, 0);
+  lv_obj_add_event_cb(btn_settings, btn_settings_cb, LV_EVENT_CLICKED, NULL);
+  lv_obj_t* lbl_stg = lv_label_create(btn_settings);
+  lv_label_set_text(lbl_stg, "Settings");
+  lv_obj_set_style_text_font(lbl_stg, &lv_font_montserrat_12, 0);
+  lv_obj_center(lbl_stg);
+
+  btn_reboot = lv_btn_create(lv_scr_act());
+  lv_obj_set_pos(btn_reboot, top_btn_x + top_btn_w + 6, 10);
+  lv_obj_set_size(btn_reboot, top_btn_w, top_btn_h);
+  lv_obj_set_style_bg_color(btn_reboot, lv_color_hex(0xda3633), 0);
+  lv_obj_set_style_bg_color(btn_reboot, lv_color_hex(0xf85149), LV_STATE_PRESSED);
+  lv_obj_set_style_radius(btn_reboot, 6, 0);
+  lv_obj_add_event_cb(btn_reboot, btn_reboot_cb, LV_EVENT_CLICKED, NULL);
+  lv_obj_t* lbl_rbt = lv_label_create(btn_reboot);
+  lv_label_set_text(lbl_rbt, "Reboot");
+  lv_obj_set_style_text_font(lbl_rbt, &lv_font_montserrat_12, 0);
+  lv_obj_center(lbl_rbt);
 #else
   tab_btns[0] = lv_btn_create(lv_scr_act());
   lv_obj_set_pos(tab_btns[0], tab_x, 8);
@@ -1923,7 +1972,13 @@ static void create_ui() {
   lv_img_set_src(envoy_img, &img_enphase_logo);
   lv_img_set_zoom(envoy_img, 320);
   lv_obj_set_pos(envoy_img, margin_x + logo_inset_left, envoy_title_y - 2);
-  make_section_title(margin_x + logo_inset_left + 100, envoy_title_y, "MICRO-INVERTERS");
+  // Text label so "Enphase" is visible even if logo image doesn't render (format/visibility)
+  lv_obj_t* lbl_envoy_brand = lv_label_create(screen_solar);
+  lv_label_set_text(lbl_envoy_brand, "Enphase");
+  lv_obj_set_style_text_font(lbl_envoy_brand, &lv_font_montserrat_14, 0);
+  lv_obj_set_style_text_color(lbl_envoy_brand, lv_color_hex(0x58a6ff), 0);
+  lv_obj_set_pos(lbl_envoy_brand, margin_x + logo_inset_left + 95, envoy_title_y + 6);
+  make_section_title(margin_x + logo_inset_left + 175, envoy_title_y, "MICRO-INVERTERS");
   make_solar_card(sk1,                          ey, ecw_envoy, ech, "Total Live",    &lbl_envoy_total_live);
   make_solar_card(sk1 + (ecw_envoy + cg),       ey, ecw_envoy, ech, "Total Today",   &lbl_envoy_total_today);
   make_solar_card(sk1 + (ecw_envoy + cg) * 2,  ey, ecw_envoy, ech, "House Today",   &lbl_envoy_house);
@@ -2157,15 +2212,44 @@ void update_display() {
     lastUpdateMillis = millis();
 	#ifdef HW_WAVESHARE7B_DISPLAY_ONLY
 	    const bool main_root_widgets_visible = (current_screen == 1);
+	    const bool use_tesla2_placeholder = (main_root_widgets_visible && current_tesla_board == 2);
 	#else
 	    const bool main_root_widgets_visible = true;
+	    const bool use_tesla2_placeholder = false;
 	#endif
+
+    // Tesla-2 tab: show placeholders until second board has an IP
+    if (use_tesla2_placeholder) {
+      lv_label_set_text(lbl_soc, "--");
+      lv_bar_set_value(bar_soc, 0, LV_ANIM_OFF);
+      lv_obj_set_style_text_color(lbl_soc, lv_color_hex(0x8b949e), 0);
+      lv_label_set_text(lbl_voltage, "--");
+      lv_label_set_text(lbl_current, "--");
+      lv_label_set_text(lbl_power, "--");
+      lv_label_set_text(lbl_energy, "--");
+      lv_label_set_text(lbl_cell_min, "--");
+      lv_label_set_text(lbl_cell_max, "--");
+      lv_label_set_text(lbl_cell_delta, "--");
+      lv_obj_set_style_text_color(lbl_cell_delta, lv_color_hex(0x8b949e), 0);
+      lv_label_set_text(lbl_temp, "--");
+      lv_label_set_text(lbl_temp_min, "--");
+      lv_label_set_text(lbl_temp_max, "--");
+      lv_label_set_text(lbl_contactor, "--");
+      lv_obj_set_style_text_color(lbl_contactor, lv_color_hex(0x8b949e), 0);
+      lv_label_set_text(lbl_wifi, "No board");
+      lv_obj_set_style_text_color(lbl_wifi, lv_color_hex(0x8b949e), 0);
+      lv_label_set_text(lbl_batt_info, "Total: --\nRemaining: --\nSOH: --\n12V: --, --");
+      lv_label_set_text(lbl_sys_info, "BMS: --\nMQTT: --\nUptime: --\nHeap: --");
+      lv_obj_set_style_text_color(lbl_sys_info, lv_color_hex(0x8b949e), 0);
+      lv_label_set_text(lbl_can_status, "BATT: --\nINV: --");
+      lv_obj_set_style_text_color(lbl_can_status, lv_color_hex(0x8b949e), 0);
+    }
     
     // Update SOC
     uint8_t soc = datalayer.battery.status.reported_soc / 100;
     static char soc_text[16];
     snprintf(soc_text, sizeof(soc_text), "%d %%", soc);
-	    if (main_root_widgets_visible) {
+	    if (main_root_widgets_visible && !use_tesla2_placeholder) {
 	      lv_label_set_text(lbl_soc, soc_text);
 	      lv_bar_set_value(bar_soc, soc, LV_ANIM_OFF);
 	      
@@ -2188,13 +2272,13 @@ void update_display() {
     float voltage = datalayer.battery.status.voltage_dV / 10.0f;
     static char volt_text[16];
     snprintf(volt_text, sizeof(volt_text), "%.1f V", voltage);
-	    if (main_root_widgets_visible) lv_label_set_text(lbl_voltage, volt_text);
+	    if (main_root_widgets_visible && !use_tesla2_placeholder) lv_label_set_text(lbl_voltage, volt_text);
     
     // Update current
     float current = datalayer.battery.status.current_dA / 10.0f;
     static char curr_text[16];
     snprintf(curr_text, sizeof(curr_text), "%.1f A", current);
-	    if (main_root_widgets_visible) lv_label_set_text(lbl_current, curr_text);
+	    if (main_root_widgets_visible && !use_tesla2_placeholder) lv_label_set_text(lbl_current, curr_text);
     
     // Update power
     int32_t power = (int32_t)(voltage * current);
@@ -2204,13 +2288,13 @@ void update_display() {
     } else {
       snprintf(pwr_text, sizeof(pwr_text), "%ld W", (long)power);
     }
-	    if (main_root_widgets_visible) lv_label_set_text(lbl_power, pwr_text);
+	    if (main_root_widgets_visible && !use_tesla2_placeholder) lv_label_set_text(lbl_power, pwr_text);
     
     // Update energy/capacity
     float remaining_wh = datalayer.battery.status.remaining_capacity_Wh;
     static char energy_text[16];
     snprintf(energy_text, sizeof(energy_text), "%.1f kWh", remaining_wh / 1000.0f);
-	    if (main_root_widgets_visible) lv_label_set_text(lbl_energy, energy_text);
+	    if (main_root_widgets_visible && !use_tesla2_placeholder) lv_label_set_text(lbl_energy, energy_text);
     
     // Update cell voltages
     float cell_min_v = datalayer.battery.status.cell_min_voltage_mV / 1000.0f;
@@ -2218,7 +2302,7 @@ void update_display() {
     static char cell_min_text[16], cell_max_text[16];
     snprintf(cell_min_text, sizeof(cell_min_text), "%.3f V", cell_min_v);
     snprintf(cell_max_text, sizeof(cell_max_text), "%.3f V", cell_max_v);
-	    if (main_root_widgets_visible) {
+	    if (main_root_widgets_visible && !use_tesla2_placeholder) {
 	      lv_label_set_text(lbl_cell_min, cell_min_text);
 	      lv_label_set_text(lbl_cell_max, cell_max_text);
 	    }
@@ -2228,7 +2312,7 @@ void update_display() {
                           datalayer.battery.status.cell_min_voltage_mV;
     static char delta_text[16];
     snprintf(delta_text, sizeof(delta_text), "%d mV", cell_delta);
-	    if (main_root_widgets_visible) {
+	    if (main_root_widgets_visible && !use_tesla2_placeholder) {
 	      lv_label_set_text(lbl_cell_delta, delta_text);
 	      // Color delta based on health (< 50mV good, > 100mV concerning)
 	      uint32_t delta_color = (cell_delta < 50) ? 0x7ee787 : (cell_delta < 100) ? 0xffa657 : 0xff7b72;
@@ -2244,14 +2328,14 @@ void update_display() {
     snprintf(temp_min_text, sizeof(temp_min_text), "%.1f C", temp_min);
     snprintf(temp_max_text, sizeof(temp_max_text), "%.1f C", temp_max);
 
-	    if (main_root_widgets_visible) {
+	    if (main_root_widgets_visible && !use_tesla2_placeholder) {
 	      lv_label_set_text(lbl_temp, temp_text);
 	      lv_label_set_text(lbl_temp_min, temp_min_text);
 	      lv_label_set_text(lbl_temp_max, temp_max_text);
 	    }
     
     // Update contactor status
-	    if (main_root_widgets_visible) {
+	    if (main_root_widgets_visible && !use_tesla2_placeholder) {
 	#ifdef HW_WAVESHARE7B_DISPLAY_ONLY
 	      const TeslaSummaryData& tesla = mqtt_display_bridge::get_tesla_summary();
 	      if (tesla.has_contactor_state) {
@@ -2290,7 +2374,7 @@ void update_display() {
     }
     // Update WiFi/Network status — sync with wifiap_enabled (AP can be auto-disabled by wifi_monitor)
     wifi_ap_enabled = wifiap_enabled;
-	    if (main_root_widgets_visible && wifi_ap_enabled && WiFi.status() == WL_CONNECTED) {
+	    if (main_root_widgets_visible && !use_tesla2_placeholder && wifi_ap_enabled && WiFi.status() == WL_CONNECTED) {
       // AP+STA mode: show AP SSID, AP IP, and network (STA) IP
       static char wifi_both[80];
       snprintf(wifi_both, sizeof(wifi_both), "AP: %s\n%s\nNet: %s",
@@ -2299,19 +2383,19 @@ void update_display() {
                WiFi.localIP().toString().c_str());
       lv_label_set_text(lbl_wifi, wifi_both);
       lv_obj_set_style_text_color(lbl_wifi, lv_color_hex(0x58a6ff), 0);
-	    } else if (main_root_widgets_visible && wifi_ap_enabled) {
+	    } else if (main_root_widgets_visible && !use_tesla2_placeholder && wifi_ap_enabled) {
       // AP only: show AP SSID and AP IP
       static char wifi_ap[64];
       snprintf(wifi_ap, sizeof(wifi_ap), "AP: %s\n%s",
                ssidAP.c_str(), WiFi.softAPIP().toString().c_str());
       lv_label_set_text(lbl_wifi, wifi_ap);
       lv_obj_set_style_text_color(lbl_wifi, lv_color_hex(0x58a6ff), 0);
-	    } else if (main_root_widgets_visible && WiFi.status() == WL_CONNECTED) {
+	    } else if (main_root_widgets_visible && !use_tesla2_placeholder && WiFi.status() == WL_CONNECTED) {
       static char wifi_sta[64];
       snprintf(wifi_sta, sizeof(wifi_sta), "%s\n%s", WiFi.SSID().c_str(), WiFi.localIP().toString().c_str());
       lv_label_set_text(lbl_wifi, wifi_sta);
       lv_obj_set_style_text_color(lbl_wifi, lv_color_hex(0x7ee787), 0);
-	    } else if (main_root_widgets_visible) {
+	    } else if (main_root_widgets_visible && !use_tesla2_placeholder) {
       lv_label_set_text(lbl_wifi, "WiFi Off");
       lv_obj_set_style_text_color(lbl_wifi, lv_color_hex(0x8b949e), 0);
     }
@@ -2344,7 +2428,7 @@ void update_display() {
 	             datalayer.battery.status.remaining_capacity_Wh / 1000.0f,
 	             datalayer.battery.status.soh_pptt / 100);
 	#endif
-	    if (main_root_widgets_visible) lv_label_set_text(lbl_batt_info, batt_info);
+	    if (main_root_widgets_visible && !use_tesla2_placeholder) lv_label_set_text(lbl_batt_info, batt_info);
 
     // Update system info (left side of split card) with BMS status
     static char sys_info[128];
@@ -2373,7 +2457,7 @@ void update_display() {
              mqtt_ok ? "OK" : "OFF",
              hours, mins,
              (unsigned long)(ESP.getFreeHeap() / 1024));
-	    if (main_root_widgets_visible) {
+	    if (main_root_widgets_visible && !use_tesla2_placeholder) {
 	      lv_label_set_text(lbl_sys_info, sys_info);
 	      if (!mqtt_ok) {
 	        lv_obj_set_style_text_color(lbl_sys_info, lv_color_hex(0xff7b72), 0);  // Red if MQTT down
@@ -2390,7 +2474,7 @@ void update_display() {
     snprintf(can_detail, sizeof(can_detail), "BATT: %s\nINV: %s",
              can_batt_ok ? "OK" : "--",
              can_inv_ok ? "OK" : "--");
-	    if (main_root_widgets_visible) {
+	    if (main_root_widgets_visible && !use_tesla2_placeholder) {
 	      lv_label_set_text(lbl_can_status, can_detail);
 
 	      // Color based on overall status

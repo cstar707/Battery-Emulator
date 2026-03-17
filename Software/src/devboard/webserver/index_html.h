@@ -9,7 +9,7 @@
   R"rawliteral(
 <script>
 function askReboot() {
-  if (window.confirm('Are you sure you want to reboot the emulator? NOTE: If emulator is handling contactors, they will open during reboot!')) {
+  if (window.confirm('Are you sure you want to reboot the battery monitor? NOTE: If contactors are controlled by this device, they will open during reboot!')) {
     reboot();
   }
 }
