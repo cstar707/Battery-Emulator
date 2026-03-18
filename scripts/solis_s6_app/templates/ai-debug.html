@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}AI Debug{% endblock %}
+{% block content %}
+  <div class="card">
+    <h2>AI / LLM debug log</h2>
+    <p class="muted" style="margin:0 0 0.5rem 0;">Recent LLM calls and applied intents. This view is read-only and auto-refreshes every 10 seconds.</p>
+  </div>
+
+  <div class="card">
+    <table style="width:100%; border-collapse:collapse; font-size:0.85rem;">
+      <thead>
+        <tr style="border-bottom:1px solid #30363d;">
+          <th style="text-align:left; padding:0.3rem 0.4rem;">Time</th>
+          <th style="text-align:left; padding:0.3rem 0.4rem;">Kind</th>
+          <th style="text-align:left; padding:0.3rem 0.4rem;">Summary</th>
+        </tr>
+      </thead>
+      <tbody id="ai-log-body">
+      </tbody>
+    </table>
+  </div>
+
+  <script>
+  (function(){
+    function fmtTs(ts) {
+      if (!ts) return '—';
+      var d = new Date(ts * 1000);
+      return d.toLocaleTimeString();
+    }
+    function summarize(entry) {
+      if (!entry || !entry.payload) return '';
+      var p = entry.payload;
+      function metricsText(m) {
+        if (!m) return '';
+        var parts = [];
+        if (m.solis_load_power_W != null) parts.push('solis_load=' + Math.round(m.solis_load_power_W) + 'W');
+        if (m.solis_pv_power_W != null) parts.push('solis_pv=' + Math.round(m.solis_pv_power_W) + 'W');
+        if (m.solis_grid_power_W != null) parts.push('solis_grid=' + Math.round(m.solis_grid_power_W) + 'W');
+        if (m.solis_battery_soc_pct != null) parts.push('solis_soc=' + Number(m.solis_battery_soc_pct).toFixed(1) + '%');
+        if (m.solark_battery_soc_pct != null) parts.push('solark_soc=' + Number(m.solark_battery_soc_pct).toFixed(1) + '%');
+        if (m.solark_battery_power_W != null) parts.push('solark_batt=' + Math.round(m.solark_battery_power_W) + 'W');
+        return parts.length ? (' [' + parts.join(', ') + ']') : '';
+      }
+      if (entry.kind === 'assistant_chat') {
+        return 'Q: ' + (p.question || '').slice(0,80);
+      }
+      if (entry.kind === 'automation_morning_plan' || entry.kind === 'automation_evening_strategy' || entry.kind === 'automation_unexpected_behavior') {
+        var r = (p.result || {});
+        return (r.issue_summary || '') + ' (confidence ' + (typeof r.confidence === 'number' ? r.confidence.toFixed(2) : '?') + ')' + metricsText(p.metrics);
+      }
+      if (entry.kind === 'automation_morning_plan_error' || entry.kind === 'automation_evening_strategy_error' || entry.kind === 'automation_unexpected_behavior_error') {
+        return 'Error: ' + (p.error || 'unknown') + metricsText(p.metrics);
+      }
+      if (entry.kind === 'apply_llm_intent') {
+        return 'Intent inverter=' + (p.inverter || '?') + ' mode=' + (p.work_mode || '?') + ' ok=' + (p.ok ? 'true' : 'false');
+      }
+      return JSON.stringify(p).slice(0,120);
+    }
+    function refresh() {
+      fetch('/api/ai-debug').then(function(r){ return r.json(); }).then(function(res){
+        if (!res || !res.ok) return;
+        var rows = res.events || [];
+        var tbody = document.getElementById('ai-log-body');
+        if (!tbody) return;
+        tbody.innerHTML = '';
+        rows.forEach(function(e){
+          var tr = document.createElement('tr');
+          tr.style.borderBottom = '1px solid #1f2933';
+          var tdTs = document.createElement('td');
+          tdTs.style.padding = '0.25rem 0.4rem';
+          tdTs.textContent = fmtTs(e.ts);
+          var tdKind = document.createElement('td');
+          tdKind.style.padding = '0.25rem 0.4rem';
+          tdKind.textContent = e.kind || '';
+          var tdSum = document.createElement('td');
+          tdSum.style.padding = '0.25rem 0.4rem';
+          tdSum.textContent = summarize(e);
+          tr.appendChild(tdTs);
+          tr.appendChild(tdKind);
+          tr.appendChild(tdSum);
+          tbody.appendChild(tr);
+        });
+      }).catch(function(){});
+    }
+    refresh();
+    setInterval(refresh, 10000);
+  })();
+  </script>
+{% endblock %}
+

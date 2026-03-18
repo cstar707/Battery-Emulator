@@ -11,6 +11,7 @@
 
 // Delay before sending contactor demand (let BMS init after power-on).
 #define VELAR_CONTACTOR_DELAY_MS 1000
+#define VELAR_HOLD_REFRESH_MS 3000
 
 class LandRoverVelarPhevBattery : public CanBattery {
  public:
@@ -37,6 +38,7 @@ class LandRoverVelarPhevBattery : public CanBattery {
   unsigned long previousMillis200ms = 0;
   unsigned long previousMillis500ms = 0;
   unsigned long closeRequestStartedMs = 0;
+  unsigned long holdRefreshUntilMs = 0;
   uint8_t velar_counter_a2 = 0;
   uint8_t velar_counter_96 = 0;
 
@@ -51,6 +53,11 @@ class LandRoverVelarPhevBattery : public CanBattery {
   uint8_t voltage_group = 0;
   uint8_t module_id = 0;
   uint8_t base_index = 0;
+  uint8_t last_0x088_b4 = 0;
+  uint8_t last_0x088_b5 = 0;
+  uint8_t last_0x08A_b5 = 0;
+  uint8_t last_0x08E_b2 = 0;
+  uint8_t last_0x08E_b3 = 0;
   bool HVBattHVILStatus = false;
   bool HVBattContactorStatus = false;
   bool HVBattPrechargeAllowed = false;
@@ -66,7 +73,6 @@ class LandRoverVelarPhevBattery : public CanBattery {
   //   byte6 bit5 (0x20) = HVBattContactorRequest: 0=Open, 1=Closed
   //   byte6 bit4 (0x10) = HVBattBusTestRequest
   //   byte7 = rolling counter (lower nibble, matches vehicle capture)
-  // Set dynamically in transmit_can() based on userRequestContactorClose.
   CAN_frame VELAR_0xA2_PCM_HVBatt = {.FD = false,
                                       .ext_ID = false,
                                       .DLC = 8,

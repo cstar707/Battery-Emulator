@@ -1,0 +1,17 @@
+---
+description: Reminds which workspace to use for display vs velar work
+alwaysApply: true
+---
+
+# Workspace and Branch Separation
+
+This Cursor workspace is the **Velar branch** (`codex/velar-v10-recovery-point`).
+
+- **Display / Solar / 7" Waveshare work** (white glow fix, Solar tab, MQTT bridge, solis_s6_app): Use the display worktree instead:
+  - Path: `/Users/chad/intent/workspaces/bizarre-basilisk/battery-emulator-tesla-rewrite-stable-15ef950`
+  - Branch: `feature/dual-solis-display-S3-1024`
+  - Open via **File → Open Folder**
+
+- **Velar work** (LAND-ROVER-VELAR-PHEV-BATTERY, vehicle context, OTA): Use this workspace.
+
+See `docs/WORKSPACE-SETUP.md` for full reference.

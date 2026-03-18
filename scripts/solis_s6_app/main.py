@@ -285,6 +285,7 @@ _llm_automation_state: dict = {
     "last_alert_id": None,
     "last_alert_result": None,
 }
+_llm_automation_task: asyncio.Task | None = None
 
 # In-memory AI event log for debug page (bounded size).
 _AI_EVENT_LIMIT = 200
@@ -412,6 +413,39 @@ def apply_llm_intent(result: dict) -> tuple[bool, str | None]:
         },
     )
     return ok, err
+
+
+def _should_skip_unexpected_behavior(snapshot: dict, now_dt: datetime) -> tuple[bool, str | None]:
+    """
+    Suppress obvious false positives before asking the LLM.
+
+    Today this suppresses:
+      - overnight/late-night checks where PV is expected to be zero,
+      - early sunrise / late sunset periods with effectively zero PV,
+      - empty snapshots with no meaningful site power data.
+    """
+    site = (snapshot or {}).get("site") or {}
+    solark = ((snapshot or {}).get("solark") or {}).get("data") or {}
+
+    site_pv = float(site.get("solis_pv_power_W") or 0.0)
+    solark_pv = float(solark.get("pv_power_W") or solark.get("total_pv_power_W") or 0.0)
+    total_pv = site_pv + solark_pv
+
+    site_load = float(site.get("solis_load_power_W") or 0.0)
+    site_grid = float(site.get("solis_grid_power_W") or 0.0)
+    site_batt = float(site.get("solis_battery_power_W") or 0.0)
+    has_meaningful_site_data = any(abs(v) > 1.0 for v in (site_load, site_grid, site_batt, total_pv))
+    if not has_meaningful_site_data:
+        return True, "no_meaningful_site_data"
+
+    hour = now_dt.hour
+    if total_pv <= 50 and (hour < 7 or hour >= 20):
+        return True, "nighttime_zero_pv_expected"
+
+    if total_pv <= 75 and hour in (7, 19):
+        return True, "dawn_dusk_low_pv_expected"
+
+    return False, None
 
 
 # Map individual sensor topic suffixes → data dict keys used by the rest of the app.
@@ -970,8 +1004,7 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(_background_forecast_refresher())
     asyncio.create_task(_background_envoy_refresher())
     asyncio.create_task(_background_power_control_refresher())
-    if get_solar_llm_automations_enabled():
-        asyncio.create_task(_background_llm_automations())
+    await _sync_llm_automation_task()
     if MQTT_HOST and SOLARK_MQTT_TOPIC:
         _mqtt_thread = threading.Thread(target=_run_solark_mqtt_subscriber, daemon=True)
         _mqtt_thread.start()
@@ -1032,21 +1065,76 @@ def _format_runtime_hours(h: float | None) -> str:
 templates.env.filters["format_runtime_hours"] = _format_runtime_hours
 
 
+async def _sync_llm_automation_task() -> None:
+    """Start/stop the background LLM automation task to match the current setting."""
+    global _llm_automation_task
+    enabled = get_solar_llm_automations_enabled()
+    running = _llm_automation_task is not None and not _llm_automation_task.done()
+
+    if enabled and not running:
+        _llm_automation_task = asyncio.create_task(_background_llm_automations())
+        logger.info("LLM automations task started")
+        return
+
+    if not enabled and running:
+        _llm_automation_task.cancel()
+        try:
+            await _llm_automation_task
+        except asyncio.CancelledError:
+            pass
+        _llm_automation_task = None
+        logger.info("LLM automations task stopped")
+
+
 def _build_site_snapshot() -> dict:
     """Small, curated snapshot for LLM automations."""
-    solis_first = _solis_cache_first()
+    solis_inverters = _build_solis_inverters()
+    solis_first = solis_inverters[0] if solis_inverters else {"data": {}, "ok": False, "ts": 0}
     solis_data = solis_first.get("data", {}) or {}
     solark_data = _enrich_solark_battery_runtime(_solark_cache.get("data", {}) or {}, get_solark1_battery_kwh())
+    numeric_sums: dict[str, float] = {
+        "pv_power_W": 0.0,
+        "load_power_W": 0.0,
+        "grid_power_W": 0.0,
+        "battery_power_W": 0.0,
+    }
+    active_inverters = 0
+    solis_entries: list[dict] = []
+    for inv in solis_inverters:
+        inv_data = inv.get("data") or {}
+        solis_entries.append(
+            {
+                "topic_id": inv.get("topic_id"),
+                "label": inv.get("label"),
+                "ok": inv.get("ok", False),
+                "ts": inv.get("ts", 0),
+                "data": inv_data,
+            }
+        )
+        if inv.get("ok", False):
+            active_inverters += 1
+        for key in numeric_sums:
+            value = inv_data.get(key)
+            if isinstance(value, (int, float)):
+                numeric_sums[key] += float(value)
     return {
         "ts": time.time(),
         "solis": {
             "ok": solis_first.get("ok", False),
             "data": solis_data,
         },
+        "solis_inverters": solis_entries,
         "solark": {
             "ok": _solark_cache.get("ok", False),
             "data": solark_data,
             "source": _solark_cache.get("source"),
+        },
+        "site": {
+            "active_solis_inverter_count": active_inverters,
+            "solis_pv_power_W": numeric_sums["pv_power_W"],
+            "solis_load_power_W": numeric_sums["load_power_W"],
+            "solis_grid_power_W": numeric_sums["grid_power_W"],
+            "solis_battery_power_W": numeric_sums["battery_power_W"],
         },
     }
 
@@ -1055,6 +1143,7 @@ def _build_ai_debug_metrics(snapshot: dict) -> dict:
     """Compact metrics attached to AI log entries for operator-facing debugging."""
     solis = ((snapshot or {}).get("solis") or {}).get("data") or {}
     solark = ((snapshot or {}).get("solark") or {}).get("data") or {}
+    site = (snapshot or {}).get("site") or {}
 
     solark_soc_raw = solark.get("battery_soc_pptt")
     solark_soc_pct = None
@@ -1062,6 +1151,11 @@ def _build_ai_debug_metrics(snapshot: dict) -> dict:
         solark_soc_pct = round(float(solark_soc_raw) / 100.0, 1)
 
     return {
+        "site_solis_inverter_count": site.get("active_solis_inverter_count"),
+        "site_solis_pv_power_W": site.get("solis_pv_power_W"),
+        "site_solis_load_power_W": site.get("solis_load_power_W"),
+        "site_solis_grid_power_W": site.get("solis_grid_power_W"),
+        "site_solis_battery_power_W": site.get("solis_battery_power_W"),
         "solis_pv_power_W": solis.get("pv_power_W"),
         "solis_load_power_W": solis.get("load_power_W"),
         "solis_grid_power_W": solis.get("grid_power_W"),
@@ -1645,6 +1739,7 @@ async def settings_save(request: Request):
         current = load_settings()
         current.update(data)
         save_settings(current)
+        await _sync_llm_automation_task()
         return RedirectResponse(url="/settings?saved=1", status_code=303)
     except ValueError as exc:
         logger.warning("settings save validation: %s", exc)
@@ -2449,84 +2544,97 @@ async def _background_llm_automations() -> None:
     fetched via API; actual inverter writes remain with existing endpoints.
     """
     global _llm_automation_state
-    await asyncio.sleep(90)
-    while True:
-        try:
-            now_ts = time.time()
-            now_dt = datetime.now(timezone.utc).astimezone()
-            hour = now_dt.hour
+    try:
+        await asyncio.sleep(90)
+        while True:
+            try:
+                if not get_solar_llm_automations_enabled():
+                    await asyncio.sleep(60)
+                    continue
 
-            snapshot = _build_site_snapshot()
-            solis_ok = snapshot.get("solis", {}).get("ok", False)
-            solark_ok = snapshot.get("solark", {}).get("ok", False)
+                now_ts = time.time()
+                now_dt = datetime.now(timezone.utc).astimezone()
+                hour = now_dt.hour
 
-            # Morning operating plan (local time 05:00–06:00)
-            if 5 <= hour < 6 and solis_ok:
-                last = _llm_automation_state["morning_plan"]["last_ts"] or 0.0
-                if now_dt.date() != datetime.fromtimestamp(last).astimezone().date():
-                    summary = {
-                        "kind": "morning_plan",
-                        "snapshot": snapshot,
-                        "forecast": get_cached_forecast(),
-                    }
-                    try:
-                        result = call_llm_task("morning_plan", summary)
-                        _llm_automation_state["morning_plan"] = {
-                            "last_ts": now_ts,
-                            "last_result": result,
+                snapshot = _build_site_snapshot()
+                solis_ok = snapshot.get("solis", {}).get("ok", False)
+                solark_ok = snapshot.get("solark", {}).get("ok", False)
+
+                # Morning operating plan (local time 05:00–06:00)
+                if 5 <= hour < 6 and solis_ok:
+                    last = _llm_automation_state["morning_plan"]["last_ts"] or 0.0
+                    if now_dt.date() != datetime.fromtimestamp(last).astimezone().date():
+                        summary = {
+                            "kind": "morning_plan",
+                            "snapshot": snapshot,
+                            "forecast": get_cached_forecast(),
                         }
-                        log_ai_event("automation_morning_plan", {"summary": summary, "result": result, "metrics": _build_ai_debug_metrics(snapshot)})
-                        logger.info("LLM morning_plan completed (confidence %.2f)", result.get("confidence", 0.0))
-                    except Exception as exc:
-                        log_ai_event("automation_morning_plan_error", {"summary": summary, "error": str(exc), "metrics": _build_ai_debug_metrics(snapshot)})
-                        logger.warning("LLM morning_plan error: %s", exc)
+                        try:
+                            result = call_llm_task("morning_plan", summary)
+                            _llm_automation_state["morning_plan"] = {
+                                "last_ts": now_ts,
+                                "last_result": result,
+                            }
+                            log_ai_event("automation_morning_plan", {"summary": summary, "result": result, "metrics": _build_ai_debug_metrics(snapshot)})
+                            logger.info("LLM morning_plan completed (confidence %.2f)", result.get("confidence", 0.0))
+                        except Exception as exc:
+                            log_ai_event("automation_morning_plan_error", {"summary": summary, "error": str(exc), "metrics": _build_ai_debug_metrics(snapshot)})
+                            logger.warning("LLM morning_plan error: %s", exc)
 
-            # Evening battery strategy (local time 18:00–19:00)
-            if 18 <= hour < 19 and (solis_ok or solark_ok):
-                last = _llm_automation_state["evening_strategy"]["last_ts"] or 0.0
-                if now_dt.date() != datetime.fromtimestamp(last).astimezone().date():
-                    summary = {
-                        "kind": "evening_strategy",
-                        "snapshot": snapshot,
-                        "forecast": get_cached_forecast(),
-                    }
-                    try:
-                        result = call_llm_task("evening_strategy", summary)
-                        _llm_automation_state["evening_strategy"] = {
-                            "last_ts": now_ts,
-                            "last_result": result,
+                # Evening battery strategy (local time 18:00–19:00)
+                if 18 <= hour < 19 and (solis_ok or solark_ok):
+                    last = _llm_automation_state["evening_strategy"]["last_ts"] or 0.0
+                    if now_dt.date() != datetime.fromtimestamp(last).astimezone().date():
+                        summary = {
+                            "kind": "evening_strategy",
+                            "snapshot": snapshot,
+                            "forecast": get_cached_forecast(),
                         }
-                        log_ai_event("automation_evening_strategy", {"summary": summary, "result": result, "metrics": _build_ai_debug_metrics(snapshot)})
-                        logger.info("LLM evening_strategy completed (confidence %.2f)", result.get("confidence", 0.0))
-                    except Exception as exc:
-                        log_ai_event("automation_evening_strategy_error", {"summary": summary, "error": str(exc), "metrics": _build_ai_debug_metrics(snapshot)})
-                        logger.warning("LLM evening_strategy error: %s", exc)
+                        try:
+                            result = call_llm_task("evening_strategy", summary)
+                            _llm_automation_state["evening_strategy"] = {
+                                "last_ts": now_ts,
+                                "last_result": result,
+                            }
+                            log_ai_event("automation_evening_strategy", {"summary": summary, "result": result, "metrics": _build_ai_debug_metrics(snapshot)})
+                            logger.info("LLM evening_strategy completed (confidence %.2f)", result.get("confidence", 0.0))
+                        except Exception as exc:
+                            log_ai_event("automation_evening_strategy_error", {"summary": summary, "error": str(exc), "metrics": _build_ai_debug_metrics(snapshot)})
+                            logger.warning("LLM evening_strategy error: %s", exc)
 
-            # Unexpected behavior detector – run every 30 minutes when data present.
-            if solis_ok or solark_ok:
-                last = _llm_automation_state["unexpected_behavior"]["last_ts"] or 0.0
-                if now_ts - last > 30 * 60:
-                    summary = {
-                        "kind": "unexpected_behavior",
-                        "snapshot": snapshot,
-                        "note": "Periodic check for anomalies such as low PV, SOC drift, or oscillating import/export.",
-                    }
-                    try:
-                        result = call_llm_task("unexpected_behavior", summary)
-                        _llm_automation_state["unexpected_behavior"] = {
-                            "last_ts": now_ts,
-                            "last_result": result,
-                        }
-                        log_ai_event("automation_unexpected_behavior", {"summary": summary, "result": result, "metrics": _build_ai_debug_metrics(snapshot)})
-                        logger.info("LLM unexpected_behavior completed (confidence %.2f)", result.get("confidence", 0.0))
-                    except Exception as exc:
-                        log_ai_event("automation_unexpected_behavior_error", {"summary": summary, "error": str(exc), "metrics": _build_ai_debug_metrics(snapshot)})
-                        logger.warning("LLM unexpected_behavior error: %s", exc)
+                # Unexpected behavior detector – run every 30 minutes when data present.
+                if solis_ok or solark_ok:
+                    last = _llm_automation_state["unexpected_behavior"]["last_ts"] or 0.0
+                    if now_ts - last > 30 * 60:
+                        skip, reason = _should_skip_unexpected_behavior(snapshot, now_dt)
+                        if skip:
+                            _llm_automation_state["unexpected_behavior"]["last_ts"] = now_ts
+                            log_ai_event("automation_unexpected_behavior_skipped", {"reason": reason, "metrics": _build_ai_debug_metrics(snapshot)})
+                        else:
+                            summary = {
+                                "kind": "unexpected_behavior",
+                                "snapshot": snapshot,
+                                "note": "Periodic check for anomalies such as low PV, SOC drift, or oscillating import/export.",
+                            }
+                            try:
+                                result = call_llm_task("unexpected_behavior", summary)
+                                _llm_automation_state["unexpected_behavior"] = {
+                                    "last_ts": now_ts,
+                                    "last_result": result,
+                                }
+                                log_ai_event("automation_unexpected_behavior", {"summary": summary, "result": result, "metrics": _build_ai_debug_metrics(snapshot)})
+                                logger.info("LLM unexpected_behavior completed (confidence %.2f)", result.get("confidence", 0.0))
+                            except Exception as exc:
+                                log_ai_event("automation_unexpected_behavior_error", {"summary": summary, "error": str(exc), "metrics": _build_ai_debug_metrics(snapshot)})
+                                logger.warning("LLM unexpected_behavior error: %s", exc)
 
-        except Exception as exc:
-            logger.warning("background LLM automations error: %s", exc)
+            except Exception as exc:
+                logger.warning("background LLM automations error: %s", exc)
 
-        await asyncio.sleep(60)
+            await asyncio.sleep(60)
+    except asyncio.CancelledError:
+        logger.info("LLM automations task cancelled")
+        raise
 
 
 @app.get("/envoys", response_class=HTMLResponse)

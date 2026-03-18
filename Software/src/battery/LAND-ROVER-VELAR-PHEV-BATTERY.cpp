@@ -48,7 +48,6 @@ static CAN_frame VELAR_0x2DD = make_frame(0x2DD, 0xF4, 0x02, 0xF2, 0xC0, 0x0F, 0
 static CAN_frame VELAR_0x072 = make_frame(0x072, 0x00, 0x00, 0x00, 0x00, 0x05, 0x4D, 0x01, 0x52);
 static CAN_frame VELAR_0x050 = make_frame(0x050, 0x5E, 0x01, 0x1D, 0x80, 0x00, 0x80, 0x3C, 0x50);
 static CAN_frame VELAR_0x067 = make_frame(0x067, 0xF2, 0x32, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
-
 static CAN_frame VELAR_0x029 = make_frame(0x029, 0x15, 0x0B, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 static CAN_frame VELAR_0x036 = make_frame(0x036, 0x89, 0x38, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00);
 static CAN_frame VELAR_0x07A = make_frame(0x07A, 0xD8, 0x0B, 0x01, 0xFD, 0x00, 0x00, 0x00, 0x00);
@@ -96,6 +95,23 @@ static CAN_frame VELAR_0x059E = make_frame(0x59E, 0x9E, 0x10, 0xFF, 0xFF, 0xFF, 
 static CAN_frame VELAR_0x0EC = make_frame(0x0EC, 0x00, 0x00, 0x01, 0x37, 0x01, 0xED, 0x87, 0x87);
 static CAN_frame VELAR_0x0EF = make_frame(0x0EF, 0x00, 0x00, 0x0E, 0x1E, 0xF3, 0x6B, 0xC3, 0x6A);
 
+static bool velar_hold_refresh_needed(uint8_t b88_4,
+                                      uint8_t b88_5,
+                                      uint8_t b8a_5,
+                                      uint8_t b8e_2,
+                                      uint8_t b8e_3) {
+  if (b8a_5 >= 0xF0) {
+    return true;
+  }
+  if (b8e_2 == 0x00 && b8e_3 != 0x00) {
+    return true;
+  }
+  if (b88_4 == 0xFF || b88_5 == 0xFF) {
+    return true;
+  }
+  return false;
+}
+
 }  // namespace
 
 void LandRoverVelarPhevBattery::update_values() {
@@ -142,13 +158,15 @@ void LandRoverVelarPhevBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
   switch (rx_frame.ID) {
     case 0x088:
       datalayer.battery.status.CAN_battery_still_alive = CAN_STILL_ALIVE;
+      last_0x088_b4 = rx_frame.data.u8[4];
+      last_0x088_b5 = rx_frame.data.u8[5];
       break;
     case 0x08A:
       datalayer.battery.status.CAN_battery_still_alive = CAN_STILL_ALIVE;
       HVBattPrechargeAllowed = (rx_frame.data.u8[6] & 0x10) >> 4;
+      last_0x08A_b5 = rx_frame.data.u8[5];
       break;
     case 0x08C:
-    case 0x08E:
     case 0x0C8:
     case 0x0EA:
     case 0x146:
@@ -159,6 +177,11 @@ void LandRoverVelarPhevBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
     case 0x310:
     case 0x318:
       datalayer.battery.status.CAN_battery_still_alive = CAN_STILL_ALIVE;
+      break;
+    case 0x08E:
+      datalayer.battery.status.CAN_battery_still_alive = CAN_STILL_ALIVE;
+      last_0x08E_b2 = rx_frame.data.u8[2];
+      last_0x08E_b3 = rx_frame.data.u8[3];
       break;
     case 0x090:
       datalayer.battery.status.CAN_battery_still_alive = CAN_STILL_ALIVE;
@@ -217,6 +240,13 @@ void LandRoverVelarPhevBattery::transmit_can(unsigned long currentMillis) {
   }
   lastUserRequestContactorClose = userRequestContactorClose;
 
+  if (userRequestContactorClose && HVBattContactorStatus &&
+      velar_hold_refresh_needed(last_0x088_b4, last_0x088_b5, last_0x08A_b5, last_0x08E_b2, last_0x08E_b3)) {
+    holdRefreshUntilMs = currentMillis + VELAR_HOLD_REFRESH_MS;
+    closeRequestStartedMs = currentMillis;
+  }
+
+  const bool hold_refresh_active = currentMillis < holdRefreshUntilMs;
   const bool effective_close =
       userRequestContactorClose &&
       (HVBattContactorStatus || ((currentMillis - closeRequestStartedMs) >= VELAR_CONTACTOR_DELAY_MS));
@@ -243,6 +273,16 @@ void LandRoverVelarPhevBattery::transmit_can(unsigned long currentMillis) {
     transmit_can_frame(&VELAR_0x00D);
     transmit_can_frame(&VELAR_0x0AA);
     transmit_can_frame(&VELAR_0x2DD);
+
+    if (hold_refresh_active) {
+      transmit_can_frame(&VELAR_0x011);
+      transmit_can_frame(&VELAR_0x104);
+      transmit_can_frame(&VELAR_0x143);
+      transmit_can_frame(&VELAR_0x1A1);
+      transmit_can_frame(&VELAR_0x2C1);
+      transmit_can_frame(&VELAR_0x0400);
+      transmit_can_frame(&VELAR_0x0501);
+    }
   }
 
   if (currentMillis - previousMillis20ms >= INTERVAL_20_MS) {

@@ -42,6 +42,7 @@ void setup_shunt();
 #include "NISSAN-LEAF-BATTERY.h"
 #include "ORION-BMS.h"
 #include "PYLON-BATTERY.h"
+#include "LAND-ROVER-VELAR-PHEV-BATTERY.h"
 #include "RANGE-ROVER-PHEV-BATTERY.h"
 #include "RELION-LV-BATTERY.h"
 #include "RENAULT-KANGOO-BATTERY.h"
