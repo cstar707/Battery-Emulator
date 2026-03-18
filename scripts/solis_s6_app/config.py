@@ -175,6 +175,78 @@ def get_solark_soc_automation_enabled() -> bool:
     return _get_bool("solark_soc_automation_enabled", "SOLARK_SOC_AUTOMATION_ENABLED", True)
 
 
+def get_solark_soc_scale() -> float:
+    """
+    Scale factor applied to Solark SOC for automations and display.
+    Example: 0.98 makes a raw 98.0% read as 96.0%.
+    """
+    v = _get("solark_soc_scale", "SOLARK_SOC_SCALE", "1.0")
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return 1.0
+    # Keep sane bounds so a typo can't break safety logic.
+    if f < 0.5:
+        return 0.5
+    if f > 1.5:
+        return 1.5
+    return f
+
+
+def get_solark_soc_offset_pct() -> float:
+    """
+    Offset (percentage points) applied after scale.
+    Example: -3.0 makes a raw 98.0% read as 95.0% (before clamping).
+    """
+    v = _get("solark_soc_offset_pct", "SOLARK_SOC_OFFSET_PCT", "0.0")
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return 0.0
+    if f < -20.0:
+        return -20.0
+    if f > 20.0:
+        return 20.0
+    return f
+
+
+# HA curtailment restore “sweet spot” (Option B):
+# When we curtailed HA devices because Solark SOC >= threshold, we can restore them early
+# once the Solark battery starts drawing power (battery_total_power_W <= some threshold)
+# and that condition persists for a configurable hold time.
+def get_ha_restore_on_batt_draw_enabled() -> bool:
+    """Enable early restore when battery indicates draw (< threshold) while SOC is still high."""
+    return _get_bool("ha_restore_on_batt_draw_enabled", "SOLARK_HA_RESTORE_ON_BATT_DRAW_ENABLED", False)
+
+
+def get_ha_restore_batt_draw_power_threshold_w() -> float:
+    """Restore when normalized Solark battery_total_power_W <= this value (default 0W)."""
+    v = _get("ha_restore_batt_draw_power_threshold_w", "SOLARK_HA_RESTORE_BATT_DRAW_POWER_THRESHOLD_W", "0.0")
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return 0.0
+    if f < -100000:
+        return -100000.0
+    if f > 100000:
+        return 100000.0
+    return f
+
+
+def get_ha_restore_batt_draw_hold_sec() -> int:
+    """Hold time (seconds) required before restoring when battery draw condition is met."""
+    v = _get("ha_restore_batt_draw_hold_sec", "SOLARK_HA_RESTORE_BATT_DRAW_HOLD_SEC", "60")
+    try:
+        i = int(v)
+    except (TypeError, ValueError):
+        return 60
+    if i < 0:
+        return 0
+    if i > 3600:
+        return 3600
+    return i
+
+
 def load_settings() -> dict:
     """Return current settings from settings.json (for merging and saving partial updates)."""
     return dict(_load_settings_overrides())
@@ -214,8 +286,17 @@ except (ValueError, TypeError):
     SOLIS_TOTAL_PV_DIVISOR = 100.0
 
 # Home Assistant — curtailment switch control via SmartLife/Tuya
-HA_URL   = os.environ.get("HA_URL",   "http://10.10.53.179:8123").strip().rstrip("/")
-HA_TOKEN = os.environ.get("HA_TOKEN", "").strip()
+def get_ha_url() -> str:
+    return str(_get("ha_url", "HA_URL", "http://10.10.53.179:8123")).strip().rstrip("/")
+
+
+def get_ha_token() -> str:
+    return str(_get("ha_token", "HA_TOKEN", "")).strip()
+
+
+# Defaults (may change at runtime via settings.json overrides; backend should call getters).
+HA_URL = get_ha_url()
+HA_TOKEN = get_ha_token()
 HA_SWITCH_IQ8     = os.environ.get("HA_SWITCH_IQ8",     "switch.enphase_iq8_micro_socket_1").strip()
 HA_SWITCH_MSERIES = os.environ.get("HA_SWITCH_MSERIES", "switch.shed_micro_inverters_socket_1").strip()
 HA_SWITCH_TABUCHI = os.environ.get("HA_SWITCH_TABUCHI", "switch.sonoff_1001204d65_1").strip()

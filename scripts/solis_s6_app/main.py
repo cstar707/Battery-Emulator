@@ -49,6 +49,11 @@ try:
         get_solis_modbus_unit,
         get_solis_port,
         get_solark_soc_automation_enabled,
+        get_solark_soc_offset_pct,
+        get_solark_soc_scale,
+        get_ha_restore_on_batt_draw_enabled,
+        get_ha_restore_batt_draw_power_threshold_w,
+        get_ha_restore_batt_draw_hold_sec,
         INVERTER_LABEL_SOLARK1,
         INVERTER_LABEL_SOLARK2,
         INVERTER_LABEL_SOLIS1,
@@ -72,6 +77,8 @@ try:
         SOLARK_SOC_SELF_USE_THRESHOLD_PCT,
         HA_URL,
         HA_TOKEN,
+        get_ha_url,
+        get_ha_token,
         HA_SWITCH_IQ8,
         HA_SWITCH_MSERIES,
         HA_SWITCH_TABUCHI,
@@ -105,6 +112,16 @@ except Exception as e:
         return 2
     def get_solark_soc_automation_enabled():
         return True
+    def get_solark_soc_scale():
+        return 1.0
+    def get_solark_soc_offset_pct():
+        return 0.0
+    def get_ha_restore_on_batt_draw_enabled():
+        return False
+    def get_ha_restore_batt_draw_power_threshold_w():
+        return 0.0
+    def get_ha_restore_batt_draw_hold_sec():
+        return 60
     def get_solar_forecast_api_enabled():
         return False
     def get_solar_prediction_enabled():
@@ -130,6 +147,10 @@ except Exception as e:
     def save_settings(_):
         raise NotImplementedError("config failed")
     HA_URL, HA_TOKEN = "http://10.10.53.179:8123", ""
+    def get_ha_url():
+        return HA_URL
+    def get_ha_token():
+        return HA_TOKEN
     HA_SWITCH_IQ8 = "switch.enphase_iq8_micro_socket_1"
     HA_SWITCH_MSERIES = "switch.shed_micro_inverters_socket_1"
     HA_SWITCH_TABUCHI = "switch.sonoff_1001204d65_1"
@@ -276,6 +297,10 @@ _AUTO_SWITCH_COOLDOWN_SEC = 300  # don't flip Solis mode more than once per 5 mi
 _ha_curtail_active: bool = True            # assume curtailed at startup — only released when SOC < 95%
 _last_ha_curtail_ts: float = 0             # last time any HA curtail action was fired
 _HA_CURTAIL_COOLDOWN_SEC = 120             # minimum seconds between HA switch state changes
+
+# Option B (battery draw restore): when enabled, we can restore HA switches earlier than SOC hysteresis
+# once the Solark battery indicates “drawing” (battery_total_power_W <= threshold) for a hold time.
+_ha_batt_draw_hold_since: float | None = None
 
 # LLM automation state: last run timestamps + last results for each automation type.
 _llm_automation_state: dict = {
@@ -538,6 +563,25 @@ def _enrich_solark_battery_runtime(data: dict, cap_kwh: float) -> dict:
     return out
 
 
+def _solark_soc_calibrated_pptt(solark_data: dict) -> tuple[int | None, int | None]:
+    """
+    Return (raw_soc_pptt, calibrated_soc_pptt). Both are integer-percent ×100 (pptt).
+    Calibration is applied as: calibrated_pct = clamp(scale * raw_pct + offset_pct, 0..100).
+    """
+    raw = solark_data.get("battery_soc_pptt")
+    if raw is None or not isinstance(raw, (int, float)):
+        return None, None
+    raw_pct = float(raw) / 100.0
+    scale = float(get_solark_soc_scale() or 1.0)
+    offset = float(get_solark_soc_offset_pct() or 0.0)
+    cal_pct = (raw_pct * scale) + offset
+    if cal_pct < 0.0:
+        cal_pct = 0.0
+    if cal_pct > 100.0:
+        cal_pct = 100.0
+    return int(round(raw_pct * 100)), int(round(cal_pct * 100))
+
+
 def _on_solark_mqtt_message(_client, _userdata, msg):
     """Update _solark_cache from MQTT.
 
@@ -731,10 +775,9 @@ def _run_solark_solis_automation(solis_data: dict, solark_data: dict) -> None:
     now = time.time()
     if now - _last_solis_auto_switch_ts < _AUTO_SWITCH_COOLDOWN_SEC:
         return
-    raw_soc = solark_data.get("battery_soc_pptt")
-    if raw_soc is None:
+    _raw_soc_pptt, soc_pptt = _solark_soc_calibrated_pptt(solark_data)
+    if soc_pptt is None:
         return
-    soc_pptt = int(raw_soc)
     soc_pct = soc_pptt / 100.0
     threshold_pptt = SOLARK_SOC_SELF_USE_THRESHOLD_PCT * 100
     below_pptt = SOLARK_SOC_FEEDIN_BELOW_PCT * 100
@@ -764,23 +807,22 @@ def _run_solark_solis_automation(solis_data: dict, solark_data: dict) -> None:
 
 def _run_ha_curtailment_automation(solark_data: dict) -> None:
     """Turn all three HA generation switches off when SOC >= threshold; restore when below hysteresis."""
-    global _ha_curtail_active, _last_ha_curtail_ts
+    global _ha_curtail_active, _last_ha_curtail_ts, _ha_batt_draw_hold_since
     if not get_solark_soc_automation_enabled() or SOLARK_SOC_SELF_USE_THRESHOLD_PCT <= 0:
         return
-    if not HA_TOKEN or not HA_URL:
+    if not get_ha_token() or not get_ha_url():
         return
     now = time.time()
-    if now - _last_ha_curtail_ts < _HA_CURTAIL_COOLDOWN_SEC:
+    _raw_soc_pptt, soc_pptt = _solark_soc_calibrated_pptt(solark_data)
+    if soc_pptt is None:
         return
-    raw_soc = solark_data.get("battery_soc_pptt")
-    if raw_soc is None:
-        return
-    soc_pptt = int(raw_soc)
     soc_pct = soc_pptt / 100.0
     threshold_pptt = SOLARK_SOC_SELF_USE_THRESHOLD_PCT * 100
     below_pptt = SOLARK_SOC_FEEDIN_BELOW_PCT * 100
 
     if soc_pptt >= threshold_pptt and not _ha_curtail_active:
+        if now - _last_ha_curtail_ts < _HA_CURTAIL_COOLDOWN_SEC:
+            return
         logger.info("HA curtailment: SOC %.1f%% >= %d%% — turning off all generation switches", soc_pct, SOLARK_SOC_SELF_USE_THRESHOLD_PCT)
         errors = []
         for sw in _CURTAIL_SWITCHES:
@@ -792,9 +834,11 @@ def _run_ha_curtailment_automation(solark_data: dict) -> None:
         else:
             _ha_curtail_active = True
             _last_ha_curtail_ts = now
+            _ha_batt_draw_hold_since = None
             logger.info("HA curtailment: all switches off (SOC=%.1f%%)", soc_pct)
 
     elif _ha_curtail_active and soc_pptt < below_pptt:
+        _ha_batt_draw_hold_since = None
         logger.info("HA curtailment restore: SOC %.1f%% < %d%% — turning on all generation switches", soc_pct, SOLARK_SOC_FEEDIN_BELOW_PCT)
         errors = []
         for sw in _CURTAIL_SWITCHES:
@@ -807,6 +851,44 @@ def _run_ha_curtailment_automation(solark_data: dict) -> None:
             _ha_curtail_active = False
             _last_ha_curtail_ts = now
             logger.info("HA curtailment: all switches restored (SOC=%.1f%%)", soc_pct)
+    elif _ha_curtail_active and get_ha_restore_on_batt_draw_enabled():
+        # Option B: while SOC is still high (>= threshold), restore early when the
+        # Solark battery begins drawing power (battery_total_power_W <= threshold W)
+        # and stays in that state for `hold_sec`.
+        batt_power_w = solark_data.get("battery_total_power_W")
+        if batt_power_w is None:
+            batt_power_w = solark_data.get("battery_power_W")
+        if batt_power_w is None or not isinstance(batt_power_w, (int, float)):
+            _ha_batt_draw_hold_since = None
+            return
+
+        batt_power_threshold_w = float(get_ha_restore_batt_draw_power_threshold_w())
+        hold_sec = int(get_ha_restore_batt_draw_hold_sec())
+
+        if batt_power_w <= batt_power_threshold_w:
+            if _ha_batt_draw_hold_since is None:
+                _ha_batt_draw_hold_since = now
+            if now - _ha_batt_draw_hold_since >= hold_sec:
+                logger.info(
+                    "HA curtailment optionB restore: batt_power_W %.0f <= %.0f for %ds while SOC=%.1f%%",
+                    batt_power_w,
+                    batt_power_threshold_w,
+                    hold_sec,
+                    soc_pct,
+                )
+                errors = []
+                for sw in _CURTAIL_SWITCHES:
+                    result = _ha_switch_sync(sw["entity"], turn_on=True)
+                    if not result.get("ok"):
+                        errors.append(f"{sw['key']}: {result.get('error', 'unknown')}")
+                if errors:
+                    logger.warning("HA optionB restore: some switches failed: %s", errors)
+                else:
+                    _ha_curtail_active = False
+                    _last_ha_curtail_ts = now
+                    _ha_batt_draw_hold_since = None
+        else:
+            _ha_batt_draw_hold_since = None
 
 
 def _poll_sync() -> None:
@@ -962,7 +1044,7 @@ def _enforce_startup_safe_state() -> None:
     logger.warning("STARTUP SAFE STATE: enforcing all switches OFF and Solis 0%% limit")
 
     # 1. Turn all HA generation switches OFF
-    if HA_TOKEN and HA_URL:
+    if get_ha_token() and get_ha_url():
         for sw in _CURTAIL_SWITCHES:
             try:
                 result = _ha_switch_sync(sw["entity"], turn_on=False)
@@ -1145,10 +1227,9 @@ def _build_ai_debug_metrics(snapshot: dict) -> dict:
     solark = ((snapshot or {}).get("solark") or {}).get("data") or {}
     site = (snapshot or {}).get("site") or {}
 
-    solark_soc_raw = solark.get("battery_soc_pptt")
-    solark_soc_pct = None
-    if isinstance(solark_soc_raw, (int, float)):
-        solark_soc_pct = round(float(solark_soc_raw) / 100.0, 1)
+    raw_soc_pptt, cal_soc_pptt = _solark_soc_calibrated_pptt(solark)
+    solark_soc_pct = round(cal_soc_pptt / 100.0, 1) if isinstance(cal_soc_pptt, int) else None
+    solark_soc_raw_pct = round(raw_soc_pptt / 100.0, 1) if isinstance(raw_soc_pptt, int) else None
 
     return {
         "site_solis_inverter_count": site.get("active_solis_inverter_count"),
@@ -1165,6 +1246,7 @@ def _build_ai_debug_metrics(snapshot: dict) -> dict:
         "solark_grid_ct_power_W": solark.get("grid_ct_power_W"),
         "solark_battery_power_W": solark.get("battery_total_power_W") if solark.get("battery_total_power_W") is not None else solark.get("battery_power_W"),
         "solark_battery_soc_pct": solark_soc_pct,
+        "solark_battery_soc_raw_pct": solark_soc_raw_pct,
     }
 
 
@@ -1408,6 +1490,40 @@ def _validate_host(value: str, label: str, *, allow_empty: bool = False) -> str:
     return candidate.lower()
 
 
+def _validate_ha_url(value: str, label: str) -> str:
+    """
+    Validate Home Assistant base URL.
+    Accepts:
+      - http(s)://host[:port] with optional trailing slash (no path)
+      - host[:port] (auto-prepends http://)
+    """
+    candidate = (value or "").strip().rstrip("/")
+    if not candidate:
+        raise ValueError(f"{label} is required.")
+    if "/" in candidate and not candidate.startswith("http://") and not candidate.startswith("https://"):
+        raise ValueError(f"{label} must not include a path.")
+    if candidate.startswith("http://") or candidate.startswith("https://"):
+        # For HA we expect no path (only /api/ will be appended by code).
+        from urllib.parse import urlparse
+        p = urlparse(candidate)
+        if not p.hostname:
+            raise ValueError(f"{label} must include a valid host.")
+        if p.path not in ("", "/"):
+            raise ValueError(f"{label} must not include a URL path.")
+        if p.port is not None and (p.port < 1 or p.port > 65535):
+            raise ValueError(f"{label} port must be between 1 and 65535.")
+        # Normalize to no trailing slash
+        return f"{p.scheme}://{p.hostname}" + (f":{p.port}" if p.port else "")
+
+    # No scheme: accept host[:port], reject paths.
+    if "/" in candidate:
+        raise ValueError(f"{label} must not include a path.")
+    # Allow hostnames and IPs; optional :port.
+    if not re.fullmatch(r"[A-Za-z0-9.-]+(:[0-9]{1,5})?", candidate):
+        raise ValueError(f"{label} must be a valid IPv4/IPv6/hostname with optional :port.")
+    return "http://" + candidate
+
+
 def _validate_port(value, label: str, *, default: int | None = None) -> int:
     raw = str(value or "").strip()
     if not raw:
@@ -1491,7 +1607,14 @@ def _settings_values(overrides: dict | None = None) -> dict:
         "mqtt_host": saved.get("mqtt_host", MQTT_HOST or "10.10.53.92"),
         "mqtt_port": int(saved.get("mqtt_port", MQTT_PORT or 1883)),
         "solark_mqtt_topic": saved.get("solark_mqtt_topic", SOLARK_MQTT_TOPIC or "solar/solark"),
+        "ha_url": saved.get("ha_url", get_ha_url()),
+        "ha_token_present": bool(saved.get("ha_token", get_ha_token())),
         "solark_soc_automation_enabled": _as_bool(saved.get("solark_soc_automation_enabled", get_solark_soc_automation_enabled())),
+        "solark_soc_scale": float(saved.get("solark_soc_scale", get_solark_soc_scale())),
+        "solark_soc_offset_pct": float(saved.get("solark_soc_offset_pct", get_solark_soc_offset_pct())),
+        "ha_restore_on_batt_draw_enabled": _as_bool(saved.get("ha_restore_on_batt_draw_enabled", get_ha_restore_on_batt_draw_enabled())),
+        "ha_restore_batt_draw_power_threshold_w": float(saved.get("ha_restore_batt_draw_power_threshold_w", get_ha_restore_batt_draw_power_threshold_w())),
+        "ha_restore_batt_draw_hold_sec": int(saved.get("ha_restore_batt_draw_hold_sec", get_ha_restore_batt_draw_hold_sec())),
         "tesla_source_enabled": _as_bool(saved.get("tesla_source_enabled", True)),
         "tesla_source_type": str(saved.get("tesla_source_type", "mqtt") or "mqtt").strip().lower(),
         "tesla_source_host": saved.get("tesla_source_host", ""),
@@ -1542,6 +1665,13 @@ def _settings_form_overrides(form) -> dict:
         "mqtt_port": (form.get("mqtt_port") or "").strip(),
         "solark_mqtt_topic": (form.get("solark_mqtt_topic") or "").strip(),
         "solark_soc_automation_enabled": _bool_from_form(form, "solark_soc_automation_enabled"),
+        "solark_soc_scale": (form.get("solark_soc_scale") or "").strip(),
+        "solark_soc_offset_pct": (form.get("solark_soc_offset_pct") or "").strip(),
+        "ha_restore_on_batt_draw_enabled": _bool_from_form(form, "ha_restore_on_batt_draw_enabled"),
+        "ha_restore_batt_draw_power_threshold_w": (form.get("ha_restore_batt_draw_power_threshold_w") or "").strip(),
+        "ha_restore_batt_draw_hold_sec": (form.get("ha_restore_batt_draw_hold_sec") or "").strip(),
+        "ha_url": (form.get("ha_url") or "").strip(),
+        "ha_token": (form.get("ha_token") or "").strip(),
         "tesla_source_enabled": _bool_from_form(form, "tesla_source_enabled"),
         "tesla_source_type": (form.get("tesla_source_type") or "mqtt").strip().lower(),
         "tesla_source_host": (form.get("tesla_source_host") or "").strip(),
@@ -1589,7 +1719,27 @@ def _validate_settings(form) -> dict:
         "mqtt_host": _validate_host(overrides["mqtt_host"], "MQTT broker IP / host"),
         "mqtt_port": _validate_port(overrides["mqtt_port"], "MQTT broker port", default=1883),
         "solark_mqtt_topic": _validate_topic(overrides["solark_mqtt_topic"], "Solark MQTT topic", allow_empty=True),
+        "ha_url": _validate_ha_url(overrides["ha_url"], "Home Assistant URL"),
         "solark_soc_automation_enabled": overrides["solark_soc_automation_enabled"],
+        "solark_soc_scale": _validate_float(overrides["solark_soc_scale"], "Solark SOC scale", default=1.0, min_val=0.5, max_val=1.5),
+        "solark_soc_offset_pct": _validate_float(overrides["solark_soc_offset_pct"], "Solark SOC offset (pct)", default=0.0, min_val=-20.0, max_val=20.0),
+        "ha_restore_on_batt_draw_enabled": overrides["ha_restore_on_batt_draw_enabled"],
+        "ha_restore_batt_draw_power_threshold_w": _validate_float(
+            overrides["ha_restore_batt_draw_power_threshold_w"],
+            "Restore threshold battery_total_power_W (W)",
+            default=0.0,
+            min_val=-100000,
+            max_val=100000,
+        ),
+        "ha_restore_batt_draw_hold_sec": int(
+            _validate_float(
+                overrides["ha_restore_batt_draw_hold_sec"],
+                "Restore hold time (sec)",
+                default=60,
+                min_val=0,
+                max_val=3600,
+            )
+        ),
         "tesla_source_enabled": overrides["tesla_source_enabled"],
         "tesla_source_type": _validate_source_type(overrides["tesla_source_type"], "Tesla source mode"),
         "tesla_source_host": _validate_host(overrides["tesla_source_host"], "Tesla direct HTTP host", allow_empty=True),
@@ -1619,6 +1769,11 @@ def _validate_settings(form) -> dict:
         "solar_prediction_az": int(_validate_float(overrides["solar_prediction_az"], "Panel azimuth (deg)", default=0, min_val=-180, max_val=180)),
         "solar_prediction_kwp": _validate_float(overrides["solar_prediction_kwp"], "Total kWp", default=25.0, min_val=0.1, max_val=500),
     }
+
+    # Only update token when operator provides one; otherwise preserve existing token in settings.json.
+    ha_token_raw = (overrides.get("ha_token") or "").strip()
+    if ha_token_raw:
+        data["ha_token"] = ha_token_raw
 
     if data["tesla_source_enabled"] and data["tesla_source_type"] == "mqtt":
         if not data["tesla_source_info_topic"]:
@@ -2769,18 +2924,21 @@ _CURTAIL_SWITCHES = [
 
 
 def _ha_headers() -> dict:
-    return {"Authorization": f"Bearer {HA_TOKEN}", "Content-Type": "application/json"}
+    token = get_ha_token()
+    return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
 
 
 def _fetch_curtailment_sync() -> dict:
     """Blocking: fetch state of all curtailment switches + HA auth status."""
     import urllib.request, urllib.error
     result: dict = {"auth_ok": False, "auth_error": None, "switches": {}}
-    if not HA_TOKEN:
+    ha_url = get_ha_url()
+    ha_token = get_ha_token()
+    if not ha_token or not ha_url:
         result["auth_error"] = "HA_TOKEN not configured"
         return result
     try:
-        req = UrllibRequest(f"{HA_URL}/api/", headers=_ha_headers())
+        req = UrllibRequest(f"{ha_url}/api/", headers=_ha_headers())
         with urlopen(req, timeout=6) as r:
             body = json.loads(r.read())
         result["auth_ok"] = body.get("message") == "API running."
@@ -2793,7 +2951,7 @@ def _fetch_curtailment_sync() -> dict:
 
     for sw in _CURTAIL_SWITCHES:
         try:
-            req = UrllibRequest(f"{HA_URL}/api/states/{sw['entity']}", headers=_ha_headers())
+            req = UrllibRequest(f"{ha_url}/api/states/{sw['entity']}", headers=_ha_headers())
             with urlopen(req, timeout=6) as r:
                 data = json.loads(r.read())
             result["switches"][sw["key"]] = {
@@ -2818,7 +2976,8 @@ def _ha_switch_sync(entity_id: str, turn_on: bool) -> dict:
     """Blocking: call HA service to turn a switch on or off."""
     import urllib.request, urllib.error
     action = "turn_on" if turn_on else "turn_off"
-    url = f"{HA_URL}/api/services/switch/{action}"
+    ha_url = get_ha_url()
+    url = f"{ha_url}/api/services/switch/{action}"
     payload = json.dumps({"entity_id": entity_id}).encode()
     req = UrllibRequest(url, data=payload, headers=_ha_headers(), method="POST")
     try:
@@ -2847,7 +3006,7 @@ async def page_curtailment(request: Request):
         auth_ok=data.get("auth_ok", False),
         auth_error=data.get("auth_error"),
         switches=data.get("switches", {}),
-        ha_url=HA_URL,
+        ha_url=get_ha_url(),
     )
     return templates.TemplateResponse("curtailment.html", ctx)
 
@@ -2862,13 +3021,30 @@ async def api_curtailment_get():
         data = {"auth_ok": False, "auth_error": str(exc), "switches": {}}
     # Append live automation state
     solark = _solark_cache.get("data") or {}
+    raw_soc_pptt, cal_soc_pptt = _solark_soc_calibrated_pptt(solark)
+    now = time.time()
+    batt_power_w = solark.get("battery_total_power_W")
+    if batt_power_w is None:
+        batt_power_w = solark.get("battery_power_W")
+    batt_hold_elapsed_sec = None
+    if _ha_batt_draw_hold_since is not None:
+        batt_hold_elapsed_sec = round(now - _ha_batt_draw_hold_since, 1)
     data["auto"] = {
         "enabled":        get_solark_soc_automation_enabled(),
         "curtail_active": _ha_curtail_active,
         "solis_active":   _solark_auto_self_use_active,
-        "soc_pct":        round(int(solark.get("battery_soc_pptt", 0)) / 100.0, 1) if solark.get("battery_soc_pptt") is not None else None,
+        "soc_pct":        round(cal_soc_pptt / 100.0, 1) if isinstance(cal_soc_pptt, int) else None,
+        "soc_raw_pct":    round(raw_soc_pptt / 100.0, 1) if isinstance(raw_soc_pptt, int) else None,
         "threshold_pct":  SOLARK_SOC_SELF_USE_THRESHOLD_PCT,
         "restore_pct":    SOLARK_SOC_FEEDIN_BELOW_PCT,
+        "soc_scale":      get_solark_soc_scale(),
+        "soc_offset_pct": get_solark_soc_offset_pct(),
+        "batt_power_W":  batt_power_w,
+        "optionB_restore_enabled": get_ha_restore_on_batt_draw_enabled(),
+        "optionB_restore_batt_power_threshold_W": get_ha_restore_batt_draw_power_threshold_w(),
+        "optionB_restore_hold_sec": get_ha_restore_batt_draw_hold_sec(),
+        "optionB_hold_elapsed_sec": batt_hold_elapsed_sec,
+        "optionB_hold_since_ts": _ha_batt_draw_hold_since,
     }
     return data
 

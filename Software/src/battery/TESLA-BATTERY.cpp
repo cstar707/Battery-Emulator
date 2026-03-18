@@ -454,9 +454,43 @@ void TeslaBattery::
     update_values() {  //This function maps all the values fetched via CAN to the correct parameters used for modbus
   //After values are mapped, we perform some safety checks, and do some serial printouts
 
-  datalayer.battery.status.soh_pptt = 9900;  //Tesla batteries do not send a SOH% value on bus. Hardcode to 99%
+  // Prefer energy-based capacity/SOC when available (accounts for degradation).
+  //
+  // Tesla 3/Y packs publish:
+  // - nominal full pack energy (0.1 kWh units)
+  // - expected energy remaining (0.1 kWh units)
+  // - beginning of life energy (0.1 kWh units) on some firmwares
+  //
+  // Using these gives a truer SOC/remaining_Wh than relying on UI SOC alone, especially on high-mileage packs.
+  const uint16_t nom_full_0p1kWh = battery_nominal_full_pack_energy;
+  const uint16_t exp_rem_0p1kWh = battery_expected_energy_remaining;
+  const uint16_t bol_0p1kWh = battery_beginning_of_life;
 
-  datalayer.battery.status.real_soc = (battery_soc_ui * 10);  //increase SOC range from 0-100.0 -> 100.00
+  if (nom_full_0p1kWh > 0) {
+    // 0.1 kWh => 100 Wh
+    const uint32_t cap_Wh = static_cast<uint32_t>(nom_full_0p1kWh) * 100U;
+    datalayer.battery.info.total_capacity_Wh = cap_Wh;
+    datalayer.battery.info.reported_total_capacity_Wh = cap_Wh;
+  }
+
+  if (nom_full_0p1kWh > 0 && exp_rem_0p1kWh > 0) {
+    // SOC in pptt (0..10000). Clamp to valid range.
+    uint32_t soc_pptt = (static_cast<uint32_t>(exp_rem_0p1kWh) * 10000U) / static_cast<uint32_t>(nom_full_0p1kWh);
+    if (soc_pptt > 10000U) soc_pptt = 10000U;
+    datalayer.battery.status.real_soc = static_cast<uint16_t>(soc_pptt);
+  } else {
+    // Fallback: UI SOC is 0.1% units → pptt.
+    datalayer.battery.status.real_soc = static_cast<uint16_t>(battery_soc_ui) * 10U;
+  }
+
+  // SOH: if beginning-of-life is known, compute from energy; else keep prior behavior.
+  if (nom_full_0p1kWh > 0 && bol_0p1kWh > 0) {
+    uint32_t soh_pptt = (static_cast<uint32_t>(nom_full_0p1kWh) * 10000U) / static_cast<uint32_t>(bol_0p1kWh);
+    if (soh_pptt > 10000U) soh_pptt = 10000U;
+    datalayer.battery.status.soh_pptt = static_cast<uint16_t>(soh_pptt);
+  } else {
+    datalayer.battery.status.soh_pptt = 9900;  // Tesla packs often don't publish a stable SOH on-bus
+  }
 
   datalayer.battery.status.voltage_dV = battery_volts;
 

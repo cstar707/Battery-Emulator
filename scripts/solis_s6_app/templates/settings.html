@@ -32,6 +32,11 @@
       <div class="settings-row"><label for="solark_mqtt_topic">Solark MQTT topic</label><input type="text" id="solark_mqtt_topic" name="solark_mqtt_topic" value="{{ solark_mqtt_topic }}" placeholder="solar/solark" /></div>
       <p class="muted" style="margin-top: 0.75rem;">Priority order stays: <strong>1)</strong> Solark board HTTP (<code>/solark_data</code>), <strong>2)</strong> ESPHome HTTP, <strong>3)</strong> Solark MQTT topic. Credentials remain env-only.</p>
 
+      <h3 style="margin-top: 1.25rem; margin-bottom: 0.75rem; font-size: 1rem; color: var(--muted);">Home Assistant</h3>
+      <div class="settings-row"><label for="ha_url">HA URL</label><input type="text" id="ha_url" name="ha_url" value="{{ ha_url }}" placeholder="http://10.10.53.179:8123" /></div>
+      <div class="settings-row"><label for="ha_token">HA Token</label><input type="password" id="ha_token" name="ha_token" value="" placeholder="paste long-lived token" /></div>
+      <p class="muted" style="margin-top: 0.5rem;">Saved token is stored in `settings.json` (treat as a secret; do not commit to git).</p>
+
       <h3 style="margin-top: 1.25rem; margin-bottom: 0.75rem; font-size: 1rem; color: var(--muted);">Battery capacity (kWh)</h3>
       <p class="muted" style="margin: 0 0 0.75rem 0;">Per-inverter capacity for Remaining kWh and Time to empty/full. Env: SOLIS1_BATTERY_KWH, SOLIS2_BATTERY_KWH, SOLARK1_BATTERY_KWH.</p>
       <div class="settings-row"><label for="solis1_battery_kwh">Solis1 (s6-inv-1)</label><input type="number" id="solis1_battery_kwh" name="solis1_battery_kwh" value="{{ solis1_battery_kwh }}" min="1" max="200" step="0.1" placeholder="48" /></div>
@@ -70,6 +75,26 @@
 
       <h3 style="margin-top: 1.25rem; margin-bottom: 0.75rem; font-size: 1rem; color: var(--muted);">Automation</h3>
       <div class="settings-row"><label for="solark_soc_automation_enabled" style="display:flex; align-items:center; gap:0.5rem; min-width:auto;"><input type="checkbox" id="solark_soc_automation_enabled" name="solark_soc_automation_enabled" value="on" {% if solark_soc_automation_enabled %}checked{% endif %} />When Solark SOC ≥ 98%, switch Solis to self-use (and back to feed-in below 95%)</label></div>
+      <p class="muted" style="margin: 0.5rem 0 0.25rem 0;">Solark SOC calibration (applies to automations + display). Use this instead of editing battery emulator firmware when SOC drifts over time.</p>
+      <div class="settings-row"><label for="solark_soc_scale">Solark SOC scale</label><input type="number" id="solark_soc_scale" name="solark_soc_scale" value="{{ solark_soc_scale }}" min="0.5" max="1.5" step="0.01" placeholder="1.00" /> <span class="muted">Example: 0.98 makes 98% read as 96.0%.</span></div>
+      <div class="settings-row"><label for="solark_soc_offset_pct">Solark SOC offset (pct)</label><input type="number" id="solark_soc_offset_pct" name="solark_soc_offset_pct" value="{{ solark_soc_offset_pct }}" min="-20" max="20" step="0.1" placeholder="0.0" /> <span class="muted">Example: -3.0 shifts 98.0% → 95.0%.</span></div>
+      <div class="settings-row" {% if not solark_soc_automation_enabled %}style="opacity:0.55; pointer-events:none;"{% endif %}>
+        <label for="ha_restore_on_batt_draw_enabled" style="display:flex; align-items:center; gap:0.5rem; min-width:auto;">
+          <input type="checkbox" id="ha_restore_on_batt_draw_enabled" name="ha_restore_on_batt_draw_enabled" value="on"
+            {% if ha_restore_on_batt_draw_enabled %}checked{% endif %}
+          />
+          Option B: restore HA generation when Solark battery starts drawing power (battery_total_power_W <= threshold W), even if SOC is still high
+        </label>
+      </div>
+      <div class="settings-row" {% if not solark_soc_automation_enabled %}style="opacity:0.55; pointer-events:none;"{% endif %}>
+        <label for="ha_restore_batt_draw_power_threshold_w">Restore threshold battery_total_power_W (W)</label>
+        <input type="number" id="ha_restore_batt_draw_power_threshold_w" name="ha_restore_batt_draw_power_threshold_w" value="{{ ha_restore_batt_draw_power_threshold_w }}" step="10" placeholder="0" />
+      </div>
+      <div class="settings-row" {% if not solark_soc_automation_enabled %}style="opacity:0.55; pointer-events:none;"{% endif %}>
+        <label for="ha_restore_batt_draw_hold_sec">Restore hold time (sec)</label>
+        <input type="number" id="ha_restore_batt_draw_hold_sec" name="ha_restore_batt_draw_hold_sec" value="{{ ha_restore_batt_draw_hold_sec }}" min="0" max="3600" step="1" placeholder="60" />
+      </div>
+      <p class="muted" style="margin-top: 0.35rem;">Normalized Solark battery_total_power_W uses sign convention: negative/<=0 means “battery drawing”, positive means “charging”.</p>
       <div class="settings-row"><label for="solar_llm_automations_enabled" style="display:flex; align-items:center; gap:0.5rem; min-width:auto;"><input type="checkbox" id="solar_llm_automations_enabled" name="solar_llm_automations_enabled" value="on" {% if solar_llm_automations_enabled %}checked{% endif %} />Enable AI / LLM assistant, AI debug page, and background LLM automations</label></div>
       <p class="muted" style="margin-top: 0.75rem;">When this is off, the existing non-AI Solis/Solark automation remains the fallback path. AI chat, AI debug, and background LLM jobs stay disabled.</p>
 
@@ -122,7 +147,10 @@
       <tr><td class="muted">Solark board HTTP</td><td>{{ solark1_host or '(not set)' }}:{{ solark1_http_port }}</td></tr>
       <tr><td class="muted">ESPHome fallback</td><td>{% if esphome_solark_host %}{{ esphome_solark_host }}:{{ esphome_solark_port }}{% else %}(not set){% endif %}</td></tr>
       <tr><td class="muted">Solis Modbus</td><td>{{ solis_host }}:{{ solis_port }} (unit {{ solis_modbus_unit }})</td></tr>
+      <tr><td class="muted">HA URL</td><td>{{ ha_url or '(not set)' }}</td></tr>
+      <tr><td class="muted">HA token</td><td>{% if ha_token_present %}<span class="status-ok">Configured</span>{% else %}<span class="muted">Not set</span>{% endif %}</td></tr>
       <tr><td class="muted">Solark SOC automation</td><td>{% if solark_soc_automation_enabled %}<span class="status-ok">On</span>{% else %}<span class="muted">Off</span>{% endif %}</td></tr>
+      <tr><td class="muted">Solark SOC calibration</td><td>scale {{ solark_soc_scale }}, offset {{ solark_soc_offset_pct }}%</td></tr>
       <tr><td class="muted">AI / LLM automations</td><td>{% if solar_llm_automations_enabled %}<span class="status-ok">On</span>{% else %}<span class="muted">Off</span>{% endif %}</td></tr>
       <tr><td class="muted">Forecast API</td><td>{% if solar_forecast_api_enabled %}<span class="status-ok">On</span>{% else %}<span class="muted">Off</span>{% endif %}</td></tr>
       <tr><td class="muted">Solar prediction mode</td><td>{% if solar_prediction_enabled %}<span class="status-ok">On</span>{% else %}<span class="muted">Off</span>{% endif %}</td></tr>
