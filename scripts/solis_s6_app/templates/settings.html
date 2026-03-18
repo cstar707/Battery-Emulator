@@ -32,6 +32,12 @@
       <div class="settings-row"><label for="solark_mqtt_topic">Solark MQTT topic</label><input type="text" id="solark_mqtt_topic" name="solark_mqtt_topic" value="{{ solark_mqtt_topic }}" placeholder="solar/solark" /></div>
       <p class="muted" style="margin-top: 0.75rem;">Priority order stays: <strong>1)</strong> Solark board HTTP (<code>/solark_data</code>), <strong>2)</strong> ESPHome HTTP, <strong>3)</strong> Solark MQTT topic. Credentials remain env-only.</p>
 
+      <h3 style="margin-top: 1.25rem; margin-bottom: 0.75rem; font-size: 1rem; color: var(--muted);">Battery capacity (kWh)</h3>
+      <p class="muted" style="margin: 0 0 0.75rem 0;">Per-inverter capacity for Remaining kWh and Time to empty/full. Env: SOLIS1_BATTERY_KWH, SOLIS2_BATTERY_KWH, SOLARK1_BATTERY_KWH.</p>
+      <div class="settings-row"><label for="solis1_battery_kwh">Solis1 (s6-inv-1)</label><input type="number" id="solis1_battery_kwh" name="solis1_battery_kwh" value="{{ solis1_battery_kwh }}" min="1" max="200" step="0.1" placeholder="48" /></div>
+      <div class="settings-row"><label for="solis2_battery_kwh">Solis2 (s6-inv-2)</label><input type="number" id="solis2_battery_kwh" name="solis2_battery_kwh" value="{{ solis2_battery_kwh }}" min="1" max="200" step="0.1" placeholder="48" /></div>
+      <div class="settings-row"><label for="solark1_battery_kwh">Solark1</label><input type="number" id="solark1_battery_kwh" name="solark1_battery_kwh" value="{{ solark1_battery_kwh }}" min="1" max="200" step="0.1" placeholder="64" /></div>
+
       <h3 style="margin-top: 1.25rem; margin-bottom: 0.75rem; font-size: 1rem; color: var(--muted);">MQTT broker</h3>
       <div class="settings-row"><label for="mqtt_host">Broker IP / host</label><input type="text" id="mqtt_host" name="mqtt_host" value="{{ mqtt_host }}" placeholder="10.10.53.92" /></div>
       <div class="settings-row"><label for="mqtt_port">Broker port</label><input type="number" id="mqtt_port" name="mqtt_port" value="{{ mqtt_port }}" min="1" max="65535" /></div>
@@ -64,6 +70,18 @@
 
       <h3 style="margin-top: 1.25rem; margin-bottom: 0.75rem; font-size: 1rem; color: var(--muted);">Automation</h3>
       <div class="settings-row"><label for="solark_soc_automation_enabled" style="display:flex; align-items:center; gap:0.5rem; min-width:auto;"><input type="checkbox" id="solark_soc_automation_enabled" name="solark_soc_automation_enabled" value="on" {% if solark_soc_automation_enabled %}checked{% endif %} />When Solark SOC ≥ 98%, switch Solis to self-use (and back to feed-in below 95%)</label></div>
+      <div class="settings-row"><label for="solar_llm_automations_enabled" style="display:flex; align-items:center; gap:0.5rem; min-width:auto;"><input type="checkbox" id="solar_llm_automations_enabled" name="solar_llm_automations_enabled" value="on" {% if solar_llm_automations_enabled %}checked{% endif %} />Enable AI / LLM assistant, AI debug page, and background LLM automations</label></div>
+      <p class="muted" style="margin-top: 0.75rem;">When this is off, the existing non-AI Solis/Solark automation remains the fallback path. AI chat, AI debug, and background LLM jobs stay disabled.</p>
+
+      <h3 style="margin-top: 1.25rem; margin-bottom: 0.75rem; font-size: 1rem; color: var(--muted);">Solar Forecast (Forecast.Solar)</h3>
+      <p class="muted" style="margin: 0 0 0.75rem 0;">Two toggles: <strong>Forecast API</strong> — fetches data when on; <strong>Solar prediction</strong> — automations use forecast when on. Both off by default.</p>
+      <div class="settings-row"><label for="solar_forecast_api_enabled" style="display:flex; align-items:center; gap:0.5rem; min-width:auto;"><input type="checkbox" id="solar_forecast_api_enabled" name="solar_forecast_api_enabled" value="on" {% if solar_forecast_api_enabled %}checked{% endif %} />Forecast API — fetch Forecast.Solar (12 calls/60 min limit)</label></div>
+      <div class="settings-row"><label for="solar_prediction_enabled" style="display:flex; align-items:center; gap:0.5rem; min-width:auto;"><input type="checkbox" id="solar_prediction_enabled" name="solar_prediction_enabled" value="on" {% if solar_prediction_enabled %}checked{% endif %} />Solar prediction — use forecast in automations</label></div>
+      <div class="settings-row"><label for="solar_prediction_lat">Latitude</label><input type="number" id="solar_prediction_lat" name="solar_prediction_lat" value="{{ solar_prediction_lat }}" min="-90" max="90" step="0.0001" placeholder="40.7" /></div>
+      <div class="settings-row"><label for="solar_prediction_lon">Longitude</label><input type="number" id="solar_prediction_lon" name="solar_prediction_lon" value="{{ solar_prediction_lon }}" min="-180" max="180" step="0.0001" placeholder="-74.0" /></div>
+      <div class="settings-row"><label for="solar_prediction_dec">Panel tilt (deg, 0–90)</label><input type="number" id="solar_prediction_dec" name="solar_prediction_dec" value="{{ solar_prediction_dec }}" min="0" max="90" placeholder="45" /></div>
+      <div class="settings-row"><label for="solar_prediction_az">Panel azimuth (deg, 0=south)</label><input type="number" id="solar_prediction_az" name="solar_prediction_az" value="{{ solar_prediction_az }}" min="-180" max="180" placeholder="0" /></div>
+      <div class="settings-row"><label for="solar_prediction_kwp">Total kWp (combined arrays)</label><input type="number" id="solar_prediction_kwp" name="solar_prediction_kwp" value="{{ solar_prediction_kwp }}" min="0.1" max="500" step="0.1" placeholder="25" /></div>
 
       <div style="margin-top: 1.25rem;"><button type="submit">Save integration settings</button></div>
     </form>
@@ -105,6 +123,9 @@
       <tr><td class="muted">ESPHome fallback</td><td>{% if esphome_solark_host %}{{ esphome_solark_host }}:{{ esphome_solark_port }}{% else %}(not set){% endif %}</td></tr>
       <tr><td class="muted">Solis Modbus</td><td>{{ solis_host }}:{{ solis_port }} (unit {{ solis_modbus_unit }})</td></tr>
       <tr><td class="muted">Solark SOC automation</td><td>{% if solark_soc_automation_enabled %}<span class="status-ok">On</span>{% else %}<span class="muted">Off</span>{% endif %}</td></tr>
+      <tr><td class="muted">AI / LLM automations</td><td>{% if solar_llm_automations_enabled %}<span class="status-ok">On</span>{% else %}<span class="muted">Off</span>{% endif %}</td></tr>
+      <tr><td class="muted">Forecast API</td><td>{% if solar_forecast_api_enabled %}<span class="status-ok">On</span>{% else %}<span class="muted">Off</span>{% endif %}</td></tr>
+      <tr><td class="muted">Solar prediction mode</td><td>{% if solar_prediction_enabled %}<span class="status-ok">On</span>{% else %}<span class="muted">Off</span>{% endif %}</td></tr>
     </table>
     {% if mqtt_runtime_restart_pending %}
     <p class="status-fail" style="margin-top: 0.75rem;">Saved MQTT connection settings differ from the running <code>:3007</code> runtime. Restart <code>solis-s6-ui.service</code> when you want that process to reconnect using the saved broker/topic.</p>

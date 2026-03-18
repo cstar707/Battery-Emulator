@@ -228,12 +228,64 @@ except (ValueError, TypeError):
     TABUCHI_TODAY_PV_KWH_DEFAULT = 3.0
 
 
-# Total battery capacity (kWh) for remaining-energy and runtime estimates. Used in MQTT and tools.
-try:
-    _b = os.environ.get("SOLIS_TOTAL_BATTERY_KWH", "").strip()
-    SOLIS_TOTAL_BATTERY_KWH = float(_b) if _b else 48.0
-except (ValueError, TypeError):
-    SOLIS_TOTAL_BATTERY_KWH = 48.0
+# Battery capacity (kWh) per inverter: solis1, solis2, solark1. Editable in Settings. Used for Remaining kWh and Time to empty/full.
+def _get_battery_kwh(key: str, env_key: str, default: float) -> float:
+    """Read battery capacity from env, then settings.json, else default."""
+    v = os.environ.get(env_key, "").strip()
+    if v:
+        try:
+            return float(v)
+        except (ValueError, TypeError):
+            pass
+    o = _settings_overrides.get(key)
+    if o is not None:
+        try:
+            return float(o)
+        except (ValueError, TypeError):
+            pass
+    return default
+
+
+def get_solis1_battery_kwh() -> float:
+    """First Solis inverter (s6-inv-1) battery capacity (kWh)."""
+    # Backward compat: SOLIS_TOTAL_BATTERY_KWH → solis1
+    v = os.environ.get("SOLIS1_BATTERY_KWH") or os.environ.get("SOLIS_TOTAL_BATTERY_KWH", "").strip()
+    if v:
+        try:
+            return float(v)
+        except (ValueError, TypeError):
+            pass
+    return _get_battery_kwh("solis1_battery_kwh", "SOLIS1_BATTERY_KWH", 48.0)
+
+
+def get_solis2_battery_kwh() -> float:
+    """Second Solis inverter (s6-inv-2) battery capacity (kWh)."""
+    return _get_battery_kwh("solis2_battery_kwh", "SOLIS2_BATTERY_KWH", 48.0)
+
+
+def get_solark1_battery_kwh() -> float:
+    """Solark battery capacity (kWh)."""
+    # Backward compat: migrate solark_total_battery_kwh → solark1_battery_kwh
+    o = _settings_overrides.get("solark1_battery_kwh")
+    if o is None:
+        o = _settings_overrides.get("solark_total_battery_kwh")
+    if o is not None:
+        try:
+            return float(o)
+        except (ValueError, TypeError):
+            pass
+    v = os.environ.get("SOLARK1_BATTERY_KWH") or os.environ.get("SOLARK_TOTAL_BATTERY_KWH", "").strip()
+    if v:
+        try:
+            return float(v)
+        except (ValueError, TypeError):
+            pass
+    return 64.0
+
+
+def get_solis_battery_kwh(topic_id: str) -> float:
+    """Battery capacity (kWh) for Solis inverter by topic_id (s6-inv-1, s6-inv-2)."""
+    return get_solis2_battery_kwh() if topic_id == "s6-inv-2" else get_solis1_battery_kwh()
 
 
 def get_tabuchi_today_pv_kwh() -> float:
@@ -270,3 +322,63 @@ MQTT_LEGACY_PREFIX = str(_get("mqtt_legacy_prefix", "MQTT_LEGACY_PREFIX", "solar
 MQTT_USER = os.environ.get("MQTT_USER", "api").strip() or None
 MQTT_PASSWORD = os.environ.get("MQTT_PASSWORD", "test12345").strip() or None
 MQTT_CLIENT_ID = os.environ.get("MQTT_CLIENT_ID", "solis-s6-ui").strip()
+
+# Forecast.Solar (Stage 4) — two toggles: API fetches, prediction mode (use forecast in automations)
+def get_solar_forecast_api_enabled() -> bool:
+    """Whether to fetch Forecast.Solar API. When OFF, no external calls."""
+    return _get_bool("solar_forecast_api_enabled", "SOLAR_FORECAST_API_ENABLED", False)
+
+
+def get_solar_prediction_enabled() -> bool:
+    """Whether automations use forecast data. When OFF, automations ignore forecast (data may still show in UI)."""
+    return _get_bool("solar_prediction_enabled", "SOLAR_PREDICTION_ENABLED", False)
+
+
+def get_solar_llm_automations_enabled() -> bool:
+    """Master toggle for LLM-based automations and assistant features."""
+    return _get_bool("solar_llm_automations_enabled", "SOLAR_LLM_AUTOMATIONS_ENABLED", False)
+
+
+def get_solar_prediction_lat() -> float:
+    """Latitude for Forecast.Solar (-90 to 90)."""
+    v = _get("solar_prediction_lat", "SOLAR_PREDICTION_LAT", 40.7)
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return 40.7
+
+
+def get_solar_prediction_lon() -> float:
+    """Longitude for Forecast.Solar (-180 to 180)."""
+    v = _get("solar_prediction_lon", "SOLAR_PREDICTION_LON", -74.0)
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return -74.0
+
+
+def get_solar_prediction_dec() -> int:
+    """Panel declination/tilt in degrees (0=horizontal, 90=vertical). Default 45 (south-facing)."""
+    v = _get("solar_prediction_dec", "SOLAR_PREDICTION_DEC", 45)
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return 45
+
+
+def get_solar_prediction_az() -> int:
+    """Panel azimuth (-180 to 180; 0=south). Default 0 (south)."""
+    v = _get("solar_prediction_az", "SOLAR_PREDICTION_AZ", 0)
+    try:
+        return int(v)
+    except (TypeError, ValueError):
+        return 0
+
+
+def get_solar_prediction_kwp() -> float:
+    """Combined installed kWp (Solark + Solis + Envoy + Tabuchi). Default 25."""
+    v = _get("solar_prediction_kwp", "SOLAR_PREDICTION_KWP", "25")
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return 25.0

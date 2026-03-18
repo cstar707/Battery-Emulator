@@ -690,7 +690,7 @@ def _apply_use_all_solar_preset_locked() -> bool:
 
 
 # ── Grid charge limits (11.4 kW max for S6-EH1P11.4k) ─────────────────────────
-# 43110 BIT05: 0=allow grid charge
+# 43110 BIT05: allow grid charge (bit polarity is inverter-specific; on this system bit=1 enables)
 # 43117: max charge current (0.1 A units), 70A = 700
 # 43130: battery charge power limit (10 W units), 11400 W = 1140
 # 43027: force-charge power limitation (W)
@@ -700,6 +700,109 @@ _REG_CHARGE_LIMIT_10W = 43130
 _REG_FORCE_CHARGE_POWER = 43027
 _REG_REMOTE_POWER = 43128
 _REG_REMOTE_MODE = 43132
+
+
+def arm_grid_charge(
+    *,
+    charge_limit_watts: int = 11400,
+    max_amps: float = 70.0,
+) -> dict:
+    """
+    Arm/enable grid charge capability (work-mode + limits) WITHOUT setting remote power.
+
+    This is intended to be called rarely:
+      - once when enabling charge control
+      - when we detect the inverter dropped the allow-grid-charge gate
+
+    Returns {"ok": bool, "message": str, "writes": list}.
+    """
+    with _modbus_lock:
+        return _arm_grid_charge_locked(charge_limit_watts=charge_limit_watts, max_amps=max_amps)
+
+
+def _arm_grid_charge_locked(*, charge_limit_watts: int, max_amps: float) -> dict:
+    client = _get_client()
+    writes: list[str] = []
+    try:
+        if not client.connect():
+            return {"ok": False, "message": "Modbus connect failed", "writes": []}
+
+        # 43110 BIT05: allow grid charge (operator-verified: bit=1 enables on this system)
+        h = _read_holding(client, _REG_STORAGE_CONTROL, 1)
+        if not h:
+            client.close()
+            return {"ok": False, "message": "Read 43110 failed", "writes": writes}
+        mode = h[0]
+        new_mode = mode | 0x20
+        if new_mode != mode:
+            if _write_holding(client, _REG_STORAGE_CONTROL, new_mode):
+                writes.append(f"43110=0x{new_mode:04X} (allow grid charge)")
+        time.sleep(0.1)
+
+        # 43135=0: ensure RC force charge/discharge is not overriding remote control
+        if _write_holding(client, 43135, 0):
+            writes.append("43135=0")
+        time.sleep(0.1)
+
+        # 43117: max charge current (0.1 A)
+        new_chg = int(max(1, min(70, max_amps)) * 10)
+        if _write_holding(client, _REG_MAX_CHARGE, new_chg):
+            writes.append(f"43117={new_chg} ({new_chg * 0.1} A)")
+        time.sleep(0.1)
+
+        # 43130: charge limit (10 W units)
+        limit_43130 = max(500, charge_limit_watts // 10)
+        if _write_holding(client, _REG_CHARGE_LIMIT_10W, limit_43130):
+            writes.append(f"43130={limit_43130} ({limit_43130 * 10} W)")
+        time.sleep(0.1)
+
+        # 43027: force-charge power limitation (W)
+        if _write_holding(client, _REG_FORCE_CHARGE_POWER, charge_limit_watts):
+            writes.append(f"43027={charge_limit_watts} W")
+        time.sleep(0.1)
+
+        client.close()
+        msg = "Grid charge armed" if writes else "Already armed"
+        logger.info("arm_grid_charge: %s — %s", msg, writes)
+        return {"ok": True, "message": msg, "writes": writes}
+    except Exception as e:
+        logger.exception("arm_grid_charge: %s", e)
+        return {"ok": False, "message": str(e), "writes": writes}
+
+
+def set_remote_import_watts(*, import_watts: int) -> dict:
+    """
+    Update ONLY the remote-control power command for import.
+
+    This is safe to call frequently (subject to your own cooldown/deadband) because it avoids
+    touching 43110 work-mode bits. It keeps the dead-man alive (remote mode + power).
+    """
+    with _modbus_lock:
+        return _set_remote_import_watts_locked(import_watts=import_watts)
+
+
+def _set_remote_import_watts_locked(*, import_watts: int) -> dict:
+    client = _get_client()
+    writes: list[str] = []
+    try:
+        if not client.connect():
+            return {"ok": False, "message": "Modbus connect failed", "writes": []}
+
+        import_watts = max(0, min(11400, int(import_watts)))
+        power_val = -(import_watts // 10) & 0xFFFF
+
+        if _write_holding(client, _REG_REMOTE_MODE, 2):
+            writes.append("43132=2 (remote control)")
+        if _write_holding(client, _REG_REMOTE_POWER, power_val):
+            writes.append(f"43128={power_val} ({import_watts} W import)")
+
+        client.close()
+        msg = f"Remote import {import_watts} W" if writes else "No changes needed"
+        logger.info("set_remote_import_watts: %s — %s", msg, writes)
+        return {"ok": True, "message": msg, "writes": writes}
+    except Exception as e:
+        logger.exception("set_remote_import_watts: %s", e)
+        return {"ok": False, "message": str(e), "writes": writes}
 
 
 def set_grid_charge_limits(
@@ -721,51 +824,22 @@ def _set_grid_charge_limits_locked(
     charge_limit_watts: int,
     max_amps: float,
 ) -> dict:
-    client = _get_client()
     writes: list[str] = []
     try:
-        if not client.connect():
-            return {"ok": False, "message": "Modbus connect failed", "writes": []}
+        # Phase A: arm grid charge (work-mode + limits)
+        r1 = _arm_grid_charge_locked(charge_limit_watts=charge_limit_watts, max_amps=max_amps)
+        if not r1.get("ok"):
+            return r1
+        writes.extend(r1.get("writes", []))
 
-        # 43110: clear BIT05 (allow grid charge)
-        h = _read_holding(client, _REG_STORAGE_CONTROL, 1)
-        if not h:
-            client.close()
-            return {"ok": False, "message": "Read 43110 failed", "writes": writes}
-        mode = h[0]
-        new_mode = mode & ~0x20
-        if new_mode != mode:
-            if _write_holding(client, _REG_STORAGE_CONTROL, new_mode):
-                writes.append(f"43110=0x{new_mode:04X} (allow grid charge)")
-        time.sleep(0.1)
-
-        # 43117: max charge current (0.1 A)
-        new_chg = int(max(1, min(70, max_amps)) * 10)
-        if _write_holding(client, _REG_MAX_CHARGE, new_chg):
-            writes.append(f"43117={new_chg} ({new_chg * 0.1} A)")
-        time.sleep(0.1)
-
-        # 43130: charge limit (10 W units)
-        limit_43130 = max(500, charge_limit_watts // 10)
-        if _write_holding(client, _REG_CHARGE_LIMIT_10W, limit_43130):
-            writes.append(f"43130={limit_43130} ({limit_43130 * 10} W)")
-        time.sleep(0.1)
-
-        # 43027: force-charge power limitation (W)
-        if _write_holding(client, _REG_FORCE_CHARGE_POWER, charge_limit_watts):
-            writes.append(f"43027={charge_limit_watts} W")
-        time.sleep(0.1)
-
-        # 43132=2, 43128=negative: forced import (dead-man)
+        # Phase B: set remote import power (dead-man)
         if import_watts and import_watts > 0:
-            power_val = -(import_watts // 10) & 0xFFFF
-            if _write_holding(client, _REG_REMOTE_MODE, 2):
-                writes.append("43132=2 (remote control)")
-            if _write_holding(client, _REG_REMOTE_POWER, power_val):
-                writes.append(f"43128={power_val} ({import_watts} W import)")
+            r2 = _set_remote_import_watts_locked(import_watts=import_watts)
+            if not r2.get("ok"):
+                return r2
+            writes.extend(r2.get("writes", []))
 
-        client.close()
-        msg = "Grid charge 11.4 kW enabled" if writes else "No changes needed"
+        msg = "Grid charge enabled" if writes else "No changes needed"
         logger.info("set_grid_charge_limits: %s — %s", msg, writes)
         return {"ok": True, "message": msg, "writes": writes}
     except Exception as e:

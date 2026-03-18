@@ -14,7 +14,7 @@ import re
 import threading
 import time
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.request import Request as UrllibRequest, urlopen
 from urllib.error import URLError
@@ -25,10 +25,20 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
+from llm_client import call_llm_task
+
 # Config: must not crash
 try:
     from config import (
         APP_VERSION,
+        get_solar_forecast_api_enabled,
+        get_solar_prediction_az,
+        get_solar_prediction_dec,
+        get_solar_prediction_enabled,
+        get_solar_llm_automations_enabled,
+        get_solar_prediction_kwp,
+        get_solar_prediction_lat,
+        get_solar_prediction_lon,
         get_solark1_host,
         get_solark1_http_port,
         get_solark1_modbus_unit,
@@ -66,7 +76,10 @@ try:
         HA_SWITCH_MSERIES,
         HA_SWITCH_TABUCHI,
         get_tabuchi_today_pv_kwh,
-        SOLIS_TOTAL_BATTERY_KWH,
+        get_solis_battery_kwh,
+        get_solis1_battery_kwh,
+        get_solis2_battery_kwh,
+        get_solark1_battery_kwh,
     )
 except Exception as e:
     logging.warning("Config import failed, using defaults: %s", e)
@@ -92,6 +105,20 @@ except Exception as e:
         return 2
     def get_solark_soc_automation_enabled():
         return True
+    def get_solar_forecast_api_enabled():
+        return False
+    def get_solar_prediction_enabled():
+        return False
+    def get_solar_prediction_lat():
+        return 40.7
+    def get_solar_prediction_lon():
+        return -74.0
+    def get_solar_prediction_dec():
+        return 45
+    def get_solar_prediction_az():
+        return 0
+    def get_solar_prediction_kwp():
+        return 25.0
     def load_settings():
         return {}
     def get_solis_host():
@@ -108,7 +135,10 @@ except Exception as e:
     HA_SWITCH_TABUCHI = "switch.sonoff_1001204d65_1"
     def get_tabuchi_today_pv_kwh():
         return 3.0
-    SOLIS_TOTAL_BATTERY_KWH = 48.0
+    def get_solis_battery_kwh(topic_id):
+        return 48.0
+    def get_solark1_battery_kwh():
+        return 64.0
 
 # Debug ring: optional (capture reason so /debug page can show it)
 _debug_unavailable_reason: str | None = None
@@ -124,6 +154,16 @@ except Exception as e:
         return []
     ModbusDebugHandler = None
     _debug_available = False
+
+# Forecast.Solar: optional
+try:
+    from forecast_solar import get_cached_forecast, update_cache as forecast_update_cache
+except Exception as e:
+    logging.warning("Forecast.Solar unavailable: %s", e)
+    def get_cached_forecast():
+        return {"data": None, "ts": 0, "error": "module unavailable", "ratelimit": {}}
+    def forecast_update_cache(*a, **k):
+        pass
 
 # MQTT: optional
 try:
@@ -166,6 +206,8 @@ try:
         set_active_power_limit,
         set_export_target,
         set_grid_charge_limits,
+        set_remote_import_watts,
+        arm_grid_charge,
         set_hybrid_control_bit,
         set_power_control_off,
         set_storage_control_bit,
@@ -184,6 +226,8 @@ except Exception as e:
     set_active_power_limit = _modbus_stub_return_false
     apply_use_all_solar_preset = _modbus_stub_return_false
     def set_grid_charge_limits(*a, **kw): return {"ok": False, "message": "Modbus unavailable", "writes": []}
+    def arm_grid_charge(*a, **kw): return {"ok": False, "message": "Modbus unavailable", "writes": []}
+    def set_remote_import_watts(*a, **kw): return {"ok": False, "message": "Modbus unavailable", "writes": []}
     def set_export_target(*a, **kw): return {"ok": False, "message": "Modbus unavailable", "writes": []}
     def set_power_control_off(*a, **kw): return {"ok": False, "message": "Modbus unavailable", "writes": []}
     get_storage_control_bits = _modbus_stub_return_dict_bits
@@ -232,6 +276,35 @@ _AUTO_SWITCH_COOLDOWN_SEC = 300  # don't flip Solis mode more than once per 5 mi
 _ha_curtail_active: bool = True            # assume curtailed at startup — only released when SOC < 95%
 _last_ha_curtail_ts: float = 0             # last time any HA curtail action was fired
 _HA_CURTAIL_COOLDOWN_SEC = 120             # minimum seconds between HA switch state changes
+
+# LLM automation state: last run timestamps + last results for each automation type.
+_llm_automation_state: dict = {
+    "morning_plan": {"last_ts": 0.0, "last_result": None},
+    "evening_strategy": {"last_ts": 0.0, "last_result": None},
+    "unexpected_behavior": {"last_ts": 0.0, "last_result": None},
+    "last_alert_id": None,
+    "last_alert_result": None,
+}
+
+# In-memory AI event log for debug page (bounded size).
+_AI_EVENT_LIMIT = 200
+_ai_events: list[dict] = []
+
+
+def log_ai_event(kind: str, payload: dict) -> None:
+    """Append an AI-related event to the in-memory log for the debug page."""
+    try:
+        entry = {
+            "ts": time.time(),
+            "kind": str(kind),
+            "payload": payload or {},
+        }
+        _ai_events.append(entry)
+        if len(_ai_events) > _AI_EVENT_LIMIT:
+            del _ai_events[0 : len(_ai_events) - _AI_EVENT_LIMIT]
+    except Exception:
+        # Debug logging must never break control flow.
+        logger.warning("log_ai_event failed", exc_info=True)
 
 # Modbus write timeout (seconds) so a stuck inverter doesn't hang the request
 _MODBUS_WRITE_TIMEOUT = 15.0
@@ -294,6 +367,53 @@ def _control_write_timeout(register: str, bit_index: int, on: bool) -> float:
     return _MODBUS_WRITE_TIMEOUT
 
 
+def apply_llm_intent(result: dict) -> tuple[bool, str | None]:
+    """
+    Apply a limited subset of LLM control intents.
+
+    For now this supports only Solis 1 work-mode changes:
+      - work_mode: one of "self_use", "feed_in_priority", "off_grid"
+
+    All writes go through _apply_control_change(), so Off-Grid policy and
+    existing safety checks are still enforced.
+    """
+    ci = (result or {}).get("control_intent") or {}
+    if not isinstance(ci, dict):
+        return False, "no_control_intent"
+
+    inverter = str(ci.get("inverter") or "").strip().lower()
+    work_mode = str(ci.get("work_mode") or "").strip().lower()
+
+    if inverter not in ("solis1", "", None):
+        return False, "unsupported_inverter"
+
+    if work_mode not in ("self_use", "feed_in_priority", "off_grid"):
+        return False, "unsupported_work_mode"
+
+    # Map work modes to storage bit indices (43110) using existing constants.
+    mode_to_bit = {
+        "self_use": 0,
+        "off_grid": _STORAGE_OFF_GRID_BIT,
+        "feed_in_priority": 6,
+    }
+    bit_index = mode_to_bit[work_mode]
+
+    # All writes go through existing helper; this enforces Off-Grid policy and
+    # one-hot semantics for work modes.
+    ok, err = _apply_control_change("storage", bit_index, True)
+    log_ai_event(
+        "apply_llm_intent",
+        {
+            "inverter": inverter,
+            "work_mode": work_mode,
+            "bit_index": bit_index,
+            "ok": ok,
+            "error": err,
+        },
+    )
+    return ok, err
+
+
 # Map individual sensor topic suffixes → data dict keys used by the rest of the app.
 # Topics: solar/solark/sensors/<suffix>  (each a plain numeric string)
 _SENSOR_TOPIC_MAP: dict[str, tuple[str, float]] = {
@@ -344,6 +464,44 @@ def _normalize_solark_data(data: dict) -> dict:
     if v is not None and isinstance(v, (int, float)):
         data[_SOLARK_BATTERY_CURRENT_KEY] = -v
     return data
+
+
+def _enrich_solark_battery_runtime(data: dict, cap_kwh: float) -> dict:
+    """Add battery_remaining_kWh, battery_runtime_hours, battery_runtime_direction to Solark data.
+    Uses SOC (battery_soc_pptt) and power (battery_total_power_W or battery_power_W).
+    Solark normalized convention: + = charging, − = discharging."""
+    out = dict(data)
+    raw_soc = out.get("battery_soc_pptt")
+    power_w = out.get("battery_total_power_W") if out.get("battery_total_power_W") is not None else out.get("battery_power_W")
+    if power_w is None and out.get("battery_voltage_dV") is not None and out.get("battery_current_dA") is not None:
+        try:
+            v = float(out["battery_voltage_dV"]) / 10.0
+            i = float(out["battery_current_dA"]) / 10.0
+            if i != 0:
+                power_w = round(v * i, 0)
+        except (TypeError, ValueError):
+            pass
+    if raw_soc is not None and isinstance(raw_soc, (int, float)):
+        soc_pct = float(raw_soc) / 100.0  # pptt -> percent (9850 -> 98.5)
+        remaining = round(cap_kwh * (soc_pct / 100.0), 2)
+        out["battery_remaining_kWh"] = remaining
+        if power_w is not None and power_w != 0:
+            power_kw = float(power_w) / 1000.0
+            if power_w > 0:
+                to_full_kwh = max(0, cap_kwh - remaining)
+                out["battery_runtime_hours"] = round(to_full_kwh / power_kw, 2) if power_kw > 0 else None
+                out["battery_runtime_direction"] = "charge"
+            else:
+                out["battery_runtime_hours"] = round(remaining / abs(power_kw), 2)
+                out["battery_runtime_direction"] = "discharge"
+        else:
+            out["battery_runtime_hours"] = None
+            out["battery_runtime_direction"] = "idle"
+    else:
+        out["battery_remaining_kWh"] = None
+        out["battery_runtime_hours"] = None
+        out["battery_runtime_direction"] = None
+    return out
 
 
 def _on_solark_mqtt_message(_client, _userdata, msg):
@@ -641,19 +799,20 @@ def _poll_sync() -> None:
                         power_w = round(v * i, 0)
                 except (TypeError, ValueError):
                     pass
-            cap = SOLIS_TOTAL_BATTERY_KWH
+            cap = get_solis_battery_kwh(topic_id)
             if soc is not None and isinstance(soc, (int, float)):
                 data["battery_remaining_kWh"] = round(cap * (float(soc) / 100.0), 2)
                 remaining = data["battery_remaining_kWh"]
                 if power_w is not None and power_w != 0:
                     power_kw = float(power_w) / 1000.0
+                    # Solis 33149-33150: positive = discharging, negative = charging (inverter convention)
                     if power_w > 0:
-                        to_full_kwh = max(0, cap - remaining)
-                        data["battery_runtime_hours"] = round(to_full_kwh / power_kw, 2) if power_kw > 0 else None
-                        data["battery_runtime_direction"] = "charge"
-                    else:
-                        data["battery_runtime_hours"] = round(remaining / abs(power_kw), 2)
+                        data["battery_runtime_hours"] = round(remaining / power_kw, 2)
                         data["battery_runtime_direction"] = "discharge"
+                    else:
+                        to_full_kwh = max(0, cap - remaining)
+                        data["battery_runtime_hours"] = round(to_full_kwh / abs(power_kw), 2) if power_kw != 0 else None
+                        data["battery_runtime_direction"] = "charge"
                 else:
                     data["battery_runtime_hours"] = None
                     data["battery_runtime_direction"] = "idle"
@@ -724,13 +883,16 @@ async def _background_power_control_refresher() -> None:
             if mode == "off":
                 result = {"ok": True, "message": "no-op"}  # Skip Modbus when off
             elif mode == "import" and watts > 0:
-                result = await asyncio.wait_for(
-                    loop.run_in_executor(
-                        None,
-                        lambda: set_grid_charge_limits(import_watts=watts, charge_limit_watts=watts, max_amps=70),
-                    ),
-                    timeout=_MODBUS_WRITE_TIMEOUT,
-                )
+                # Safer two-phase control:
+                # - keep remote import (43132/43128) alive every cycle
+                # - only re-arm grid charge gate (43110 bit) when it has dropped
+                def _import_refresh():
+                    bits = get_storage_control_bits() or {}
+                    if not bits.get("allow_grid_charge"):
+                        arm_grid_charge(charge_limit_watts=watts, max_amps=70)
+                    # Power-only refresh (dead-man)
+                    return set_remote_import_watts(import_watts=watts)
+                result = await asyncio.wait_for(loop.run_in_executor(None, _import_refresh), timeout=_MODBUS_WRITE_TIMEOUT)
             elif mode == "export" and watts > 0:
                 result = await asyncio.wait_for(
                     loop.run_in_executor(None, lambda: set_export_target(watts)),
@@ -805,8 +967,11 @@ async def lifespan(app: FastAPI):
     await loop.run_in_executor(None, _enforce_startup_safe_state)
 
     asyncio.create_task(_background_poller())
+    asyncio.create_task(_background_forecast_refresher())
     asyncio.create_task(_background_envoy_refresher())
     asyncio.create_task(_background_power_control_refresher())
+    if get_solar_llm_automations_enabled():
+        asyncio.create_task(_background_llm_automations())
     if MQTT_HOST and SOLARK_MQTT_TOPIC:
         _mqtt_thread = threading.Thread(target=_run_solark_mqtt_subscriber, daemon=True)
         _mqtt_thread.start()
@@ -843,6 +1008,70 @@ async def global_exception_handler(request: Request, exc: Exception):
 BASE = Path(__file__).resolve().parent
 _POWER_CONTROL_FILE = BASE / "power_control.json"
 templates = Jinja2Templates(directory=str(BASE / "templates"))
+
+
+def _format_runtime_hours(h: float | None) -> str:
+    """Format battery runtime: <24h as 'X.X h', >=24h as 'N d X.X h'."""
+    if h is None:
+        return "—"
+    try:
+        h = float(h)
+    except (TypeError, ValueError):
+        return "—"
+    if h < 0:
+        return "—"
+    if h < 24:
+        return f"{h:.1f} h"
+    days = int(h // 24)
+    rem = h % 24
+    if rem < 0.05:
+        return f"{days} d"
+    return f"{days} d {rem:.1f} h"
+
+
+templates.env.filters["format_runtime_hours"] = _format_runtime_hours
+
+
+def _build_site_snapshot() -> dict:
+    """Small, curated snapshot for LLM automations."""
+    solis_first = _solis_cache_first()
+    solis_data = solis_first.get("data", {}) or {}
+    solark_data = _enrich_solark_battery_runtime(_solark_cache.get("data", {}) or {}, get_solark1_battery_kwh())
+    return {
+        "ts": time.time(),
+        "solis": {
+            "ok": solis_first.get("ok", False),
+            "data": solis_data,
+        },
+        "solark": {
+            "ok": _solark_cache.get("ok", False),
+            "data": solark_data,
+            "source": _solark_cache.get("source"),
+        },
+    }
+
+
+def _build_ai_debug_metrics(snapshot: dict) -> dict:
+    """Compact metrics attached to AI log entries for operator-facing debugging."""
+    solis = ((snapshot or {}).get("solis") or {}).get("data") or {}
+    solark = ((snapshot or {}).get("solark") or {}).get("data") or {}
+
+    solark_soc_raw = solark.get("battery_soc_pptt")
+    solark_soc_pct = None
+    if isinstance(solark_soc_raw, (int, float)):
+        solark_soc_pct = round(float(solark_soc_raw) / 100.0, 1)
+
+    return {
+        "solis_pv_power_W": solis.get("pv_power_W"),
+        "solis_load_power_W": solis.get("load_power_W"),
+        "solis_grid_power_W": solis.get("grid_power_W"),
+        "solis_battery_power_W": solis.get("battery_power_W"),
+        "solis_battery_soc_pct": solis.get("battery_soc_pct"),
+        "solark_pv_power_W": solark.get("pv_power_W") if solark.get("pv_power_W") is not None else solark.get("total_pv_power_W"),
+        "solark_grid_ct_power_W": solark.get("grid_ct_power_W"),
+        "solark_battery_power_W": solark.get("battery_total_power_W") if solark.get("battery_total_power_W") is not None else solark.get("battery_power_W"),
+        "solark_battery_soc_pct": solark_soc_pct,
+    }
 
 
 def _load_power_control() -> dict:
@@ -951,7 +1180,7 @@ async def index(request: Request):
     storage_bits = _merge_bits({n: False for n in _STORAGE_BIT_NAMES}, data.get("storage_bits"))
     ts = _solis_cache_first().get("ts", 0) or 0
     last_updated = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%H:%M:%S UTC") if ts else "—"
-    solark_data = _solark_cache.get("data", {}) or {}
+    solark_data = _enrich_solark_battery_runtime(_solark_cache.get("data", {}) or {}, get_solark1_battery_kwh())
     solark_ok = _solark_cache.get("ok", False)
     solark_source = _solark_cache.get("source")
     solark_last_error = _solark_cache.get("last_error")
@@ -972,6 +1201,7 @@ async def index(request: Request):
         solark_last_error=solark_last_error,
         solark_auto_self_use=_solark_auto_self_use_active,
         automation_enabled=get_solark_soc_automation_enabled(),
+        llm_automations_enabled=get_solar_llm_automations_enabled(),
         power_limit=get_active_power_limit(),
         flash_saved=q.get("saved") == "1",
         flash_error=q.get("error"),
@@ -1185,6 +1415,17 @@ def _settings_values(overrides: dict | None = None) -> dict:
         "ruxiu_source_spec_topic": saved.get("ruxiu_source_spec_topic", ""),
         "ruxiu_source_balancing_topic": saved.get("ruxiu_source_balancing_topic", ""),
         "tabuchi_today_pv_kwh": float(saved.get("tabuchi_today_pv_kwh", get_tabuchi_today_pv_kwh())),
+        "solis1_battery_kwh": float(saved.get("solis1_battery_kwh", get_solis1_battery_kwh())),
+        "solis2_battery_kwh": float(saved.get("solis2_battery_kwh", get_solis2_battery_kwh())),
+        "solark1_battery_kwh": float(saved.get("solark1_battery_kwh", get_solark1_battery_kwh())),
+        "solar_forecast_api_enabled": _as_bool(saved.get("solar_forecast_api_enabled", get_solar_forecast_api_enabled())),
+        "solar_prediction_enabled": _as_bool(saved.get("solar_prediction_enabled", get_solar_prediction_enabled())),
+        "solar_llm_automations_enabled": _as_bool(saved.get("solar_llm_automations_enabled", get_solar_llm_automations_enabled())),
+        "solar_prediction_lat": float(saved.get("solar_prediction_lat", get_solar_prediction_lat())),
+        "solar_prediction_lon": float(saved.get("solar_prediction_lon", get_solar_prediction_lon())),
+        "solar_prediction_dec": int(saved.get("solar_prediction_dec", get_solar_prediction_dec())),
+        "solar_prediction_az": int(saved.get("solar_prediction_az", get_solar_prediction_az())),
+        "solar_prediction_kwp": float(saved.get("solar_prediction_kwp", get_solar_prediction_kwp())),
     }
     if overrides:
         values.update(overrides)
@@ -1224,6 +1465,17 @@ def _settings_form_overrides(form) -> dict:
         "ruxiu_source_spec_topic": (form.get("ruxiu_source_spec_topic") or "").strip(),
         "ruxiu_source_balancing_topic": (form.get("ruxiu_source_balancing_topic") or "").strip(),
         "tabuchi_today_pv_kwh": (form.get("tabuchi_today_pv_kwh") or "").strip(),
+        "solis1_battery_kwh": (form.get("solis1_battery_kwh") or "").strip(),
+        "solis2_battery_kwh": (form.get("solis2_battery_kwh") or "").strip(),
+        "solark1_battery_kwh": (form.get("solark1_battery_kwh") or "").strip(),
+        "solar_forecast_api_enabled": _bool_from_form(form, "solar_forecast_api_enabled"),
+        "solar_prediction_enabled": _bool_from_form(form, "solar_prediction_enabled"),
+        "solar_llm_automations_enabled": _bool_from_form(form, "solar_llm_automations_enabled"),
+        "solar_prediction_lat": (form.get("solar_prediction_lat") or "").strip(),
+        "solar_prediction_lon": (form.get("solar_prediction_lon") or "").strip(),
+        "solar_prediction_dec": (form.get("solar_prediction_dec") or "").strip(),
+        "solar_prediction_az": (form.get("solar_prediction_az") or "").strip(),
+        "solar_prediction_kwp": (form.get("solar_prediction_kwp") or "").strip(),
     }
 
 
@@ -1261,6 +1513,17 @@ def _validate_settings(form) -> dict:
         "ruxiu_source_spec_topic": _validate_topic(overrides["ruxiu_source_spec_topic"], "Ruxiu MQTT cell topic", allow_empty=True),
         "ruxiu_source_balancing_topic": _validate_topic(overrides["ruxiu_source_balancing_topic"], "Ruxiu MQTT balancing topic", allow_empty=True),
         "tabuchi_today_pv_kwh": _validate_float(overrides["tabuchi_today_pv_kwh"], "Tabuchi today PV (kWh)", default=3.0, min_val=0, max_val=100),
+        "solis1_battery_kwh": _validate_float(overrides["solis1_battery_kwh"], "Solis1 battery (kWh)", default=48.0, min_val=1, max_val=200),
+        "solis2_battery_kwh": _validate_float(overrides["solis2_battery_kwh"], "Solis2 battery (kWh)", default=48.0, min_val=1, max_val=200),
+        "solark1_battery_kwh": _validate_float(overrides["solark1_battery_kwh"], "Solark1 battery (kWh)", default=64.0, min_val=1, max_val=200),
+        "solar_forecast_api_enabled": overrides["solar_forecast_api_enabled"],
+        "solar_prediction_enabled": overrides["solar_prediction_enabled"],
+        "solar_llm_automations_enabled": overrides["solar_llm_automations_enabled"],
+        "solar_prediction_lat": _validate_float(overrides["solar_prediction_lat"], "Latitude", default=40.7, min_val=-90, max_val=90),
+        "solar_prediction_lon": _validate_float(overrides["solar_prediction_lon"], "Longitude", default=-74.0, min_val=-180, max_val=180),
+        "solar_prediction_dec": int(_validate_float(overrides["solar_prediction_dec"], "Panel tilt (deg)", default=45, min_val=0, max_val=90)),
+        "solar_prediction_az": int(_validate_float(overrides["solar_prediction_az"], "Panel azimuth (deg)", default=0, min_val=-180, max_val=180)),
+        "solar_prediction_kwp": _validate_float(overrides["solar_prediction_kwp"], "Total kWp", default=25.0, min_val=0.1, max_val=500),
     }
 
     if data["tesla_source_enabled"] and data["tesla_source_type"] == "mqtt":
@@ -1594,6 +1857,31 @@ async def api_debug_modbus_clear():
         return {"ok": False}
 
 
+@app.get("/ai-debug", response_class=HTMLResponse)
+async def ai_debug_page(request: Request):
+    """AI / LLM debug page — shows recent AI events when LLM automations are enabled."""
+    if not get_solar_llm_automations_enabled():
+        return HTMLResponse(
+            "<!DOCTYPE html><html><head><title>AI Debug</title></head><body>"
+            "<p>LLM automations are disabled. Enable SOLAR_LLM_AUTOMATIONS_ENABLED to record AI events.</p>"
+            "<p><a href='/'>Dashboard</a></p></body></html>",
+            status_code=503,
+        )
+    try:
+        return templates.TemplateResponse("ai-debug.html", _page_ctx(request))
+    except Exception as e:
+        logger.exception("ai-debug page: %s", e)
+        return HTMLResponse("<p>Error loading AI debug page.</p><a href='/'>Dashboard</a>", status_code=500)
+
+
+@app.get("/api/ai-debug")
+async def api_ai_debug():
+    """Return recent AI events for the AI debug page."""
+    if not get_solar_llm_automations_enabled():
+        return JSONResponse({"ok": False, "events": [], "error": "llm_automations_disabled"}, status_code=503)
+    return {"ok": True, "events": list(_ai_events)}
+
+
 # API
 @app.get("/api/health")
 async def api_health():
@@ -1629,7 +1917,7 @@ async def api_dashboard():
     out["storage_mode"] = _storage_mode_label(storage_bits)
     out["storage_bits"] = storage_bits
     out["hybrid_bits"]  = hybrid_bits
-    solark_data = _solark_cache.get("data", {}) or {}
+    solark_data = _enrich_solark_battery_runtime(_solark_cache.get("data", {}) or {}, get_solark1_battery_kwh())
     tabuchi_kwh = get_tabuchi_today_pv_kwh()
     solis_today = (data.get("energy_today_pv_kWh") or 0) if isinstance(data.get("energy_today_pv_kWh"), (int, float)) else 0
     return {
@@ -1657,6 +1945,114 @@ async def api_dashboard():
     }
 
 
+@app.get("/api/display/summary")
+async def api_display_summary():
+    """Small display-friendly summary payload (avoid large /api/dashboard JSON)."""
+    solis_inverters = _build_solis_inverters()
+    solark_data = _enrich_solark_battery_runtime(_solark_cache.get("data", {}) or {}, get_solark1_battery_kwh())
+
+    def _num(x):
+        return float(x) if isinstance(x, (int, float)) else None
+
+    parts = {
+        "solis_total_remaining_kWh": 0.0,
+        "solark_remaining_kWh": _num(solark_data.get("battery_remaining_kWh")),
+        "solis1_remaining_kWh": None,
+        "solis2_remaining_kWh": None,
+    }
+    for inv in solis_inverters:
+        tid = inv.get("topic_id")
+        rem = _num((inv.get("data") or {}).get("battery_remaining_kWh"))
+        if rem is None:
+            continue
+        parts["solis_total_remaining_kWh"] += rem
+        if tid == "s6-inv-1":
+            parts["solis1_remaining_kWh"] = rem
+        elif tid == "s6-inv-2":
+            parts["solis2_remaining_kWh"] = rem
+
+    total = parts["solis_total_remaining_kWh"] + (parts["solark_remaining_kWh"] or 0.0)
+    return {
+        "total_remaining_kWh": round(total, 2),
+        "solis_total_remaining_kWh": round(parts["solis_total_remaining_kWh"], 2),
+        "solis1_remaining_kWh": parts["solis1_remaining_kWh"],
+        "solis2_remaining_kWh": parts["solis2_remaining_kWh"],
+        "solark_remaining_kWh": parts["solark_remaining_kWh"],
+        "ts": time.time(),
+    }
+
+
+@app.post("/api/assistant/chat")
+async def api_assistant_chat(req: Request):
+    """
+    Lightweight assistant endpoint for dashboard chat box.
+
+    It receives a free-form question, wraps it with a curated snapshot of current
+    Solis/Sol-Ark data, calls the local LLM, and returns the validated JSON
+    response. Any actual inverter writes must still go through the existing
+    automation/control endpoints with their guardrails.
+    """
+    if not get_solar_llm_automations_enabled():
+        return JSONResponse({"ok": False, "error": "llm_automations_disabled"}, status_code=503)
+
+    try:
+        body = await req.json()
+    except Exception:
+        return JSONResponse({"ok": False, "error": "Invalid JSON body"}, status_code=400)
+
+    question = str((body or {}).get("question") or "").strip()
+    if not question:
+        return JSONResponse({"ok": False, "error": "Missing question"}, status_code=400)
+
+    solis_inverters = _build_solis_inverters()
+    first_ent = solis_inverters[0] if solis_inverters else {"data": {}, "ok": False, "ts": 0}
+    data = first_ent.get("data", {}) or {}
+    solark_data = _enrich_solark_battery_runtime(_solark_cache.get("data", {}) or {}, get_solark1_battery_kwh())
+
+    summary = {
+        "question": question,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "solis": {
+            "ok": first_ent.get("ok", False),
+            "data": data,
+        },
+        "solark": {
+            "ok": _solark_cache.get("ok", False),
+            "data": solark_data,
+            "source": _solark_cache.get("source"),
+        },
+    }
+
+    try:
+        answer = call_llm_task("dashboard_chat", summary)
+        log_ai_event(
+            "assistant_chat",
+            {
+                "question": question,
+                "answer": answer,
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        log_ai_event(
+            "assistant_chat_error",
+            {
+                "question": question,
+                "error": str(exc),
+            },
+        )
+        return JSONResponse({"ok": False, "error": f"LLM error: {exc}"}, status_code=502)
+
+    return {"ok": True, "answer": answer}
+
+
+@app.get("/api/assistant/automation-state")
+async def api_assistant_automation_state():
+    """Return last-run info for LLM automations (for future UI use)."""
+    if not get_solar_llm_automations_enabled():
+        return JSONResponse({"ok": False, "error": "llm_automations_disabled"}, status_code=503)
+    return {"ok": True, "state": _llm_automation_state}
+
+
 @app.get("/api/grid-status")
 async def api_grid_status():
     """Generation today for grid-status page: Solis today PV + Tabuchi static. Tabuchi value is configurable in Settings (default 3 kWh)."""
@@ -1668,6 +2064,62 @@ async def api_grid_status():
         "tabuchi_today_pv_kWh": tabuchi_kwh,
         "total_today_pv_kWh": solis_today + tabuchi_kwh,
         "note": "Change Tabuchi value in Settings (or TABUCHI_TODAY_PV_KWH env). Default 3.",
+    }
+
+
+@app.get("/api/pv/total-today")
+async def api_pv_total_today():
+    """
+    Display/web parity endpoint.
+
+    Matches the 3008 Grid Status "TOTAL DAY PV ENERGY" semantics:
+      total = Solis today + Solark today + Tabuchi static + Envoy1+Envoy2 today
+    """
+    import urllib.request, urllib.error
+
+    def _fetch_json(url: str, timeout: float = 3.0) -> tuple[dict | None, str | None]:
+        try:
+            req = UrllibRequest(url, headers={"User-Agent": "solis-s6-ui"})
+            with urlopen(req, timeout=timeout) as r:
+                raw = r.read()
+            return (json.loads(raw) if raw else {}), None
+        except Exception as e:
+            return None, str(e)
+
+    sensors, err1 = _fetch_json("http://127.0.0.1:3008/api/sensors/latest", timeout=3.5)
+    envoy, err2 = _fetch_json("http://127.0.0.1:3008/api/envoy/data", timeout=3.5)
+
+    values = (sensors or {}).get("values") or {}
+    def _v(key: str) -> float:
+        try:
+            return float(((values.get(key) or {}).get("value")) or 0.0)
+        except Exception:
+            return 0.0
+
+    solis_today = _v("tesla_today_pv")  # Solis S6 "today PV"
+    solark_today = _v("day_pv_energy")  # Solark today PV
+    tabuchi_kwh = float(get_tabuchi_today_pv_kwh() or 0.0)
+
+    envoy_total_today = 0.0
+    try:
+        invs = ((envoy or {}).get("inverters") or [])
+        for inv in invs:
+            if isinstance(inv, dict):
+                envoy_total_today += float(inv.get("daily_kwh") or 0.0)
+    except Exception:
+        envoy_total_today = 0.0
+
+    total = solis_today + solark_today + tabuchi_kwh + envoy_total_today
+    return {
+        "total_today_pv_kWh": round(total, 2),
+        "breakdown": {
+            "solis_today_pv_kWh": round(solis_today, 2),
+            "solark_today_pv_kWh": round(solark_today, 2),
+            "tabuchi_today_pv_kWh": round(tabuchi_kwh, 2),
+            "envoy_total_today_kWh": round(envoy_total_today, 2),
+        },
+        "ok": (err1 is None and err2 is None),
+        "errors": {"sensors": err1, "envoy": err2},
     }
 
 
@@ -1940,6 +2392,35 @@ def _refresh_envoy_cache() -> None:
         logger.warning("envoy cache refresh failed: %s", exc)
 
 
+_FORECAST_FETCH_INTERVAL_SEC = 4 * 3600  # 4 hours — ~6 fetches/day
+
+
+async def _background_forecast_refresher() -> None:
+    """Fetch Forecast.Solar when API enabled. Runs every 4 hours to stay within rate limit."""
+    await asyncio.sleep(60)  # Delay first run
+    loop = asyncio.get_event_loop()
+    while True:
+        if get_solar_forecast_api_enabled():
+            lat = get_solar_prediction_lat()
+            lon = get_solar_prediction_lon()
+            dec = get_solar_prediction_dec()
+            az = get_solar_prediction_az()
+            kwp = get_solar_prediction_kwp()
+            try:
+                await asyncio.wait_for(
+                    loop.run_in_executor(
+                        None,
+                        lambda: forecast_update_cache(lat, lon, dec, az, kwp),
+                    ),
+                    timeout=25,
+                )
+            except asyncio.TimeoutError:
+                logger.warning("Forecast.Solar fetch timed out")
+            except Exception as exc:
+                logger.warning("Forecast.Solar fetch: %s", exc)
+        await asyncio.sleep(_FORECAST_FETCH_INTERVAL_SEC)
+
+
 async def _background_envoy_refresher() -> None:
     """Refresh the envoy cache every 30s in the background without blocking request handlers."""
     while True:
@@ -1954,6 +2435,98 @@ async def _background_envoy_refresher() -> None:
         except Exception as exc:
             logger.warning("envoy background refresh error: %s", exc)
         await asyncio.sleep(30)
+
+
+async def _background_llm_automations() -> None:
+    """
+    Background task to run LLM-based automations on a schedule.
+
+    - Morning operating plan: once per day between 05:00–06:00.
+    - Evening battery strategy: once per day between 18:00–19:00.
+    - Unexpected behavior check: every 30 minutes if data is present.
+
+    All actions are advisory only: results are stored in memory and can be
+    fetched via API; actual inverter writes remain with existing endpoints.
+    """
+    global _llm_automation_state
+    await asyncio.sleep(90)
+    while True:
+        try:
+            now_ts = time.time()
+            now_dt = datetime.now(timezone.utc).astimezone()
+            hour = now_dt.hour
+
+            snapshot = _build_site_snapshot()
+            solis_ok = snapshot.get("solis", {}).get("ok", False)
+            solark_ok = snapshot.get("solark", {}).get("ok", False)
+
+            # Morning operating plan (local time 05:00–06:00)
+            if 5 <= hour < 6 and solis_ok:
+                last = _llm_automation_state["morning_plan"]["last_ts"] or 0.0
+                if now_dt.date() != datetime.fromtimestamp(last).astimezone().date():
+                    summary = {
+                        "kind": "morning_plan",
+                        "snapshot": snapshot,
+                        "forecast": get_cached_forecast(),
+                    }
+                    try:
+                        result = call_llm_task("morning_plan", summary)
+                        _llm_automation_state["morning_plan"] = {
+                            "last_ts": now_ts,
+                            "last_result": result,
+                        }
+                        log_ai_event("automation_morning_plan", {"summary": summary, "result": result, "metrics": _build_ai_debug_metrics(snapshot)})
+                        logger.info("LLM morning_plan completed (confidence %.2f)", result.get("confidence", 0.0))
+                    except Exception as exc:
+                        log_ai_event("automation_morning_plan_error", {"summary": summary, "error": str(exc), "metrics": _build_ai_debug_metrics(snapshot)})
+                        logger.warning("LLM morning_plan error: %s", exc)
+
+            # Evening battery strategy (local time 18:00–19:00)
+            if 18 <= hour < 19 and (solis_ok or solark_ok):
+                last = _llm_automation_state["evening_strategy"]["last_ts"] or 0.0
+                if now_dt.date() != datetime.fromtimestamp(last).astimezone().date():
+                    summary = {
+                        "kind": "evening_strategy",
+                        "snapshot": snapshot,
+                        "forecast": get_cached_forecast(),
+                    }
+                    try:
+                        result = call_llm_task("evening_strategy", summary)
+                        _llm_automation_state["evening_strategy"] = {
+                            "last_ts": now_ts,
+                            "last_result": result,
+                        }
+                        log_ai_event("automation_evening_strategy", {"summary": summary, "result": result, "metrics": _build_ai_debug_metrics(snapshot)})
+                        logger.info("LLM evening_strategy completed (confidence %.2f)", result.get("confidence", 0.0))
+                    except Exception as exc:
+                        log_ai_event("automation_evening_strategy_error", {"summary": summary, "error": str(exc), "metrics": _build_ai_debug_metrics(snapshot)})
+                        logger.warning("LLM evening_strategy error: %s", exc)
+
+            # Unexpected behavior detector – run every 30 minutes when data present.
+            if solis_ok or solark_ok:
+                last = _llm_automation_state["unexpected_behavior"]["last_ts"] or 0.0
+                if now_ts - last > 30 * 60:
+                    summary = {
+                        "kind": "unexpected_behavior",
+                        "snapshot": snapshot,
+                        "note": "Periodic check for anomalies such as low PV, SOC drift, or oscillating import/export.",
+                    }
+                    try:
+                        result = call_llm_task("unexpected_behavior", summary)
+                        _llm_automation_state["unexpected_behavior"] = {
+                            "last_ts": now_ts,
+                            "last_result": result,
+                        }
+                        log_ai_event("automation_unexpected_behavior", {"summary": summary, "result": result, "metrics": _build_ai_debug_metrics(snapshot)})
+                        logger.info("LLM unexpected_behavior completed (confidence %.2f)", result.get("confidence", 0.0))
+                    except Exception as exc:
+                        log_ai_event("automation_unexpected_behavior_error", {"summary": summary, "error": str(exc), "metrics": _build_ai_debug_metrics(snapshot)})
+                        logger.warning("LLM unexpected_behavior error: %s", exc)
+
+        except Exception as exc:
+            logger.warning("background LLM automations error: %s", exc)
+
+        await asyncio.sleep(60)
 
 
 @app.get("/envoys", response_class=HTMLResponse)
@@ -1999,6 +2572,83 @@ async def api_envoys():
     cached = _envoy_cache
     age_s = time.time() - cached.get("ts", 0)
     return {**cached["data"], "cache_age_s": round(age_s, 1), "error": cached.get("error")}
+
+
+# ── Solar Forecast (Forecast.Solar) ─────────────────────────────────────────
+
+def _forecast_page_context() -> dict:
+    """Build context for forecast page: daily kWh, hourly W, last fetch, rate limit."""
+    cached = get_cached_forecast()
+    data = cached.get("data") or {}
+    result = (data.get("result") or {}) if isinstance(data, dict) else {}
+    watt_hours_day = result.get("watt_hours_day") or {}
+    watts = result.get("watts") or {}
+    ratelimit = (cached.get("ratelimit") or data.get("ratelimit") or {}) if isinstance(data, dict) else {}
+    ts = cached.get("ts", 0)
+    last_fetch = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC") if ts else None
+    return {
+        "forecast_api_enabled": get_solar_forecast_api_enabled(),
+        "solar_prediction_enabled": get_solar_prediction_enabled(),
+        "daily_kwh": dict(watt_hours_day),
+        "hourly_watts": dict(watts),
+        "last_fetch": last_fetch,
+        "error": cached.get("error"),
+        "ratelimit": ratelimit,
+    }
+
+
+@app.get("/forecast", response_class=HTMLResponse)
+async def page_forecast(request: Request):
+    """Solar Forecast tab — Forecast.Solar today + tomorrow."""
+    ctx = _page_ctx(request, **_forecast_page_context())
+    return templates.TemplateResponse("forecast.html", ctx)
+
+
+@app.get("/api/forecast/display")
+async def api_forecast_display():
+    """Minimal JSON for display: today/tomorrow kWh only. Avoids large hourly_watts that can crash ESP32."""
+    ctx = _forecast_page_context()
+    daily_wh = ctx["daily_kwh"]
+    now = datetime.now(timezone.utc)
+    today_str = now.strftime("%Y-%m-%d")
+    tomorrow_str = (now + timedelta(days=1)).strftime("%Y-%m-%d")
+    today_kwh = (daily_wh.get(today_str) or 0) / 1000.0
+    tomorrow_kwh = (daily_wh.get(tomorrow_str) or 0) / 1000.0
+    if today_kwh == 0 and tomorrow_kwh == 0 and daily_wh:
+        dates = sorted(daily_wh.keys())
+        today_kwh = (daily_wh.get(dates[0]) or 0) / 1000.0
+        tomorrow_kwh = (daily_wh.get(dates[1]) or 0) / 1000.0 if len(dates) > 1 else 0.0
+    return {"today": today_kwh, "tomorrow": tomorrow_kwh}
+
+
+@app.get("/api/forecast")
+async def api_forecast():
+    """JSON: cached Forecast.Solar data, last fetch, rate limit. today/tomorrow kWh for display clients."""
+    ctx = _forecast_page_context()
+    daily_wh = ctx["daily_kwh"]  # date str -> Wh (Forecast.Solar uses location timezone)
+    now = datetime.now(timezone.utc)
+    today_str = now.strftime("%Y-%m-%d")
+    tomorrow_str = (now + timedelta(days=1)).strftime("%Y-%m-%d")
+    today_kwh = (daily_wh.get(today_str) or 0) / 1000.0
+    tomorrow_kwh = (daily_wh.get(tomorrow_str) or 0) / 1000.0
+    # Fallback: Forecast.Solar dates may be in location TZ; use first two sorted dates
+    if today_kwh == 0 and tomorrow_kwh == 0 and daily_wh:
+        dates = sorted(daily_wh.keys())
+        today_kwh = (daily_wh.get(dates[0]) or 0) / 1000.0
+        tomorrow_kwh = (daily_wh.get(dates[1]) or 0) / 1000.0 if len(dates) > 1 else 0.0
+    return {
+        "forecast_api_enabled": ctx["forecast_api_enabled"],
+        "solar_prediction_enabled": ctx["solar_prediction_enabled"],
+        "daily_kwh": ctx["daily_kwh"],
+        "hourly_watts": ctx["hourly_watts"],
+        "today": today_kwh,
+        "tomorrow": tomorrow_kwh,
+        "today_kwh": today_kwh,
+        "tomorrow_kwh": tomorrow_kwh,
+        "last_fetch": ctx["last_fetch"],
+        "error": ctx["error"],
+        "ratelimit": ctx["ratelimit"],
+    }
 
 
 # ── Curtailment (HA switch control) ─────────────────────────────────────────

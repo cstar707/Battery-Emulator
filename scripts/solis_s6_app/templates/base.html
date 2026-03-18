@@ -182,7 +182,9 @@
     <a href="/envoys" class="{% if request.url.path == '/envoys' %}active{% endif %}" title="Enphase micro-inverter live data">Envoy Summary</a>
     <a href="/curtailment" class="{% if request.url.path == '/curtailment' %}active{% endif %}" title="Curtailment switch control">Curtailment</a>
     <a href="/grid-status" class="{% if request.url.path == '/grid-status' %}active{% endif %}" title="Generation today + battery remaining/runtime">Grid status</a>
+    <a href="/forecast" class="{% if request.url.path == '/forecast' %}active{% endif %}" title="Solar forecast (Forecast.Solar)">Solar Forecast</a>
     <a href="/debug" class="{% if request.url.path == '/debug' %}active{% endif %}" title="Modbus debug stream">Debug</a>
+    <a href="/ai-debug" class="{% if request.url.path == '/ai-debug' %}active{% endif %}" title="AI / LLM decisions and intents">AI Debug</a>
     <span class="muted" style="margin-left: auto;">{{ inverter_label }}</span>
     <span class="muted" style="margin-left: 0.5rem;" title="UI version">v{{ app_version | default('?') }}</span>
   </nav>

@@ -20,6 +20,20 @@
     <p class="muted" style="margin: 0.5rem 0 0 0;">Last updated: <span id="last-updated">{{ last_updated | default('—') }}</span> <button type="button" class="btn" id="btn-refresh" style="margin-left:0.5rem; padding:0.25rem 0.5rem; font-size:0.85rem;">Refresh</button></p>
   </div>
 
+  {% if llm_automations_enabled %}
+  <div class="card" style="border-left: 4px solid var(--green);">
+    <h2>Assistant</h2>
+    <p class="muted" style="margin:0 0 0.5rem 0;">Ask questions about the system or request a plan. The assistant proposes changes; actual inverter writes still go through safety checks.</p>
+    <div id="assistant-chat" style="display:flex; flex-direction:column; gap:0.5rem;">
+      <div id="assistant-messages" style="max-height:220px; overflow-y:auto; padding:0.5rem; border-radius:6px; border:1px solid var(--muted); background:var(--bg-alt, #020617); font-size:0.85rem;"></div>
+      <form id="assistant-form" onsubmit="return assistantSend(event);" style="display:flex; gap:0.5rem; align-items:flex-end;">
+        <textarea id="assistant-input" name="q" rows="2" placeholder="Example: Explain today&#39;s behavior and suggest an evening battery strategy." style="flex:1; resize:vertical; min-height:2.5rem; max-height:6rem;"></textarea>
+        <button type="submit" class="btn" style="white-space:nowrap;">Ask</button>
+      </form>
+    </div>
+  </div>
+  {% endif %}
+
   <div class="card" style="border-left: 4px solid var(--orange);">
     <h2>Solark {% if solark_source %}<span class="muted">({{ solark_source }})</span>{% else %}<span class="muted">(HTTP or MQTT)</span>{% endif %}</h2>
     {% if not solark_ok and solark_last_error %}
@@ -36,14 +50,16 @@
     <div class="grid2" style="margin-bottom: 1rem;">
       <div class="kpi"><div class="val" id="kpi-solark_grid_ct_power_W">{{ solark_data.grid_ct_power_W if solark_data.grid_ct_power_W is defined and solark_data.grid_ct_power_W is not none else '—' }}</div><div class="unit">Grid CT W</div></div>
       <div class="kpi"><div class="val" id="kpi-solark_inverter_power_W">{{ solark_data.inverter_power_W if solark_data.inverter_power_W is defined and solark_data.inverter_power_W is not none else '—' }}</div><div class="unit">Inverter W</div></div>
-      <div class="kpi"><div class="val" id="kpi-solark_inverter_current_A">{% if solark_data.inverter_current_dA is defined and solark_data.inverter_current_dA is not none %}{% set a = (solark_data.inverter_current_dA / 10) %}{% if a > 0 %}+{% endif %}{{ a | round(1) }}{% else %}—{% endif %}</div><div class="unit">Inverter A</div></div>
+      <div class="kpi"><div class="val" id="kpi-solark_inverter_current_A">{% if solark_data.inverter_current_dA is defined and solark_data.inverter_current_dA is not none %}{% set raw_a = solark_data.inverter_current_dA / 10 %}{% if solark_data.battery_runtime_direction == 'charge' %}+{{ (raw_a | abs) | round(1) }}{% elif solark_data.battery_runtime_direction == 'discharge' %}−{{ (raw_a | abs) | round(1) }}{% else %}{% if raw_a > 0 %}+{% endif %}{{ raw_a | round(1) }}{% endif %}{% else %}—{% endif %}</div><div class="unit">Inverter A</div></div>
     </div>
     <p class="muted" style="margin: 0 0 0.4rem 0; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">Battery</p>
     <div class="grid2" style="margin-bottom: 1rem;">
       <div class="kpi"><div class="val" id="kpi-solark_battery_soc_pct">{% if solark_data.battery_soc_pptt is defined %}{{ (solark_data.battery_soc_pptt / 100) | int }}%{% else %}—{% endif %}</div><div class="unit">SOC</div></div>
+      <div class="kpi"><div class="val" id="kpi-solark_battery_remaining_kWh">{% if solark_data.battery_remaining_kWh is not none %}{{ "%.2f" | format(solark_data.battery_remaining_kWh) }}{% else %}—{% endif %}</div><div class="unit">Remaining kWh</div></div>
+      <div class="kpi"><div class="val" id="kpi-solark_battery_runtime_hours">{{ solark_data.battery_runtime_hours | format_runtime_hours }}</div><div class="unit" id="kpi-solark_battery_runtime_label">{% if solark_data.battery_runtime_direction == 'charge' %}Time to full{% elif solark_data.battery_runtime_direction == 'discharge' %}Time to empty{% else %}Est. runtime{% endif %}</div></div>
       <div class="kpi"><div class="val" id="kpi-solark_battery_voltage_V">{% if solark_data.battery_voltage_dV is defined %}{{ (solark_data.battery_voltage_dV / 10) | round(1) }}{% else %}—{% endif %}</div><div class="unit">Batt V</div></div>
-      <div class="kpi"><div class="val" id="kpi-solark_battery_current_A">{% if solark_data.battery_current_dA is defined and solark_data.battery_current_dA is not none %}{% set a = (solark_data.battery_current_dA / 10) %}{% if a > 0 %}+{% endif %}{{ a | round(1) }}{% else %}—{% endif %}</div><div class="unit">Batt A</div></div>
-      <div class="kpi"><div class="val" id="kpi-solark_battery_total_power_W">{% set w = solark_data.battery_total_power_W | default(solark_data.battery_power_W) %}{% if w is not none %}{% if w > 0 %}+{% endif %}{{ w | int }}{% else %}—{% endif %}</div><div class="unit">Batt W</div></div>
+      <div class="kpi"><div class="val" id="kpi-solark_battery_current_A">{% if solark_data.battery_current_dA is defined and solark_data.battery_current_dA is not none %}{% set raw_a = solark_data.battery_current_dA / 10 %}{% if solark_data.battery_runtime_direction == 'charge' %}+{{ (raw_a | abs) | round(1) }}{% elif solark_data.battery_runtime_direction == 'discharge' %}−{{ (raw_a | abs) | round(1) }}{% else %}{% if raw_a > 0 %}+{% endif %}{{ raw_a | round(1) }}{% endif %}{% else %}—{% endif %}</div><div class="unit">Batt A</div></div>
+      <div class="kpi"><div class="val" id="kpi-solark_battery_total_power_W">{% set w = solark_data.battery_total_power_W | default(solark_data.battery_power_W) %}{% if w is not none %}{% if solark_data.battery_runtime_direction == 'charge' %}+{{ (w | int) | abs }}{% elif solark_data.battery_runtime_direction == 'discharge' %}−{{ (w | int) | abs }}{% else %}{% if w > 0 %}+{% endif %}{{ w | int }}{% endif %}{% else %}—{% endif %}</div><div class="unit">Batt W</div></div>
       <div class="kpi"><div class="val" id="kpi-solark_battery_temperature">{% if solark_data.battery_temperature is defined %}{{ "%.1f" | format(solark_data.battery_temperature) }}°C{% else %}—{% endif %}</div><div class="unit">Batt temp</div></div>
     </div>
 
@@ -143,52 +159,57 @@
     </div>
   </div>
 
-  <div class="card">
-    <h2>Solis S6-INV-1</h2>
+  {% for i in [1, 2] %}
+  {% set inv = solis_inverters[i - 1] if solis_inverters and solis_inverters | length >= i else none %}
+  {% set inv_data = inv.data if inv else {} %}
+  {% set prefix = 'solis' ~ i %}
+  <div class="card" style="border-left: 4px solid var(--accent);">
+    <h2>Solis-{{ i }}</h2>
     <p class="muted" style="margin: 0 0 0.4rem 0; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">PV</p>
     <div class="grid2" style="margin-bottom: 1rem;">
-      <div class="kpi"><div class="val" id="kpi-pv_power_W">{{ data.pv_power_W | default(0) | int }}</div><div class="unit">PV W</div></div>
-      <div class="kpi"><div class="val" id="kpi-pv_voltage_1_V">{{ "%.1f" | format(data.pv_voltage_1_V | default(0)) }}</div><div class="unit">PV1 V</div></div>
-      <div class="kpi"><div class="val" id="kpi-pv_current_1_A">{{ "%.1f" | format(data.pv_current_1_A | default(0)) }}</div><div class="unit">PV1 A</div></div>
-      <div class="kpi"><div class="val" id="kpi-pv_voltage_2_V">{{ "%.1f" | format(data.pv_voltage_2_V | default(0)) }}</div><div class="unit">PV2 V</div></div>
-      <div class="kpi"><div class="val" id="kpi-pv_current_2_A">{{ "%.1f" | format(data.pv_current_2_A | default(0)) }}</div><div class="unit">PV2 A</div></div>
+      <div class="kpi"><div class="val" id="kpi-{{ prefix }}-pv_power_W">{{ inv_data.pv_power_W | default(0) | int if inv_data else '—' }}</div><div class="unit">PV W</div></div>
+      <div class="kpi"><div class="val" id="kpi-{{ prefix }}-pv_voltage_1_V">{{ "%.1f" | format(inv_data.pv_voltage_1_V | default(0)) if inv_data else '—' }}</div><div class="unit">PV1 V</div></div>
+      <div class="kpi"><div class="val" id="kpi-{{ prefix }}-pv_current_1_A">{{ "%.1f" | format(inv_data.pv_current_1_A | default(0)) if inv_data else '—' }}</div><div class="unit">PV1 A</div></div>
+      <div class="kpi"><div class="val" id="kpi-{{ prefix }}-pv_voltage_2_V">{{ "%.1f" | format(inv_data.pv_voltage_2_V | default(0)) if inv_data else '—' }}</div><div class="unit">PV2 V</div></div>
+      <div class="kpi"><div class="val" id="kpi-{{ prefix }}-pv_current_2_A">{{ "%.1f" | format(inv_data.pv_current_2_A | default(0)) if inv_data else '—' }}</div><div class="unit">PV2 A</div></div>
     </div>
     <p class="muted" style="margin: 0 0 0.4rem 0; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">Power (AC)</p>
     <div class="grid2" style="margin-bottom: 1rem;">
       <div class="kpi">
-        <div class="val" id="kpi-grid_power_W">{{ data.grid_power_W | default(0) | int }}</div>
-        <div class="unit">Grid W &nbsp;<span id="kpi-grid-direction" style="font-weight:700;font-size:0.75rem;padding:0.1rem 0.35rem;border-radius:4px;">—</span></div>
+        <div class="val" id="kpi-{{ prefix }}-grid_power_W">{{ inv_data.grid_power_W | default(0) | int if inv_data else '—' }}</div>
+        <div class="unit">Grid W &nbsp;<span id="kpi-{{ prefix }}-grid-direction" style="font-weight:700;font-size:0.75rem;padding:0.1rem 0.35rem;border-radius:4px;">—</span></div>
       </div>
-      <div class="kpi"><div class="val" id="kpi-load_power_W">{{ data.load_power_W | default(0) | int }}</div><div class="unit">Backup load</div></div>
-      <div class="kpi"><div class="val" id="kpi-active_power_W">{{ data.active_power_W | default(0) | int }}</div><div class="unit">Solis AC out <span style="font-size:0.65rem;opacity:0.7">(internal)</span></div></div>
+      <div class="kpi"><div class="val" id="kpi-{{ prefix }}-load_power_W">{{ inv_data.load_power_W | default(0) | int if inv_data else '—' }}</div><div class="unit">Backup load</div></div>
+      <div class="kpi"><div class="val" id="kpi-{{ prefix }}-active_power_W">{{ inv_data.active_power_W | default(0) | int if inv_data else '—' }}</div><div class="unit">Solis AC out <span style="font-size:0.65rem;opacity:0.7">(internal)</span></div></div>
       <div class="kpi">
-        <div class="val" id="kpi-solis-net-export">—</div>
-        <div class="unit">Solis net <span style="font-size:0.65rem;opacity:0.7">(PV−load±batt)</span> &nbsp;<span id="kpi-solis-net-direction" style="font-weight:700;font-size:0.75rem;padding:0.1rem 0.35rem;border-radius:4px;"></span></div>
+        <div class="val" id="kpi-{{ prefix }}-solis-net-export">—</div>
+        <div class="unit">Solis net <span style="font-size:0.65rem;opacity:0.7">(PV−load±batt)</span> &nbsp;<span id="kpi-{{ prefix }}-solis-net-direction" style="font-weight:700;font-size:0.75rem;padding:0.1rem 0.35rem;border-radius:4px;"></span></div>
       </div>
-      <div class="kpi"><div class="val" id="kpi-ac_voltage_V">{{ "%.1f" | format(data.ac_voltage_V | default(0)) }}</div><div class="unit">Grid V</div></div>
-      <div class="kpi"><div class="val" id="kpi-grid_freq_Hz">{{ "%.2f" | format(data.grid_freq_Hz | default(0)) }}</div><div class="unit">Grid Hz</div></div>
-      <div class="kpi"><div class="val" id="kpi-inverter_temp_C">{{ "%.1f" | format(data.inverter_temp_C | default(0)) }}</div><div class="unit">Inverter °C</div></div>
+      <div class="kpi"><div class="val" id="kpi-{{ prefix }}-ac_voltage_V">{{ "%.1f" | format(inv_data.ac_voltage_V | default(0)) if inv_data else '—' }}</div><div class="unit">Grid V</div></div>
+      <div class="kpi"><div class="val" id="kpi-{{ prefix }}-grid_freq_Hz">{{ "%.2f" | format(inv_data.grid_freq_Hz | default(0)) if inv_data else '—' }}</div><div class="unit">Grid Hz</div></div>
+      <div class="kpi"><div class="val" id="kpi-{{ prefix }}-inverter_temp_C">{{ "%.1f" | format(inv_data.inverter_temp_C | default(0)) if inv_data else '—' }}</div><div class="unit">Inverter °C</div></div>
     </div>
     <p class="muted" style="margin: 0 0 0.4rem 0; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">Battery</p>
     <div class="grid2" style="margin-bottom: 1rem;">
-      <div class="kpi"><div class="val" id="kpi-battery_soc_pct">{{ data.battery_soc_pct | default(0) | int }}%</div><div class="unit">SOC</div></div>
-      <div class="kpi"><div class="val" id="kpi-battery_remaining_kWh">{{ "%.2f" | format(data.battery_remaining_kWh | default(0)) }}</div><div class="unit">Remaining kWh</div></div>
-      <div class="kpi"><div class="val" id="kpi-battery_runtime_hours">{% if data.battery_runtime_hours is not none %}{{ "%.2f" | format(data.battery_runtime_hours) }}{% else %}—{% endif %}</div><div class="unit" id="kpi-battery_runtime_label">{% if data.battery_runtime_direction == 'charge' %}Time to full (h){% elif data.battery_runtime_direction == 'discharge' %}Time remaining (h){% else %}Est. runtime (h){% endif %}</div></div>
-      <div class="kpi"><div class="val" id="kpi-battery_power_W_signed">{% if data.battery_power_W is not none %}{% if data.battery_power_W > 0 %}+{% elif data.battery_power_W < 0 %}{% endif %}{{ data.battery_power_W | int }}{% else %}—{% endif %}</div><div class="unit">Battery W</div></div>
-      <div class="kpi"><div class="val" id="kpi-battery_voltage_V">{{ "%.1f" | format(data.battery_voltage_V | default(0)) }}</div><div class="unit">Battery V</div></div>
-      <div class="kpi"><div class="val" id="kpi-battery_current_A">{{ "%.1f" | format(data.battery_current_A | default(0)) }}</div><div class="unit">Battery A</div></div>
+      <div class="kpi"><div class="val" id="kpi-{{ prefix }}-battery_soc_pct">{{ (inv_data.battery_soc_pct | default(0) | int) ~ '%' if inv_data else '—' }}</div><div class="unit">SOC</div></div>
+      <div class="kpi"><div class="val" id="kpi-{{ prefix }}-battery_remaining_kWh">{{ "%.2f" | format(inv_data.battery_remaining_kWh | default(0)) if inv_data else '—' }}</div><div class="unit">Remaining kWh</div></div>
+      <div class="kpi"><div class="val" id="kpi-{{ prefix }}-battery_runtime_hours">{{ inv_data.battery_runtime_hours | format_runtime_hours if inv_data else '—' }}</div><div class="unit" id="kpi-{{ prefix }}-battery_runtime_label">{% if inv_data and inv_data.battery_runtime_direction == 'charge' %}Time to full{% elif inv_data and inv_data.battery_runtime_direction == 'discharge' %}Time to empty{% else %}Est. runtime{% endif %}</div></div>
+      <div class="kpi"><div class="val" id="kpi-{{ prefix }}-battery_power_W_signed">{% if inv_data and inv_data.battery_power_W is not none %}{% if inv_data.battery_runtime_direction == 'charge' %}+{{ inv_data.battery_power_W | int | abs }}{% elif inv_data.battery_runtime_direction == 'discharge' %}−{{ inv_data.battery_power_W | int | abs }}{% else %}0{% endif %}{% else %}—{% endif %}</div><div class="unit">Battery W</div></div>
+      <div class="kpi"><div class="val" id="kpi-{{ prefix }}-battery_voltage_V">{{ "%.1f" | format(inv_data.battery_voltage_V | default(0)) if inv_data else '—' }}</div><div class="unit">Battery V</div></div>
+      <div class="kpi"><div class="val" id="kpi-{{ prefix }}-battery_current_A">{{ "%.1f" | format(inv_data.battery_current_A | default(0)) if inv_data else '—' }}</div><div class="unit">Battery A</div></div>
     </div>
     <p class="muted" style="margin: 0 0 0.4rem 0; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">Energy today (kWh)</p>
     <div class="grid2">
-      <div class="kpi"><div class="val" id="kpi-energy_today_pv_kWh">{{ "%.2f" | format(data.energy_today_pv_kWh | default(0)) }}</div><div class="unit">PV today</div></div>
-      <div class="kpi"><div class="val" id="kpi-total_pv_energy_kWh">{{ "%.1f" | format(data.total_pv_energy_kWh | default(0)) }}</div><div class="unit">PV total</div></div>
-      <div class="kpi"><div class="val" id="kpi-energy_today_load_kWh">{{ "%.2f" | format(data.energy_today_load_kWh | default(0)) }}</div><div class="unit">Load</div></div>
-      <div class="kpi"><div class="val" id="kpi-energy_today_grid_import_kWh">{{ "%.2f" | format(data.energy_today_grid_import_kWh | default(0)) }}</div><div class="unit">Grid Import</div></div>
-      <div class="kpi"><div class="val" id="kpi-energy_today_grid_export_kWh">{{ "%.2f" | format(data.energy_today_grid_export_kWh | default(0)) }}</div><div class="unit">Grid Export</div></div>
-      <div class="kpi"><div class="val" id="kpi-energy_today_bat_charge_kWh">{{ "%.2f" | format(data.energy_today_bat_charge_kWh | default(0)) }}</div><div class="unit">Bat charge</div></div>
-      <div class="kpi"><div class="val" id="kpi-energy_today_bat_discharge_kWh">{{ "%.2f" | format(data.energy_today_bat_discharge_kWh | default(0)) }}</div><div class="unit">Bat discharge</div></div>
+      <div class="kpi"><div class="val" id="kpi-{{ prefix }}-energy_today_pv_kWh">{{ "%.2f" | format(inv_data.energy_today_pv_kWh | default(0)) if inv_data else '—' }}</div><div class="unit">PV today</div></div>
+      <div class="kpi"><div class="val" id="kpi-{{ prefix }}-total_pv_energy_kWh">{{ "%.1f" | format(inv_data.total_pv_energy_kWh | default(0)) if inv_data else '—' }}</div><div class="unit">PV total</div></div>
+      <div class="kpi"><div class="val" id="kpi-{{ prefix }}-energy_today_load_kWh">{{ "%.2f" | format(inv_data.energy_today_load_kWh | default(0)) if inv_data else '—' }}</div><div class="unit">Load</div></div>
+      <div class="kpi"><div class="val" id="kpi-{{ prefix }}-energy_today_grid_import_kWh">{{ "%.2f" | format(inv_data.energy_today_grid_import_kWh | default(0)) if inv_data else '—' }}</div><div class="unit">Grid Import</div></div>
+      <div class="kpi"><div class="val" id="kpi-{{ prefix }}-energy_today_grid_export_kWh">{{ "%.2f" | format(inv_data.energy_today_grid_export_kWh | default(0)) if inv_data else '—' }}</div><div class="unit">Grid Export</div></div>
+      <div class="kpi"><div class="val" id="kpi-{{ prefix }}-energy_today_bat_charge_kWh">{{ "%.2f" | format(inv_data.energy_today_bat_charge_kWh | default(0)) if inv_data else '—' }}</div><div class="unit">Bat charge</div></div>
+      <div class="kpi"><div class="val" id="kpi-{{ prefix }}-energy_today_bat_discharge_kWh">{{ "%.2f" | format(inv_data.energy_today_bat_discharge_kWh | default(0)) if inv_data else '—' }}</div><div class="unit">Bat discharge</div></div>
     </div>
   </div>
+  {% endfor %}
 
   <div class="card">
     <h2>Grid status · generation today total</h2>
@@ -212,6 +233,7 @@
     function updateDashboard() {
       fetch('/api/dashboard').then(function(r) { return r.json(); }).then(function(res) {
         var d = res.data || {};
+        var solisInverters = res.solis_inverters || [];
         var solisOk = res.ok;
         var solark = res.solark || {};
         var solarkData = solark.data || {};
@@ -233,33 +255,71 @@
         }
         var modeEl = document.getElementById('current-mode');
         if (modeEl && d.storage_mode !== undefined && modeEl.textContent !== d.storage_mode) modeEl.textContent = d.storage_mode;
+        function formatRuntimeHours(h) {
+          if (h == null) return '—';
+          h = Number(h);
+          if (isNaN(h) || h < 0) return '—';
+          if (h < 24) return h.toFixed(1) + ' h';
+          var dd = Math.floor(h / 24);
+          var r = h % 24;
+          return (r < 0.05) ? (dd + ' d') : (dd + ' d ' + r.toFixed(1) + ' h');
+        }
         var kpis = [
           ['pv_power_W', 0], ['pv_voltage_1_V', 1], ['pv_current_1_A', 1], ['pv_voltage_2_V', 1], ['pv_current_2_A', 1],
           ['grid_power_W', 0], ['load_power_W', 0], ['active_power_W', 0],
           ['ac_voltage_V', 1], ['grid_freq_Hz', 2], ['inverter_temp_C', 1],
-          ['battery_soc_pct', 0, '%'], ['battery_remaining_kWh', 2], ['battery_runtime_hours', 2],
+          ['battery_soc_pct', 0, '%'], ['battery_remaining_kWh', 2],
           ['battery_voltage_V', 1], ['battery_current_A', 1],
           ['energy_today_pv_kWh', 2], ['total_pv_energy_kWh', 1], ['energy_today_load_kWh', 2], ['energy_today_bat_charge_kWh', 2], ['energy_today_bat_discharge_kWh', 2],
           ['energy_today_grid_export_kWh', 1], ['energy_today_grid_import_kWh', 1]
         ];
-        kpis.forEach(function(k) {
-          var key = k[0], dec = k[1], suffix = k[2] || '';
-          var newVal = fmtNum(d[key], dec) + suffix;
-          var el = document.getElementById('kpi-' + key);
-          if (el && el.textContent !== newVal) el.textContent = newVal;
+        [1, 2].forEach(function(i) {
+          var inv = solisInverters[i - 1];
+          var invData = inv ? (inv.data || {}) : {};
+          var prefix = 'solis' + i;
+          kpis.forEach(function(k) {
+            var key = k[0], dec = k[1], suffix = k[2] || '';
+            var newVal = invData && Object.keys(invData).length ? (fmtNum(invData[key], dec) + suffix) : '—';
+            var el = document.getElementById('kpi-' + prefix + '-' + key);
+            if (el && el.textContent !== newVal) el.textContent = newVal;
+          });
+          var rtEl = document.getElementById('kpi-' + prefix + '-battery_runtime_hours');
+          var rtLabel = document.getElementById('kpi-' + prefix + '-battery_runtime_label');
+          if (rtEl) { var n = invData && Object.keys(invData).length ? formatRuntimeHours(invData.battery_runtime_hours) : '—'; if (rtEl.textContent !== n) rtEl.textContent = n; }
+          if (rtLabel) { var dir = invData ? invData.battery_runtime_direction : null; var lbl = (dir === 'charge') ? 'Time to full' : (dir === 'discharge') ? 'Time to empty' : 'Est. runtime'; if (rtLabel.textContent !== lbl) rtLabel.textContent = lbl; }
+          var battWEl = document.getElementById('kpi-' + prefix + '-battery_power_W_signed');
+          if (battWEl) {
+            var w = invData ? invData.battery_power_W : null;
+            var dir = invData ? invData.battery_runtime_direction : null;
+            var signed = (!invData || !Object.keys(invData).length) ? '—' : (w == null && dir !== 'idle') ? '—' : (dir === 'charge') ? '+' + Math.round(Math.abs(w || 0)) : (dir === 'discharge') ? '−' + Math.round(Math.abs(w || 0)) : '0';
+            if (battWEl.textContent !== signed) battWEl.textContent = signed;
+          }
+          var gridW = invData ? invData.grid_power_W : null;
+          var dirEl = document.getElementById('kpi-' + prefix + '-grid-direction');
+          if (dirEl && gridW != null) {
+            var exporting = gridW < 0;
+            var label = exporting ? '⬆ EXPORT' : '⬇ IMPORT';
+            var bg = exporting ? '#166534' : '#7c2d12';
+            var col = exporting ? '#bbf7d0' : '#fed7aa';
+            if (dirEl.textContent !== label) { dirEl.textContent = label; dirEl.style.background = bg; dirEl.style.color = col; }
+          } else if (dirEl && (!invData || !Object.keys(invData).length)) {
+            if (dirEl.textContent !== '—') { dirEl.textContent = '—'; dirEl.style.background = ''; dirEl.style.color = ''; }
+          }
+          var pvW = invData ? (invData.pv_power_W || 0) : 0;
+          var loadW = invData ? (invData.load_power_W || 0) : 0;
+          var battW = invData ? (invData.battery_power_W || 0) : 0;
+          var solisNet = pvW - loadW - battW;
+          var netEl = document.getElementById('kpi-' + prefix + '-solis-net-export');
+          var netDir = document.getElementById('kpi-' + prefix + '-solis-net-direction');
+          if (netEl) { var ns = (invData && Object.keys(invData).length) ? String(Math.round(solisNet)) : '—'; if (netEl.textContent !== ns) netEl.textContent = ns; }
+          if (netDir) {
+            var netExporting = solisNet > 0;
+            var nl = (invData && Object.keys(invData).length) ? (netExporting ? '⬆ EXPORT' : (solisNet < 0 ? '⬇ DRAW' : '—')) : '—';
+            var nb = netExporting ? '#166534' : (solisNet < 0 ? '#7c2d12' : '#374151');
+            var nc = netExporting ? '#bbf7d0' : (solisNet < 0 ? '#fed7aa' : '#9ca3af');
+            if (netDir.textContent !== nl) { netDir.textContent = nl; netDir.style.background = nb; netDir.style.color = nc; }
+          }
         });
-        // Battery runtime: show — when idle; label = Time to full (charging) or Time remaining (discharging)
-        var rtEl = document.getElementById('kpi-battery_runtime_hours');
-        var rtLabel = document.getElementById('kpi-battery_runtime_label');
-        if (rtEl) rtEl.textContent = (d.battery_runtime_hours != null) ? Number(d.battery_runtime_hours).toFixed(2) : '—';
-        if (rtLabel) rtLabel.textContent = (d.battery_runtime_direction === 'charge') ? 'Time to full (h)' : (d.battery_runtime_direction === 'discharge') ? 'Time remaining (h)' : 'Est. runtime (h)';
-        // Battery W with + / − for direction (in Battery card)
-        var battWEl = document.getElementById('kpi-battery_power_W_signed');
-        if (battWEl) {
-          var w = d.battery_power_W;
-          var signed = (w == null || w === undefined) ? '—' : (w > 0 ? '+' : '') + Math.round(w);
-          if (battWEl.textContent !== signed) battWEl.textContent = signed;
-        }
         // Grid status total (Solis today + Tabuchi static)
         var gs = res.grid_status || {};
         [['solis_today_pv_kWh','kpi-grid-solis-today',2], ['tabuchi_today_pv_kWh','kpi-grid-tabuchi-today',2], ['total_today_pv_kWh','kpi-grid-total-today',2]].forEach(function(t) {
@@ -267,39 +327,26 @@
           var v = gs[t[0]];
           if (el) { var n = (v != null) ? Number(v).toFixed(t[2]) : '0'; if (el.textContent !== n) el.textContent = n; }
         });
-        // Grid export/import direction badge (meter = all inverters)
-        var gridW = d['grid_power_W'];
-        var dirEl = document.getElementById('kpi-grid-direction');
-        if (dirEl && gridW != null) {
-          var exporting = gridW < 0;
-          var label = exporting ? '⬆ EXPORT' : '⬇ IMPORT';
-          var bg    = exporting ? '#166534' : '#7c2d12';
-          var col   = exporting ? '#bbf7d0' : '#fed7aa';
-          if (dirEl.textContent !== label) { dirEl.textContent = label; dirEl.style.background = bg; dirEl.style.color = col; }
-        }
-        // Solis net export = PV - backup_load - battery_charge (battery_power_W positive=charge, negative=discharge)
-        // When positive: Solis is sending power to grid. When negative: Solis is drawing from grid.
-        var pvW   = d['pv_power_W']      || 0;
-        var loadW = d['load_power_W']    || 0;
-        var battW = d['battery_power_W'] || 0;  // positive = charging, negative = discharging
-        var solisNet = pvW - loadW - battW;  // what Solis is pushing to the AC bus beyond its own load
-        var netEl  = document.getElementById('kpi-solis-net-export');
-        var netDir = document.getElementById('kpi-solis-net-direction');
-        if (netEl) { var ns = String(Math.round(solisNet)); if (netEl.textContent !== ns) netEl.textContent = ns; }
-        if (netDir) {
-          var netExporting = solisNet > 0;
-          var nl = netExporting ? '⬆ EXPORT' : (solisNet < 0 ? '⬇ DRAW' : '—');
-          var nb = netExporting ? '#166534' : (solisNet < 0 ? '#7c2d12' : '#374151');
-          var nc = netExporting ? '#bbf7d0' : (solisNet < 0 ? '#fed7aa' : '#9ca3af');
-          if (netDir.textContent !== nl) { netDir.textContent = nl; netDir.style.background = nb; netDir.style.color = nc; }
-        }
         // SOC
         var solarkSoc = solarkData.battery_soc_pptt != null ? (Math.round(solarkData.battery_soc_pptt / 100) + '%') : '—';
         var elSolarkSoc = document.getElementById('kpi-solark_battery_soc_pct');
         if (elSolarkSoc && elSolarkSoc.textContent !== solarkSoc) elSolarkSoc.textContent = solarkSoc;
+        var elSolarkRem = document.getElementById('kpi-solark_battery_remaining_kWh');
+        if (elSolarkRem) { var n = (solarkData.battery_remaining_kWh != null) ? Number(solarkData.battery_remaining_kWh).toFixed(2) : '—'; if (elSolarkRem.textContent !== n) elSolarkRem.textContent = n; }
+        var elSolarkRt = document.getElementById('kpi-solark_battery_runtime_hours');
+        var elSolarkRtLabel = document.getElementById('kpi-solark_battery_runtime_label');
+        if (elSolarkRt) { var n = formatRuntimeHours(solarkData.battery_runtime_hours); if (elSolarkRt.textContent !== n) elSolarkRt.textContent = n; }
+        if (elSolarkRtLabel) { var dir = solarkData.battery_runtime_direction; var lbl = (dir === 'charge') ? 'Time to full' : (dir === 'discharge') ? 'Time to empty' : 'Est. runtime'; if (elSolarkRtLabel.textContent !== lbl) elSolarkRtLabel.textContent = lbl; }
         // Total batt W with +/− (same convention as Solis: + charge, − discharge)
         var totalW = solarkData.battery_total_power_W != null ? solarkData.battery_total_power_W : solarkData.battery_power_W;
-        function signedW(w) { return (w != null) ? ((w > 0 ? '+' : '') + Math.round(w)) : '—'; }
+        var dir = solarkData.battery_runtime_direction;
+        function signedW(w) {
+          if (w == null) return '—';
+          var absW = Math.abs(Math.round(w));
+          if (dir === 'charge') return '+' + absW;
+          if (dir === 'discharge') return '−' + absW;
+          return (w >= 0 ? '+' : '') + Math.round(w);
+        }
         var elTotal = document.getElementById('kpi-solark_battery_total_power_W');
         if (elTotal) { var n = signedW(totalW); if (elTotal.textContent !== n) elTotal.textContent = n; }
         // PV: total + string 1 & 2
@@ -319,16 +366,21 @@
         var battTemp = solarkData.battery_temperature;
         var elBattTemp = document.getElementById('kpi-solark_battery_temperature');
         if (elBattTemp) { var n = (battTemp != null && battTemp !== '') ? (Number(battTemp).toFixed(1) + '°C') : '—'; if (elBattTemp.textContent !== n) elBattTemp.textContent = n; }
-        // Batt V (no sign), Batt A and Inverter A (with + for positive)
+        // Batt V (no sign), Batt A and Inverter A (+ charge, − discharge, same as Solis)
         var elBattV = document.getElementById('kpi-solark_battery_voltage_V');
         var v = solarkData.battery_voltage_dV;
         if (elBattV) { var n = (v != null) ? (v/10).toFixed(1) : '—'; if (elBattV.textContent !== n) elBattV.textContent = n; }
+        function signedA(val) {
+          if (val == null) return '—';
+          var a = Math.abs(val / 10).toFixed(1);
+          if (dir === 'charge') return '+' + a;
+          if (dir === 'discharge') return '−' + a;
+          return (val/10 >= 0 ? '+' : '') + (val/10).toFixed(1);
+        }
         var elBattA = document.getElementById('kpi-solark_battery_current_A');
-        v = solarkData.battery_current_dA;
-        if (elBattA) { var n = (v != null) ? ((v/10 >= 0 ? '+' : '') + (v/10).toFixed(1)) : '—'; if (elBattA.textContent !== n) elBattA.textContent = n; }
+        if (elBattA) { var n = signedA(solarkData.battery_current_dA); if (elBattA.textContent !== n) elBattA.textContent = n; }
         var elInvA = document.getElementById('kpi-solark_inverter_current_A');
-        v = solarkData.inverter_current_dA;
-        if (elInvA) { var n = (v != null) ? ((v/10 >= 0 ? '+' : '') + (v/10).toFixed(1)) : '—'; if (elInvA.textContent !== n) elInvA.textContent = n; }
+        if (elInvA) { var n = signedA(solarkData.inverter_current_dA); if (elInvA.textContent !== n) elInvA.textContent = n; }
         // kWh fields (today + lifetime)
         [['day_pv_energy_kWh','kpi-solark_day_pv_energy'],
          ['day_batt_charge_kWh','kpi-solark_day_batt_charge'],
@@ -416,6 +468,69 @@
         }, 800); }
         else { alert('Failed: ' + (d.error||'unknown error')); if (btnOn) btnOn.disabled=false; if (btnOff) btnOff.disabled=false; }
       }).catch(function(e) { alert('Request failed: '+e); if (btnOn) btnOn.disabled=false; if (btnOff) btnOff.disabled=false; });
+  }
+  // ── Assistant chat ───────────────────────────────────────────────────────
+  {% if llm_automations_enabled %}
+  function assistantAppend(role, text) {
+    var box = document.getElementById('assistant-messages');
+    if (!box) return;
+    var row = document.createElement('div');
+    row.style.marginBottom = '0.35rem';
+    var label = document.createElement('span');
+    label.style.fontWeight = '600';
+    label.style.marginRight = '0.25rem';
+    label.textContent = role === 'user' ? 'You:' : 'Assistant:';
+    var body = document.createElement('span');
+    body.textContent = text;
+    row.appendChild(label);
+    row.appendChild(body);
+    box.appendChild(row);
+    box.scrollTop = box.scrollHeight;
+  }
+  {% endif %}
+
+  function assistantSend(ev) {
+    if (ev) ev.preventDefault();
+    var input = document.getElementById('assistant-input');
+    if (!input) return false;
+    var q = (input.value || '').trim();
+    if (!q) return false;
+    assistantAppend('user', q);
+    input.value = '';
+    var box = document.getElementById('assistant-messages');
+    var pending = document.createElement('div');
+    pending.id = 'assistant-pending';
+    pending.textContent = 'Thinking…';
+    pending.style.fontSize = '0.8rem';
+    pending.style.color = 'var(--muted)';
+    box.appendChild(pending);
+    box.scrollTop = box.scrollHeight;
+    fetch('/api/assistant/chat', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({question: q})
+    }).then(function(r){ return r.json(); }).then(function(res){
+      var pend = document.getElementById('assistant-pending');
+      if (pend && pend.parentNode) pend.parentNode.removeChild(pend);
+      if (!res || !res.ok) {
+        assistantAppend('assistant', res && res.error ? ('Error: ' + res.error) : 'Error calling assistant.');
+        return;
+      }
+      var a = res.answer || {};
+      var summary = a.issue_summary || 'No summary.';
+      var rec = a.recommended_action || '';
+      var conf = (typeof a.confidence === 'number') ? (' (confidence ' + a.confidence.toFixed(2) + ')') : '';
+      var needs = a.requires_human_approval ? ' Requires human approval.' : '';
+      var text = summary;
+      if (rec) text += ' ' + rec;
+      text += conf + needs;
+      assistantAppend('assistant', text);
+    }).catch(function(err){
+      var pend = document.getElementById('assistant-pending');
+      if (pend && pend.parentNode) pend.parentNode.removeChild(pend);
+      assistantAppend('assistant', 'Request failed: ' + err);
+    });
+    return false;
   }
   </script>
 {% endblock %}

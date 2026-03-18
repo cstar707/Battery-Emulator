@@ -94,7 +94,16 @@ On 10.10.53.92 the default broker is localhost (same host). Set `MQTT_USER` and 
 - **Sensors** — All Solis readings (power, battery, PV, AC, energy).
 - **Control** — Self-use & Feed-in quick buttons; Export & charging table; full **storage (43110)** and **hybrid (43483)** bit tables with raw values.
 - **Settings** — Inverter labels, current config, MQTT status (publishing to broker or disabled).
+- **AI Debug** — Recent LLM chat calls, background AI automation outputs, and applied LLM intents.
 - **Debug** — Live Modbus debug stream: reads, writes, and errors from the Solis Modbus client (last 300 lines, refreshes every 2s).
+
+## AI / LLM mode
+
+- AI features are controlled by `SOLAR_LLM_AUTOMATIONS_ENABLED`.
+- Default is **off**, so the existing non-AI Solis/Solark automation remains the fallback path.
+- When enabled, the dashboard assistant, `/ai-debug`, and background LLM automations become available.
+- The LLM client supports both OpenAI-compatible APIs and Ollama. For your current LAN setup, use `SOLAR_LLM_HOST=10.10.53.164`, `SOLAR_LLM_PORT=11434`, `SOLAR_LLM_API_STYLE=ollama`, and a model such as `llama3.1:8b`.
+- Sol-Ark remains read-only in the AI flow; actual Solis writes still go through the app's existing guardrails/helpers.
 
 ## API
 
