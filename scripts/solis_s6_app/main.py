@@ -302,6 +302,10 @@ _HA_CURTAIL_COOLDOWN_SEC = 120             # minimum seconds between HA switch s
 # once the Solark battery indicates “drawing” (battery_total_power_W <= threshold) for a hold time.
 _ha_batt_draw_hold_since: float | None = None
 
+# Option B (battery draw restore): when enabled, we can restore Solis PV clamp earlier than SOC hysteresis
+# once the Solark battery indicates “drawing” (battery_total_power_W <= threshold) for a hold time.
+_solis_pv_restore_batt_draw_hold_since: float | None = None
+
 # LLM automation state: last run timestamps + last results for each automation type.
 _llm_automation_state: dict = {
     "morning_plan": {"last_ts": 0.0, "last_result": None},
@@ -769,7 +773,7 @@ def _run_solark_solis_automation(solis_data: dict, solark_data: dict) -> None:
     This is correct for Phase 1 (no Solis battery). Revisit in Phase 2 when a Solis
     battery is connected (see docs/SOLIS-STORAGE-MODE-TOGGLES.md).
     """
-    global _solark_auto_self_use_active, _last_solis_auto_switch_ts
+    global _solark_auto_self_use_active, _last_solis_auto_switch_ts, _solis_pv_restore_batt_draw_hold_since
     if not get_solark_soc_automation_enabled() or not _modbus_available or SOLARK_SOC_SELF_USE_THRESHOLD_PCT <= 0:
         return
     now = time.time()
@@ -790,17 +794,56 @@ def _run_solark_solis_automation(solis_data: dict, solark_data: dict) -> None:
         try:
             if set_active_power_limit(0.0):
                 _solark_auto_self_use_active = True
+                _solis_pv_restore_batt_draw_hold_since = None
                 _last_solis_auto_switch_ts = now
                 logger.info("Solark SOC %.1f%% >= %d%%: Solis power limited to 0%%", soc_pct, SOLARK_SOC_SELF_USE_THRESHOLD_PCT)
         except Exception as e:
             logger.warning("Automation curtail Solis: %s", e)
-    elif _solark_auto_self_use_active and soc_pptt < below_pptt:
+    elif _solark_auto_self_use_active:
         # Restore: disable power limit
+        # Default behavior: SOC hysteresis (restore at SOC < 95%).
+        # Option B behavior (if enabled): restore earlier when Solark battery
+        # begins drawing power (battery_total_power_W <= threshold W) for a hold time,
+        # even if SOC is still between the 95–98% band.
         try:
-            if set_active_power_limit(100.0):
-                _solark_auto_self_use_active = False
-                _last_solis_auto_switch_ts = now
-                logger.info("Solark SOC %.1f%% < %d%%: Solis power limit disabled (full output)", soc_pct, SOLARK_SOC_FEEDIN_BELOW_PCT)
+            if get_ha_restore_on_batt_draw_enabled():
+                batt_power_w = solark_data.get("battery_total_power_W")
+                if batt_power_w is None:
+                    batt_power_w = solark_data.get("battery_power_W")
+                if batt_power_w is None or not isinstance(batt_power_w, (int, float)):
+                    _solis_pv_restore_batt_draw_hold_since = None
+                    return
+
+                batt_power_threshold_w = float(get_ha_restore_batt_draw_power_threshold_w())
+                hold_sec = int(get_ha_restore_batt_draw_hold_sec())
+
+                if batt_power_w <= batt_power_threshold_w:
+                    if _solis_pv_restore_batt_draw_hold_since is None:
+                        _solis_pv_restore_batt_draw_hold_since = now
+                    if now - _solis_pv_restore_batt_draw_hold_since >= hold_sec:
+                        if set_active_power_limit(100.0):
+                            _solark_auto_self_use_active = False
+                            _last_solis_auto_switch_ts = now
+                            _solis_pv_restore_batt_draw_hold_since = None
+                            logger.info(
+                                "Solark PV restore optionB: batt_power_W %.0f <= %.0f for %ds (SOC %.1f%%): power limit disabled",
+                                batt_power_w,
+                                batt_power_threshold_w,
+                                hold_sec,
+                                soc_pct,
+                            )
+                else:
+                    _solis_pv_restore_batt_draw_hold_since = None
+            else:
+                if soc_pptt < below_pptt:
+                    if set_active_power_limit(100.0):
+                        _solark_auto_self_use_active = False
+                        _last_solis_auto_switch_ts = now
+                        logger.info(
+                            "Solark SOC %.1f%% < %d%%: Solis power limit disabled (full output)",
+                            soc_pct,
+                            SOLARK_SOC_FEEDIN_BELOW_PCT,
+                        )
         except Exception as e:
             logger.warning("Automation restore Solis: %s", e)
 

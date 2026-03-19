@@ -83,7 +83,7 @@
           <input type="checkbox" id="ha_restore_on_batt_draw_enabled" name="ha_restore_on_batt_draw_enabled" value="on"
             {% if ha_restore_on_batt_draw_enabled %}checked{% endif %}
           />
-          Option B: restore HA generation when Solark battery starts drawing power (battery_total_power_W <= threshold W), even if SOC is still high
+          Option B: restore HA generation and Solis PV when Solark battery starts drawing power (battery_total_power_W <= threshold W), even if SOC is still high
         </label>
       </div>
       <div class="settings-row" {% if not solark_soc_automation_enabled %}style="opacity:0.55; pointer-events:none;"{% endif %}>
