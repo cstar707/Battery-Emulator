@@ -172,7 +172,36 @@ Grid charge is implemented in two steps in `solis_modbus.py`:
 App behavior:
 - The app normally refreshes remote import periodically (dead-man) so the inverter continues obeying the remote command.
 
-### 3.5 Remote export command: `43110` + `43074` + `43132/43128`
+### 3.5 TOU currents + slot 1 schedule: `43141`, `43142`, `43143..43150`
+
+These registers are now read directly by the app for status display and can be written by the app for Solis power-control coordination.
+
+Registers:
+- `43141` = TOU charge current in `0.1 A` units
+  - Example: `520` => `52.0 A`
+- `43142` = TOU discharge current in `0.1 A` units
+  - Example: `10` => `1.0 A`
+- `43143..43150` = TOU slot 1 schedule
+  - `43143`, `43144` = charge start hour/minute
+  - `43145`, `43146` = charge end hour/minute
+  - `43147`, `43148` = discharge start hour/minute
+  - `43149`, `43150` = discharge end hour/minute
+
+App helpers:
+- `get_tou_config()`
+- `set_tou_charge_amps(amps)`
+- `set_tou_discharge_amps(amps)`
+- `set_tou_slot1(...)`
+
+Current app usage:
+- The settings page shows the live TOU charge/discharge currents and slot 1 window read from these registers.
+- The Solis power-control coordinator can apply a clean daytime charging state using:
+  - `43110` = `self_use + time_of_use + allow_grid_charge`
+  - `43483.allow_export` = cleared
+  - `43141` = configured TOU charge amps
+  - `43142` = configured TOU discharge amps
+
+### 3.6 Remote export command: `43110` + `43074` + `43132/43128`
 
 Export is implemented via:
 - `set_export_target(export_watts)`
@@ -228,6 +257,62 @@ There are two different concepts:
 
 Important:
 - The app can show allow_grid_charge/feed-in bits ON, but if `/api/power-control` is `off`, it will not keep the remote power command alive.
+
+### 4.3 Solis power-controls coordinator
+
+The app now has a separate config-driven Solis coordinator on the settings page. When `solis_power_controls_enabled` is on, this coordinator takes over the Solis-side mode decision instead of the older “PV limit 0% / 100%” Solark-SOC clamp.
+
+It uses:
+- Solark calibrated SOC (`battery_soc_pptt` after scale/offset) for off-grid entry
+- Solark available PV (`pv_power_W` from the Solark cache) for daytime TOU charge entry
+- A separate manual `off_grid` hold with optional auto-release based on both PV and SOC
+
+The coordinator resolves control ownership in this priority order:
+
+1. `manual_hold`
+   - operator-selected work mode via settings/control/API
+   - if the hold is `off_grid` and manual auto-release is enabled, the hold only clears when:
+     - Solark available PV is at or above the configured release threshold, and
+     - calibrated Solark SOC is at or above the configured release threshold
+
+2. `remote_power_control`
+   - active `/api/power-control` import/export mode
+   - this blocks automatic work-mode changes while the remote dead-man control is active
+
+3. `auto_tou_charge`
+4. `auto_off_grid`
+5. `auto_self_use`
+
+The automatic coordinator then chooses one of three clean states:
+
+1. `tou_charge`
+   - chosen first when `solis_tou_charge_automation_enabled` is on and available PV is at or above `solis_tou_charge_available_pv_w`
+   - writes:
+     - `43110` => clean `self_use + time_of_use + allow_grid_charge`
+     - `43483.allow_export` => OFF
+     - `43141` => configured TOU charge amps
+     - `43142` => configured TOU discharge amps
+     - `43052/43070` => restored to 100% / limit disabled so the startup safe-state clamp is cleared
+
+2. `off_grid`
+   - chosen when TOU charge is not active and `solis_offgrid_automation_enabled` is on and Solark SOC is at or above `solis_offgrid_enter_solark_soc_pct`
+   - writes:
+     - `43110` => clean `off_grid`
+     - `43483.allow_export` => OFF
+     - `43052/43070` => restored to 100% / limit disabled
+
+3. `self_use`
+   - fallback state when neither higher-priority rule applies
+   - writes:
+     - `43110` => clean `self_use`
+     - `43483.allow_export` => OFF
+     - `43052/43070` => restored to 100% / limit disabled
+
+Important:
+- Daytime TOU charge has priority over automatic off-grid in the current implementation.
+- Manual `off_grid` hold is stronger than the automatic TOU/off-grid/self-use states until its manual-release rule clears it or the operator clears it explicitly.
+- The coordinator deliberately skips action if `/api/power-control` is active, so remote import/export dead-man commands do not fight with the new mode automation.
+- The existing HA generation curtailment automation is still separate; only the Solis-side mode selection changes when this coordinator is enabled.
 
 ## 5) Practical “how to interpret what you see”
 

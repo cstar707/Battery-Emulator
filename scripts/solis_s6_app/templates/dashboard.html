@@ -135,7 +135,7 @@
 
   <div class="card">
     <h2>Solis mode</h2>
-    <p class="muted" style="margin: 0 0 0.75rem 0;"><strong>Current mode:</strong> <span id="current-mode" class="status-ok">{{ storage_mode_label | default('—') }}</span>{% if solark_ok and automation_enabled %} — At 98% Solark SOC, Solis switches to self-use{% if solark_auto_self_use %} <span class="muted">(auto self-use active)</span>{% endif %}{% endif %}</p>
+    <p class="muted" style="margin: 0 0 0.75rem 0;"><strong>Current mode:</strong> <span id="current-mode" class="status-ok">{{ storage_mode_label | default('—') }}</span>{% if solark_ok and automation_enabled %} — At high Solark SOC, the legacy protection path curtails Solis PV{% if solark_auto_self_use %} <span class="muted">(legacy curtailment active)</span>{% endif %}{% endif %}</p>
     <p style="margin: 0 0 0.75rem 0;"><strong>Solark SOC automation:</strong> {% if automation_enabled %}<span class="status-ok">On</span>{% else %}<span class="muted">Off</span>{% endif %}
       <form method="post" action="/settings/automation" style="display:inline; margin-left:0.5rem;">
         {% if automation_enabled %}

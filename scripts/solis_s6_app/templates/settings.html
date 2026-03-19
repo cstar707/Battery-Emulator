@@ -4,6 +4,12 @@
   {% if request.query_params.get('saved') == '1' %}
   <div class="flash flash-ok">Settings saved. Solis/Solark polling uses the new endpoint values on the next cycle. Saved battery-source MQTT topic changes are picked up on <code>:3008</code> automatically; MQTT broker/topic changes on <code>:3007</code> still require a controlled restart.</div>
   {% endif %}
+  {% if request.query_params.get('solis_action') == 'off_grid_now' %}
+  <div class="flash flash-ok">Manual Solis action sent: switched to <code>off_grid</code>. A manual work-mode override is now active, so the coordinator will not change Solis work mode until you clear that override.</div>
+  {% endif %}
+  {% if request.query_params.get('solis_action') == 'clear_manual_override' %}
+  <div class="flash flash-ok">Cleared the manual Solis mode override. The coordinator can control mode changes again on the next poll.</div>
+  {% endif %}
   {% if flash_error %}
   <div class="flash flash-err">{{ flash_error }}</div>
   {% elif request.query_params.get('error') %}
@@ -74,10 +80,46 @@
       <div class="settings-row"><label for="tabuchi_today_pv_kwh">Tabuchi today PV (kWh)</label><input type="number" id="tabuchi_today_pv_kwh" name="tabuchi_today_pv_kwh" value="{{ tabuchi_today_pv_kwh }}" min="0" max="100" step="0.1" placeholder="3" /> <span class="muted">Static value used when totalling systems (e.g. 3 not 15). Used by grid-status / dashboard total.</span></div>
 
       <h3 style="margin-top: 1.25rem; margin-bottom: 0.75rem; font-size: 1rem; color: var(--muted);">Automation</h3>
-      <div class="settings-row"><label for="solark_soc_automation_enabled" style="display:flex; align-items:center; gap:0.5rem; min-width:auto;"><input type="checkbox" id="solark_soc_automation_enabled" name="solark_soc_automation_enabled" value="on" {% if solark_soc_automation_enabled %}checked{% endif %} />When Solark SOC ≥ 98%, switch Solis to self-use (and back to feed-in below 95%)</label></div>
+      <div class="settings-row"><label for="solark_soc_automation_enabled" style="display:flex; align-items:center; gap:0.5rem; min-width:auto;"><input type="checkbox" id="solark_soc_automation_enabled" name="solark_soc_automation_enabled" value="on" {% if solark_soc_automation_enabled %}checked{% endif %} />Legacy high-SOC protection: curtail Solis PV at high Solark SOC and restore it below the release band</label></div>
       <p class="muted" style="margin: 0.5rem 0 0.25rem 0;">Solark SOC calibration (applies to automations + display). Use this instead of editing battery emulator firmware when SOC drifts over time.</p>
       <div class="settings-row"><label for="solark_soc_scale">Solark SOC scale</label><input type="number" id="solark_soc_scale" name="solark_soc_scale" value="{{ solark_soc_scale }}" min="0.5" max="1.5" step="0.01" placeholder="1.00" /> <span class="muted">Example: 0.98 makes 98% read as 96.0%.</span></div>
       <div class="settings-row"><label for="solark_soc_offset_pct">Solark SOC offset (pct)</label><input type="number" id="solark_soc_offset_pct" name="solark_soc_offset_pct" value="{{ solark_soc_offset_pct }}" min="-20" max="20" step="0.1" placeholder="0.0" /> <span class="muted">Example: -3.0 shifts 98.0% → 95.0%.</span></div>
+      <h3 style="margin-top: 1.25rem; margin-bottom: 0.75rem; font-size: 1rem; color: var(--muted);">Solis power controls</h3>
+      <div class="settings-row"><label for="solis_power_controls_enabled" style="display:flex; align-items:center; gap:0.5rem; min-width:auto;"><input type="checkbox" id="solis_power_controls_enabled" name="solis_power_controls_enabled" value="on" {% if solis_power_controls_enabled %}checked{% endif %} />Enable Solis power-control coordinator</label></div>
+      <div class="settings-row" {% if not solis_power_controls_enabled %}style="opacity:0.55; pointer-events:none;"{% endif %}>
+        <label for="solis_offgrid_automation_enabled" style="display:flex; align-items:center; gap:0.5rem; min-width:auto;"><input type="checkbox" id="solis_offgrid_automation_enabled" name="solis_offgrid_automation_enabled" value="on" {% if solis_offgrid_automation_enabled %}checked{% endif %} />Enable automatic off-grid at Solark SOC target</label>
+      </div>
+      <div class="settings-row" {% if not solis_power_controls_enabled %}style="opacity:0.55; pointer-events:none;"{% endif %}>
+        <label for="solis_offgrid_enter_solark_soc_pct">Enter off-grid at Solark SOC (%)</label>
+        <input type="number" id="solis_offgrid_enter_solark_soc_pct" name="solis_offgrid_enter_solark_soc_pct" value="{{ solis_offgrid_enter_solark_soc_pct }}" min="0" max="100" step="0.1" placeholder="90" />
+      </div>
+      <div class="settings-row" {% if not solis_power_controls_enabled %}style="opacity:0.55; pointer-events:none;"{% endif %}>
+        <label for="solis_manual_offgrid_auto_release_enabled" style="display:flex; align-items:center; gap:0.5rem; min-width:auto;"><input type="checkbox" id="solis_manual_offgrid_auto_release_enabled" name="solis_manual_offgrid_auto_release_enabled" value="on" {% if solis_manual_offgrid_auto_release_enabled %}checked{% endif %} />Allow manual off-grid hold to auto-release in the morning</label>
+      </div>
+      <div class="settings-row" {% if not solis_power_controls_enabled %}style="opacity:0.55; pointer-events:none;"{% endif %}>
+        <label for="solis_manual_offgrid_release_pv_w">Release manual off-grid when Solark PV ≥ (W)</label>
+        <input type="number" id="solis_manual_offgrid_release_pv_w" name="solis_manual_offgrid_release_pv_w" value="{{ solis_manual_offgrid_release_pv_w }}" min="0" max="100000" step="10" placeholder="5000" />
+      </div>
+      <div class="settings-row" {% if not solis_power_controls_enabled %}style="opacity:0.55; pointer-events:none;"{% endif %}>
+        <label for="solis_manual_offgrid_release_solark_soc_pct">Release manual off-grid when Solark SOC ≥ (%)</label>
+        <input type="number" id="solis_manual_offgrid_release_solark_soc_pct" name="solis_manual_offgrid_release_solark_soc_pct" value="{{ solis_manual_offgrid_release_solark_soc_pct }}" min="0" max="100" step="0.1" placeholder="30" />
+      </div>
+      <div class="settings-row" {% if not solis_power_controls_enabled %}style="opacity:0.55; pointer-events:none;"{% endif %}>
+        <label for="solis_tou_charge_automation_enabled" style="display:flex; align-items:center; gap:0.5rem; min-width:auto;"><input type="checkbox" id="solis_tou_charge_automation_enabled" name="solis_tou_charge_automation_enabled" value="on" {% if solis_tou_charge_automation_enabled %}checked{% endif %} />Enable daytime TOU charge mode when available PV is high</label>
+      </div>
+      <div class="settings-row" {% if not solis_power_controls_enabled %}style="opacity:0.55; pointer-events:none;"{% endif %}>
+        <label for="solis_tou_charge_available_pv_w">Enter daytime TOU charge mode when available PV ≥ (W)</label>
+        <input type="number" id="solis_tou_charge_available_pv_w" name="solis_tou_charge_available_pv_w" value="{{ solis_tou_charge_available_pv_w }}" min="0" max="100000" step="10" placeholder="3000" />
+      </div>
+      <div class="settings-row" {% if not solis_power_controls_enabled %}style="opacity:0.55; pointer-events:none;"{% endif %}>
+        <label for="solis_tou_charge_amps">TOU charge amps</label>
+        <input type="number" id="solis_tou_charge_amps" name="solis_tou_charge_amps" value="{{ solis_tou_charge_amps }}" min="0" max="70" step="0.1" placeholder="52.0" />
+      </div>
+      <div class="settings-row" {% if not solis_power_controls_enabled %}style="opacity:0.55; pointer-events:none;"{% endif %}>
+        <label for="solis_tou_discharge_amps">TOU discharge amps</label>
+        <input type="number" id="solis_tou_discharge_amps" name="solis_tou_discharge_amps" value="{{ solis_tou_discharge_amps }}" min="0" max="70" step="0.1" placeholder="10.0" />
+      </div>
+      <p class="muted" style="margin-top: 0.35rem;">Priority order is <code>high-SOC curtailment</code> → <code>manual hold</code> → <code>remote power control</code> → <code>TOU charge</code> → <code>off_grid</code> → <code>self_use</code>. Available PV comes from the current Solark cache value used by this app.</p>
       <div class="settings-row" {% if not solark_soc_automation_enabled %}style="opacity:0.55; pointer-events:none;"{% endif %}>
         <label for="ha_restore_on_batt_draw_enabled" style="display:flex; align-items:center; gap:0.5rem; min-width:auto;">
           <input type="checkbox" id="ha_restore_on_batt_draw_enabled" name="ha_restore_on_batt_draw_enabled" value="on"
@@ -96,7 +138,7 @@
       </div>
       <p class="muted" style="margin-top: 0.35rem;">Normalized Solark battery_total_power_W uses sign convention: negative/<=0 means “battery drawing”, positive means “charging”.</p>
       <div class="settings-row"><label for="solar_llm_automations_enabled" style="display:flex; align-items:center; gap:0.5rem; min-width:auto;"><input type="checkbox" id="solar_llm_automations_enabled" name="solar_llm_automations_enabled" value="on" {% if solar_llm_automations_enabled %}checked{% endif %} />Enable AI / LLM assistant, AI debug page, and background LLM automations</label></div>
-      <p class="muted" style="margin-top: 0.75rem;">When this is off, the existing non-AI Solis/Solark automation remains the fallback path. AI chat, AI debug, and background LLM jobs stay disabled.</p>
+      <p class="muted" style="margin-top: 0.75rem;">When this is off, the existing non-AI Solis/Solark automation remains the fallback path. AI chat, AI debug, and background LLM jobs stay disabled. When this is on, the LLM sees the live Solis power-control coordinator state, TOU currents, configured off-grid / TOU thresholds, and any active manual power-control override.</p>
 
       <h3 style="margin-top: 1.25rem; margin-bottom: 0.75rem; font-size: 1rem; color: var(--muted);">Solar Forecast (Forecast.Solar)</h3>
       <p class="muted" style="margin: 0 0 0.75rem 0;">Two toggles: <strong>Forecast API</strong> — fetches data when on; <strong>Solar prediction</strong> — automations use forecast when on. Both off by default.</p>
@@ -109,6 +151,16 @@
       <div class="settings-row"><label for="solar_prediction_kwp">Total kWp (combined arrays)</label><input type="number" id="solar_prediction_kwp" name="solar_prediction_kwp" value="{{ solar_prediction_kwp }}" min="0.1" max="500" step="0.1" placeholder="25" /></div>
 
       <div style="margin-top: 1.25rem;"><button type="submit">Save integration settings</button></div>
+    </form>
+    <form method="post" action="/settings/solis-action" style="margin-top: 0.75rem;">
+      <input type="hidden" name="action" value="off_grid_now" />
+      <button type="submit" class="btn" style="background:var(--red);">Switch Solis To Off-Grid Now</button>
+      <p class="muted" style="margin-top: 0.35rem;">Manual action using the same clean off-grid path as the control page. This creates a manual hold. If manual auto-release is enabled above, the hold will clear only when both the PV and SOC release thresholds are satisfied.</p>
+    </form>
+    <form method="post" action="/settings/solis-action" style="margin-top: 0.5rem;">
+      <input type="hidden" name="action" value="clear_manual_override" />
+      <button type="submit" class="btn" style="background:#30363d;">Return Solis To Coordinator</button>
+      <p class="muted" style="margin-top: 0.35rem;">Use this when you want automation to resume controlling `off_grid`, `self_use`, and daytime TOU charge mode.</p>
     </form>
   </div>
 
@@ -139,6 +191,28 @@
   </div>
 
   <div class="card">
+    <h2>Solis power-control status</h2>
+    <table style="width:100%; border-collapse: collapse;">
+      <tr><td class="muted">Coordinator enabled</td><td>{% if solis_power_status.enabled %}<span class="status-ok">On</span>{% else %}<span class="muted">Off</span>{% endif %}</td></tr>
+      <tr><td class="muted">Coordinator state</td><td>{{ solis_power_status.state or '—' }}</td></tr>
+      <tr><td class="muted">Current owner</td><td>{{ solis_power_status.owner or '—' }}</td></tr>
+      <tr><td class="muted">Owner reason</td><td>{{ solis_power_status.reason or '—' }}</td></tr>
+      <tr><td class="muted">High-SOC curtailment</td><td>{% if solis_power_status.high_soc_curtailment_active %}<span class="status-ok">Active</span> at {{ solis_power_status.high_soc_curtailment_threshold_pct }}%{% else %}<span class="muted">Off</span>{% endif %}</td></tr>
+      <tr><td class="muted">Manual work-mode override</td><td>{% if solis_power_status.manual_override.active %}<span class="status-ok">Active</span> → {{ solis_power_status.manual_override.mode }}{% else %}<span class="muted">Off</span>{% endif %}</td></tr>
+      <tr><td class="muted">Live storage mode</td><td>{{ solis_power_status.storage_mode or '—' }}</td></tr>
+      <tr><td class="muted">Available PV</td><td>{{ solis_power_status.available_pv_w | default(0) | int }} W</td></tr>
+      <tr><td class="muted">Calibrated Solark SOC</td><td>{% if solis_power_status.solark_soc_pct is not none %}{{ "%.1f" | format(solis_power_status.solark_soc_pct) }}%{% else %}—{% endif %}</td></tr>
+      <tr><td class="muted">Manual off-grid auto-release</td><td>{% if solis_power_status.manual_offgrid_auto_release_enabled %}<span class="status-ok">On</span> at {{ "%.0f" | format(solis_power_status.manual_offgrid_release_pv_w) }} W and {{ "%.1f" | format(solis_power_status.manual_offgrid_release_solark_soc_pct) }}% SOC{% else %}<span class="muted">Off</span>{% endif %}</td></tr>
+      <tr><td class="muted">Manual release conditions</td><td>{% if solis_power_status.manual_release.enabled %}PV {% if solis_power_status.manual_release.pv_ready %}<span class="status-ok">ready{% else %}<span class="muted">waiting{% endif %}</span> · SOC {% if solis_power_status.manual_release.soc_ready %}<span class="status-ok">ready{% else %}<span class="muted">waiting{% endif %}</span>{% else %}<span class="muted">Not active</span>{% endif %}</td></tr>
+      <tr><td class="muted">Live TOU charge/discharge amps</td><td>{% if solis_power_status.tou.ok %}{{ "%.1f" | format(solis_power_status.tou.charge_amps) }} A / {{ "%.1f" | format(solis_power_status.tou.discharge_amps) }} A{% else %}<span class="muted">{{ solis_power_status.tou.error or 'unavailable' }}</span>{% endif %}</td></tr>
+      <tr><td class="muted">Live TOU slot 1</td><td>{% if solis_power_status.tou.ok %}Charge {{ "%02d:%02d" | format(solis_power_status.tou.slot1.charge_start_h, solis_power_status.tou.slot1.charge_start_m) }} → {{ "%02d:%02d" | format(solis_power_status.tou.slot1.charge_end_h, solis_power_status.tou.slot1.charge_end_m) }}, discharge {{ "%02d:%02d" | format(solis_power_status.tou.slot1.discharge_start_h, solis_power_status.tou.slot1.discharge_start_m) }} → {{ "%02d:%02d" | format(solis_power_status.tou.slot1.discharge_end_h, solis_power_status.tou.slot1.discharge_end_m) }}{% else %}—{% endif %}</td></tr>
+      <tr><td class="muted">Live allow-export bit</td><td>{% if solis_power_status.hybrid_bits.allow_export %}<span class="status-ok">On</span>{% else %}<span class="muted">Off</span>{% endif %}</td></tr>
+      <tr><td class="muted">Configured off-grid target</td><td>{% if solis_offgrid_automation_enabled %}{{ "%.1f" | format(solis_offgrid_enter_solark_soc_pct) }}%{% else %}<span class="muted">Disabled</span>{% endif %}</td></tr>
+      <tr><td class="muted">Configured TOU charge mode</td><td>{% if solis_tou_charge_automation_enabled %}{{ "%.0f" | format(solis_tou_charge_available_pv_w) }} W, {{ "%.1f" | format(solis_tou_charge_amps) }} A{% else %}<span class="muted">Disabled</span>{% endif %}</td></tr>
+    </table>
+  </div>
+
+  <div class="card">
     <h2>Current config summary</h2>
     <table style="width:100%; border-collapse: collapse;">
       <tr><td class="muted">Saved MQTT broker</td><td>{{ mqtt_host }}:{{ mqtt_port }}</td></tr>
@@ -151,6 +225,7 @@
       <tr><td class="muted">HA token</td><td>{% if ha_token_present %}<span class="status-ok">Configured</span>{% else %}<span class="muted">Not set</span>{% endif %}</td></tr>
       <tr><td class="muted">Solark SOC automation</td><td>{% if solark_soc_automation_enabled %}<span class="status-ok">On</span>{% else %}<span class="muted">Off</span>{% endif %}</td></tr>
       <tr><td class="muted">Solark SOC calibration</td><td>scale {{ solark_soc_scale }}, offset {{ solark_soc_offset_pct }}%</td></tr>
+      <tr><td class="muted">Solis power controls</td><td>{% if solis_power_controls_enabled %}<span class="status-ok">On</span>{% else %}<span class="muted">Off</span>{% endif %}</td></tr>
       <tr><td class="muted">AI / LLM automations</td><td>{% if solar_llm_automations_enabled %}<span class="status-ok">On</span>{% else %}<span class="muted">Off</span>{% endif %}</td></tr>
       <tr><td class="muted">Forecast API</td><td>{% if solar_forecast_api_enabled %}<span class="status-ok">On</span>{% else %}<span class="muted">Off</span>{% endif %}</td></tr>
       <tr><td class="muted">Solar prediction mode</td><td>{% if solar_prediction_enabled %}<span class="status-ok">On</span>{% else %}<span class="muted">Off</span>{% endif %}</td></tr>

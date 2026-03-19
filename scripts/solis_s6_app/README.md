@@ -104,6 +104,20 @@ On 10.10.53.92 the default broker is localhost (same host). Set `MQTT_USER` and 
 - When enabled, the dashboard assistant, `/ai-debug`, and background LLM automations become available.
 - The LLM client supports both OpenAI-compatible APIs and Ollama. For your current LAN setup, use `SOLAR_LLM_HOST=10.10.53.164`, `SOLAR_LLM_PORT=11434`, `SOLAR_LLM_API_STYLE=ollama`, and a model such as `llama3.1:8b`.
 - Sol-Ark remains read-only in the AI flow; actual Solis writes still go through the app's existing guardrails/helpers.
+- The LLM summary now includes the Solis power-control coordinator state and settings:
+  - `solis_power_controls.enabled`
+  - current coordinator `state` and current `owner`
+  - configured off-grid SOC target
+  - manual off-grid auto-release enabled/disabled
+  - manual off-grid release PV threshold
+  - manual off-grid release Solark SOC threshold
+  - configured daytime TOU-charge PV threshold
+  - configured TOU charge/discharge amps
+  - live TOU register readback
+  - manual hold active/mode and whether release conditions are satisfied
+  - active manual `/api/power-control` mode and watts
+- The automatic priority order is: manual hold, remote power control, TOU charge, off-grid, then self-use.
+- This lets the LLM reason about the new control model instead of only the older PV-curtailment path. The coordinator itself is still deterministic and remains the primary safety path.
 
 ## API
 

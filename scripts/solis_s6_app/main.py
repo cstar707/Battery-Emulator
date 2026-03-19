@@ -54,6 +54,16 @@ try:
         get_ha_restore_on_batt_draw_enabled,
         get_ha_restore_batt_draw_power_threshold_w,
         get_ha_restore_batt_draw_hold_sec,
+        get_solis_power_controls_enabled,
+        get_solis_offgrid_automation_enabled,
+        get_solis_offgrid_enter_solark_soc_pct,
+        get_solis_manual_offgrid_auto_release_enabled,
+        get_solis_manual_offgrid_release_pv_w,
+        get_solis_manual_offgrid_release_solark_soc_pct,
+        get_solis_tou_charge_automation_enabled,
+        get_solis_tou_charge_available_pv_w,
+        get_solis_tou_charge_amps,
+        get_solis_tou_discharge_amps,
         INVERTER_LABEL_SOLARK1,
         INVERTER_LABEL_SOLARK2,
         INVERTER_LABEL_SOLIS1,
@@ -122,6 +132,26 @@ except Exception as e:
         return 0.0
     def get_ha_restore_batt_draw_hold_sec():
         return 60
+    def get_solis_power_controls_enabled():
+        return False
+    def get_solis_offgrid_automation_enabled():
+        return False
+    def get_solis_offgrid_enter_solark_soc_pct():
+        return 90.0
+    def get_solis_manual_offgrid_auto_release_enabled():
+        return True
+    def get_solis_manual_offgrid_release_pv_w():
+        return 5000.0
+    def get_solis_manual_offgrid_release_solark_soc_pct():
+        return 30.0
+    def get_solis_tou_charge_automation_enabled():
+        return False
+    def get_solis_tou_charge_available_pv_w():
+        return 3000.0
+    def get_solis_tou_charge_amps():
+        return 52.0
+    def get_solis_tou_discharge_amps():
+        return 10.0
     def get_solar_forecast_api_enabled():
         return False
     def get_solar_prediction_enabled():
@@ -233,6 +263,11 @@ try:
         set_power_control_off,
         set_storage_control_bit,
         set_storage_control_bits,
+        apply_clean_self_use,
+        apply_tou_charge_mode,
+        get_tou_config,
+        set_tou_charge_amps,
+        set_tou_discharge_amps,
     )
     _STORAGE_BIT_NAMES, _HYBRID_BIT_NAMES = _SM, _HM
     _modbus_available = True
@@ -251,6 +286,11 @@ except Exception as e:
     def set_remote_import_watts(*a, **kw): return {"ok": False, "message": "Modbus unavailable", "writes": []}
     def set_export_target(*a, **kw): return {"ok": False, "message": "Modbus unavailable", "writes": []}
     def set_power_control_off(*a, **kw): return {"ok": False, "message": "Modbus unavailable", "writes": []}
+    def apply_clean_self_use(*a, **kw): return {"ok": False, "message": "Modbus unavailable", "writes": []}
+    def apply_tou_charge_mode(*a, **kw): return {"ok": False, "message": "Modbus unavailable", "writes": []}
+    def get_tou_config(): return {"ok": False, "error": "Modbus unavailable"}
+    def set_tou_charge_amps(*a, **kw): return {"ok": False, "message": "Modbus unavailable", "writes": []}
+    def set_tou_discharge_amps(*a, **kw): return {"ok": False, "message": "Modbus unavailable", "writes": []}
     get_storage_control_bits = _modbus_stub_return_dict_bits
     get_hybrid_control_bits = _modbus_stub_return_hybrid_bits
     def get_active_power_limit(): return {"ok": False, "enabled": False, "limit_pct": 100.0}
@@ -282,7 +322,7 @@ def _solis_cache_first() -> dict:
 # Solark data: from MQTT only (solar/solark, solar/solark/sensors/#). source = "mqtt" | "mqtt-sensors"; background subscriber updates this.
 _solark_cache: dict = {"data": {}, "ts": 0, "ok": False, "source": None, "last_error": None}
 
-# Automation: when Solark SOC >= threshold, switch Solis to self-use; hysteresis below SOLARK_SOC_FEEDIN_BELOW_PCT
+# Legacy protection path: when Solark SOC is high, curtail Solis PV output; restore below the release band.
 #
 # *** CRITICAL SAFETY DEFAULT ***
 # Both flags are initialised to True (curtailed) so the system boots in the SAFE state.
@@ -292,6 +332,8 @@ _solark_cache: dict = {"data": {}, "ts": 0, "ok": False, "source": None, "last_e
 _solark_auto_self_use_active: bool = True  # assume curtailed until SOC confirmed below 95%
 _last_solis_auto_switch_ts: float = 0
 _AUTO_SWITCH_COOLDOWN_SEC = 300  # don't flip Solis mode more than once per 5 min
+_last_solis_curtail_switch_ts: float = 0
+_SOLIS_CURTAIL_COOLDOWN_SEC = 300
 
 # Automation: HA switch curtailment (Steps 2-4) — fire alongside Solis mode switch
 _ha_curtail_active: bool = True            # assume curtailed at startup — only released when SOC < 95%
@@ -305,6 +347,7 @@ _ha_batt_draw_hold_since: float | None = None
 # Option B (battery draw restore): when enabled, we can restore Solis PV clamp earlier than SOC hysteresis
 # once the Solark battery indicates “drawing” (battery_total_power_W <= threshold) for a hold time.
 _solis_pv_restore_batt_draw_hold_since: float | None = None
+_solis_power_control_state: str = "startup_safe"
 
 # LLM automation state: last run timestamps + last results for each automation type.
 _llm_automation_state: dict = {
@@ -775,26 +818,91 @@ def _fetch_esphome_solark_data_sync() -> tuple[dict, str | None]:
         return {}, err
 
 
-def _run_solark_solis_automation(solis_data: dict, solark_data: dict) -> None:
-    """
-    Curtail / restore Solis PV output using the active power limit registers.
-
-    Curtail  (SOC ≥ threshold): set power limit to 0% — inverter ramps MPPT to 0W.
-    Restore  (SOC < hysteresis): disable power limit — inverter returns to full output.
-
-    No operating-mode (43110) changes are made; inverter stays in Feed-In Priority.
-    This is correct for Phase 1 (no Solis battery). Revisit in Phase 2 when a Solis
-    battery is connected (see docs/SOLIS-STORAGE-MODE-TOGGLES.md).
-    """
-    global _solark_auto_self_use_active, _last_solis_auto_switch_ts, _solis_pv_restore_batt_draw_hold_since
-    if not get_solark_soc_automation_enabled() or not _modbus_available or SOLARK_SOC_SELF_USE_THRESHOLD_PCT <= 0:
+def _run_solis_power_controls_automation(solis_data: dict, solark_data: dict) -> None:
+    """Coordinate Solis off-grid / TOU-charge / self-use states from config."""
+    global _solis_power_control_state, _last_solis_auto_switch_ts
+    if not get_solis_power_controls_enabled() or not _modbus_available:
+        return
+    if _run_solis_high_soc_curtailment(solark_data, enabled=True, source="coordinator"):
+        _solis_power_control_state = "auto_high_soc_curtailment"
+        return
+    decision = _evaluate_solis_power_control_decision(solis_data, solark_data)
+    if decision.get("owner") == "manual_hold":
+        manual_release = decision.get("manual_release") or {}
+        if manual_release.get("ready"):
+            _clear_solis_manual_override()
+            logger.info(
+                "solis power controls: cleared manual off_grid hold "
+                "(pv %.0fW >= %.0fW and soc %.1f%% >= %.1f%%)",
+                manual_release.get("available_pv_w") or 0.0,
+                manual_release.get("pv_threshold_w") or 0.0,
+                manual_release.get("solark_soc_pct") or 0.0,
+                manual_release.get("soc_threshold_pct") or 0.0,
+            )
+            decision = _evaluate_solis_power_control_decision(solis_data, solark_data)
+        else:
+            _solis_power_control_state = "manual_hold"
+            return
+    if decision.get("owner") == "remote_power_control":
+        _solis_power_control_state = "remote_power_control"
         return
     now = time.time()
     if now - _last_solis_auto_switch_ts < _AUTO_SWITCH_COOLDOWN_SEC:
+        _solis_power_control_state = decision.get("owner") or "cooldown"
         return
+    desired_state = str(decision.get("desired_state") or "self_use")
+    current_state = str(decision.get("current_state") or "unknown")
+    if desired_state == current_state and current_state != "unknown":
+        _solis_power_control_state = decision.get("owner") or current_state
+        return
+
+    try:
+        set_active_power_limit(100.0)
+    except Exception as e:
+        logger.warning("solis power controls: failed to disable power limit before mode change: %s", e)
+
+    result = {"ok": False, "message": "no-op"}
+    if desired_state == "off_grid":
+        ok, err = _apply_control_change("storage", _STORAGE_OFF_GRID_BIT, True)
+        result = {"ok": ok, "message": err or "off-grid applied", "writes": []}
+    elif desired_state == "tou_charge":
+        result = apply_tou_charge_mode(charge_amps=get_solis_tou_charge_amps())
+        if result.get("ok"):
+            set_tou_discharge_amps(get_solis_tou_discharge_amps())
+    else:
+        result = apply_clean_self_use()
+
+    if result.get("ok"):
+        _solis_power_control_state = decision.get("owner") or desired_state
+        _last_solis_auto_switch_ts = now
+        logger.info(
+            "solis power controls: owner=%s state=%s reason=%s message=%s",
+            decision.get("owner"),
+            desired_state,
+            decision.get("reason"),
+            result.get("message"),
+        )
+    else:
+        logger.warning(
+            "solis power controls: failed owner=%s state=%s reason=%s message=%s",
+            decision.get("owner"),
+            desired_state,
+            decision.get("reason"),
+            result.get("message"),
+        )
+
+
+def _run_solis_high_soc_curtailment(solark_data: dict, *, enabled: bool, source: str) -> bool:
+    """Curtail/restore Solis PV output using the active power limit registers."""
+    global _solark_auto_self_use_active, _last_solis_curtail_switch_ts, _solis_pv_restore_batt_draw_hold_since
+    if not enabled or not _modbus_available or SOLARK_SOC_SELF_USE_THRESHOLD_PCT <= 0:
+        return False
+    now = time.time()
+    if now - _last_solis_curtail_switch_ts < _SOLIS_CURTAIL_COOLDOWN_SEC:
+        return _solark_auto_self_use_active
     _raw_soc_pptt, soc_pptt = _solark_soc_calibrated_pptt(solark_data)
     if soc_pptt is None:
-        return
+        return _solark_auto_self_use_active
     soc_pct = soc_pptt / 100.0
     threshold_pptt = SOLARK_SOC_SELF_USE_THRESHOLD_PCT * 100
     below_pptt = SOLARK_SOC_FEEDIN_BELOW_PCT * 100
@@ -808,8 +916,13 @@ def _run_solark_solis_automation(solis_data: dict, solark_data: dict) -> None:
             if set_active_power_limit(0.0):
                 _solark_auto_self_use_active = True
                 _solis_pv_restore_batt_draw_hold_since = None
-                _last_solis_auto_switch_ts = now
-                logger.info("Solark SOC %.1f%% >= %d%%: Solis power limited to 0%%", soc_pct, SOLARK_SOC_SELF_USE_THRESHOLD_PCT)
+                _last_solis_curtail_switch_ts = now
+                logger.info(
+                    "Solis high-SOC curtailment (%s): Solark SOC %.1f%% >= %d%%, power limited to 0%%",
+                    source,
+                    soc_pct,
+                    SOLARK_SOC_SELF_USE_THRESHOLD_PCT,
+                )
         except Exception as e:
             logger.warning("Automation curtail Solis: %s", e)
     elif _solark_auto_self_use_active:
@@ -836,10 +949,11 @@ def _run_solark_solis_automation(solis_data: dict, solark_data: dict) -> None:
                     if now - _solis_pv_restore_batt_draw_hold_since >= hold_sec:
                         if set_active_power_limit(100.0):
                             _solark_auto_self_use_active = False
-                            _last_solis_auto_switch_ts = now
+                            _last_solis_curtail_switch_ts = now
                             _solis_pv_restore_batt_draw_hold_since = None
                             logger.info(
-                                "Solark PV restore optionB: batt_power_W %.0f <= %.0f for %ds (SOC %.1f%%): power limit disabled",
+                                "Solis high-SOC restore optionB (%s): batt_power_W %.0f <= %.0f for %ds (SOC %.1f%%), power limit disabled",
+                                source,
                                 batt_power_w,
                                 batt_power_threshold_w,
                                 hold_sec,
@@ -851,14 +965,29 @@ def _run_solark_solis_automation(solis_data: dict, solark_data: dict) -> None:
                 if soc_pptt < below_pptt:
                     if set_active_power_limit(100.0):
                         _solark_auto_self_use_active = False
-                        _last_solis_auto_switch_ts = now
+                        _last_solis_curtail_switch_ts = now
                         logger.info(
-                            "Solark SOC %.1f%% < %d%%: Solis power limit disabled (full output)",
+                            "Solis high-SOC restore (%s): Solark SOC %.1f%% < %d%%, power limit disabled (full output)",
+                            source,
                             soc_pct,
                             SOLARK_SOC_FEEDIN_BELOW_PCT,
                         )
         except Exception as e:
             logger.warning("Automation restore Solis: %s", e)
+    return _solark_auto_self_use_active
+
+
+def _run_solark_solis_automation(solis_data: dict, solark_data: dict) -> None:
+    """
+    Legacy fallback Solis PV curtailment path.
+
+    This remains available when the new coordinator is disabled.
+    """
+    _run_solis_high_soc_curtailment(
+        solark_data,
+        enabled=get_solark_soc_automation_enabled(),
+        source="legacy",
+    )
 
 
 def _run_ha_curtailment_automation(solark_data: dict) -> None:
@@ -960,6 +1089,18 @@ def _poll_sync() -> None:
                 logger.warning("poll_solis_for_inverter %s: %s", topic_id, e)
                 _solis_caches[topic_id] = {"data": {}, "ts": ts, "ok": False}
                 continue
+
+            # If Modbus block 33126 (meter power + house load) is missing, the Modbus layer
+            # leaves grid/load defaults as 0. That causes visible "blips" on the display.
+            # Carry forward previous grid/load values so we keep stability during partial reads.
+            prev_data = (_solis_caches.get(topic_id) or {}).get("data") or {}
+            raw_blocks = data.get("raw_blocks") or {}
+            if raw_blocks and "33126" not in raw_blocks:
+                logger.debug("poll_solis %s missing 33126 (meter power + house load); carrying forward grid/load", topic_id)
+                for k in ("grid_power_W", "load_power_W"):
+                    prev_val = prev_data.get(k)
+                    if isinstance(prev_val, (int, float)):
+                        data[k] = prev_val
             # Battery runtime enrichment
             soc = data.get("battery_soc_pct")
             power_w = data.get("battery_power_W")
@@ -1017,8 +1158,11 @@ def _poll_sync() -> None:
 
         # Run automations using whatever solark data we have (from MQTT)
         cached_solark = _solark_cache.get("data") or {}
-        if cached_solark and SOLARK_SOC_SELF_USE_THRESHOLD_PCT > 0:
-            _run_solark_solis_automation(data, cached_solark)
+        if cached_solark:
+            if get_solis_power_controls_enabled():
+                _run_solis_power_controls_automation(data, cached_solark)
+            elif SOLARK_SOC_SELF_USE_THRESHOLD_PCT > 0:
+                _run_solark_solis_automation(data, cached_solark)
             _run_ha_curtailment_automation(cached_solark)
     except Exception as e:
         logger.exception("poll: %s", e)
@@ -1178,6 +1322,7 @@ async def global_exception_handler(request: Request, exc: Exception):
 
 BASE = Path(__file__).resolve().parent
 _POWER_CONTROL_FILE = BASE / "power_control.json"
+_SOLIS_MANUAL_OVERRIDE_FILE = BASE / "solis_manual_override.json"
 templates = Jinja2Templates(directory=str(BASE / "templates"))
 
 
@@ -1230,6 +1375,8 @@ def _build_site_snapshot() -> dict:
     solis_first = solis_inverters[0] if solis_inverters else {"data": {}, "ok": False, "ts": 0}
     solis_data = solis_first.get("data", {}) or {}
     solark_data = _enrich_solark_battery_runtime(_solark_cache.get("data", {}) or {}, get_solark1_battery_kwh())
+    solis_power_status = _get_solis_power_status()
+    power_control = _load_power_control()
     numeric_sums: dict[str, float] = {
         "pv_power_W": 0.0,
         "load_power_W": 0.0,
@@ -1274,6 +1421,28 @@ def _build_site_snapshot() -> dict:
             "solis_grid_power_W": numeric_sums["grid_power_W"],
             "solis_battery_power_W": numeric_sums["battery_power_W"],
         },
+        "solis_power_controls": {
+            "enabled": solis_power_status.get("enabled"),
+            "state": solis_power_status.get("state"),
+            "owner": solis_power_status.get("owner"),
+            "reason": solis_power_status.get("reason"),
+            "storage_mode": solis_power_status.get("storage_mode"),
+            "available_pv_w": solis_power_status.get("available_pv_w"),
+            "solark_soc_pct": solis_power_status.get("solark_soc_pct"),
+            "offgrid_enabled": solis_power_status.get("offgrid_enabled"),
+            "offgrid_enter_soc_pct": solis_power_status.get("offgrid_enter_soc_pct"),
+            "manual_offgrid_auto_release_enabled": solis_power_status.get("manual_offgrid_auto_release_enabled"),
+            "manual_offgrid_release_pv_w": solis_power_status.get("manual_offgrid_release_pv_w"),
+            "manual_offgrid_release_solark_soc_pct": solis_power_status.get("manual_offgrid_release_solark_soc_pct"),
+            "tou_charge_enabled": solis_power_status.get("tou_charge_enabled"),
+            "tou_charge_available_pv_w": solis_power_status.get("tou_charge_available_pv_w"),
+            "tou_charge_amps_setting": solis_power_status.get("tou_charge_amps_setting"),
+            "tou_discharge_amps_setting": solis_power_status.get("tou_discharge_amps_setting"),
+            "live_tou": solis_power_status.get("tou"),
+            "manual_override": solis_power_status.get("manual_override"),
+            "manual_release": solis_power_status.get("manual_release"),
+        },
+        "power_control": power_control,
     }
 
 
@@ -1282,6 +1451,8 @@ def _build_ai_debug_metrics(snapshot: dict) -> dict:
     solis = ((snapshot or {}).get("solis") or {}).get("data") or {}
     solark = ((snapshot or {}).get("solark") or {}).get("data") or {}
     site = (snapshot or {}).get("site") or {}
+    solis_power_controls = (snapshot or {}).get("solis_power_controls") or {}
+    power_control = (snapshot or {}).get("power_control") or {}
 
     raw_soc_pptt, cal_soc_pptt = _solark_soc_calibrated_pptt(solark)
     solark_soc_pct = round(cal_soc_pptt / 100.0, 1) if isinstance(cal_soc_pptt, int) else None
@@ -1303,6 +1474,19 @@ def _build_ai_debug_metrics(snapshot: dict) -> dict:
         "solark_battery_power_W": solark.get("battery_total_power_W") if solark.get("battery_total_power_W") is not None else solark.get("battery_power_W"),
         "solark_battery_soc_pct": solark_soc_pct,
         "solark_battery_soc_raw_pct": solark_soc_raw_pct,
+        "solis_power_controls_enabled": solis_power_controls.get("enabled"),
+        "solis_power_controls_state": solis_power_controls.get("state"),
+        "solis_power_controls_owner": solis_power_controls.get("owner"),
+        "solis_power_controls_available_pv_w": solis_power_controls.get("available_pv_w"),
+        "solis_power_controls_offgrid_target_soc_pct": solis_power_controls.get("offgrid_enter_soc_pct"),
+        "solis_power_controls_tou_charge_pv_w": solis_power_controls.get("tou_charge_available_pv_w"),
+        "solis_power_controls_tou_charge_amps": solis_power_controls.get("tou_charge_amps_setting"),
+        "solis_power_controls_manual_override_active": ((solis_power_controls.get("manual_override") or {}).get("active")),
+        "solis_power_controls_manual_override_mode": ((solis_power_controls.get("manual_override") or {}).get("mode")),
+        "solis_power_controls_manual_release_enabled": ((solis_power_controls.get("manual_release") or {}).get("enabled")),
+        "solis_power_controls_manual_release_ready": ((solis_power_controls.get("manual_release") or {}).get("ready")),
+        "power_control_mode": power_control.get("mode"),
+        "power_control_watts": power_control.get("watts"),
     }
 
 
@@ -1328,6 +1512,75 @@ def _save_power_control(data: dict) -> None:
         _POWER_CONTROL_FILE.write_text(json.dumps(data, indent=2))
     except Exception as e:
         logger.warning("save power_control: %s", e)
+
+
+def _load_solis_manual_override() -> dict:
+    """Load manual Solis work-mode override state."""
+    try:
+        if _SOLIS_MANUAL_OVERRIDE_FILE.exists():
+            data = json.loads(_SOLIS_MANUAL_OVERRIDE_FILE.read_text())
+            mode = str(data.get("mode") or "").strip().lower()
+            source = str(data.get("source") or "").strip().lower()
+            if mode in ("self_use", "off_grid", "feed_in_priority", "peak_shaving"):
+                return {
+                    "active": True,
+                    "mode": mode,
+                    "source": source or None,
+                    "ts": float(data.get("ts") or 0.0),
+                }
+    except Exception as e:
+        logger.warning("load solis manual override: %s", e)
+    return {"active": False, "mode": None, "source": None, "ts": 0.0}
+
+
+def _save_solis_manual_override(mode: str, *, source: str) -> None:
+    """Persist manual Solis work-mode override."""
+    try:
+        _SOLIS_MANUAL_OVERRIDE_FILE.write_text(
+            json.dumps(
+                {
+                    "mode": str(mode).strip().lower(),
+                    "source": str(source).strip().lower(),
+                    "ts": time.time(),
+                },
+                indent=2,
+            )
+        )
+    except Exception as e:
+        logger.warning("save solis manual override: %s", e)
+
+
+def _clear_solis_manual_override() -> None:
+    """Clear persisted manual Solis work-mode override."""
+    try:
+        if _SOLIS_MANUAL_OVERRIDE_FILE.exists():
+            _SOLIS_MANUAL_OVERRIDE_FILE.unlink()
+    except Exception as e:
+        logger.warning("clear solis manual override: %s", e)
+
+
+def _storage_bit_to_manual_mode(bit_index: int) -> str | None:
+    return {
+        0: "self_use",
+        2: "off_grid",
+        6: "feed_in_priority",
+        11: "peak_shaving",
+    }.get(bit_index)
+
+
+def _update_manual_override_for_control(register: str, bit_index: int, on: bool, *, source: str) -> None:
+    """Persist or clear manual mode override when operator uses manual controls."""
+    if register != "storage":
+        return
+    mode = _storage_bit_to_manual_mode(bit_index)
+    if not mode:
+        return
+    if on:
+        _save_solis_manual_override(mode, source=source)
+    else:
+        current = _load_solis_manual_override()
+        if current.get("active") and current.get("mode") == mode:
+            _clear_solis_manual_override()
 if (BASE / "static").exists():
     app.mount("/static", StaticFiles(directory=str(BASE / "static")), name="static")
 
@@ -1381,10 +1634,16 @@ def _storage_mode_label(storage_bits: dict) -> str:
         mode = "Unknown"
     # Optional qualifiers
     extras = []
+    if storage_bits.get("time_of_use") and mode != "Time of use (TOU)":
+        extras.append("TOU")
     if storage_bits.get("allow_grid_charge") and mode not in ("—", "Unknown"):
         extras.append("grid charge")
     if storage_bits.get("peak_shaving") and mode != "Peak-shaving":
         extras.append("peak-shaving")
+    if storage_bits.get("forcecharge_peakshaving"):
+        extras.append("forcecharge peakshaving")
+    if storage_bits.get("reserve_battery") and mode != "Reserve battery":
+        extras.append("reserve battery")
     if extras:
         mode = f"{mode} + {', '.join(extras)}"
     return mode
@@ -1473,6 +1732,8 @@ async def index_toggle_redirect(request: Request):
         except asyncio.TimeoutError:
             logger.warning("Modbus write timed out (dashboard)")
             return RedirectResponse(url="/?error=timeout", status_code=303)
+        if ok:
+            _update_manual_override_for_control(register, bit_index, on, source="dashboard")
         return RedirectResponse(url="/?saved=1" if ok else f"/?error={error or 'write_failed'}", status_code=303)
     except Exception as e:
         logger.exception("POST /: %s", e)
@@ -1647,6 +1908,193 @@ def _normalize_base_path(value: str) -> str:
     return base_path if base_path.startswith("/") else f"/{base_path}"
 
 
+def _solark_available_pv_w(solark_data: dict) -> float:
+    candidates = (
+        solark_data.get("pv_power_W"),
+        solark_data.get("total_pv_power_W"),
+        solark_data.get("pv1_power_W"),
+        solark_data.get("pv2_power_W"),
+    )
+    for value in candidates:
+        if isinstance(value, (int, float)):
+            return max(0.0, float(value))
+    return 0.0
+
+
+def _detect_solis_power_control_state(storage_bits: dict) -> str:
+    if storage_bits.get("off_grid"):
+        return "off_grid"
+    if storage_bits.get("self_use") and storage_bits.get("time_of_use") and storage_bits.get("allow_grid_charge"):
+        return "tou_charge"
+    if storage_bits.get("self_use"):
+        return "self_use"
+    if storage_bits.get("feed_in_priority"):
+        return "feed_in"
+    return "unknown"
+
+
+def _manual_offgrid_release_status(solark_data: dict, manual_override: dict | None = None) -> dict:
+    manual = manual_override or {}
+    _raw_soc_pptt, soc_pptt = _solark_soc_calibrated_pptt(solark_data)
+    soc_pct = round(soc_pptt / 100.0, 1) if isinstance(soc_pptt, int) else None
+    available_pv_w = round(_solark_available_pv_w(solark_data), 1)
+    enabled = bool(
+        manual.get("active")
+        and manual.get("mode") == "off_grid"
+        and get_solis_manual_offgrid_auto_release_enabled()
+    )
+    pv_threshold_w = float(get_solis_manual_offgrid_release_pv_w())
+    soc_threshold_pct = float(get_solis_manual_offgrid_release_solark_soc_pct())
+    pv_ready = enabled and available_pv_w >= pv_threshold_w
+    soc_ready = enabled and soc_pct is not None and soc_pct >= soc_threshold_pct
+    ready = bool(enabled and pv_ready and soc_ready)
+    return {
+        "enabled": enabled,
+        "pv_threshold_w": pv_threshold_w,
+        "soc_threshold_pct": soc_threshold_pct,
+        "available_pv_w": available_pv_w,
+        "solark_soc_pct": soc_pct,
+        "pv_ready": pv_ready,
+        "soc_ready": soc_ready,
+        "ready": ready,
+    }
+
+
+def _evaluate_solis_power_control_decision(solis_data: dict, solark_data: dict) -> dict:
+    storage_bits = (solis_data.get("storage_bits") or {}) if isinstance(solis_data, dict) else {}
+    current_state = _detect_solis_power_control_state(storage_bits) if storage_bits else "unknown"
+    manual_override = _load_solis_manual_override()
+    power_control = _load_power_control()
+    _raw_soc_pptt, soc_pptt = _solark_soc_calibrated_pptt(solark_data)
+    soc_pct = round(soc_pptt / 100.0, 1) if isinstance(soc_pptt, int) else None
+    available_pv_w = round(_solark_available_pv_w(solark_data), 1)
+    manual_release = _manual_offgrid_release_status(solark_data, manual_override)
+
+    if manual_override.get("active"):
+        reason = f"manual {manual_override.get('mode') or 'unknown'} hold active"
+        if manual_release.get("enabled"):
+            if manual_release.get("ready"):
+                reason = (
+                    f"manual off_grid auto-release ready "
+                    f"(pv {available_pv_w:.0f}W >= {manual_release['pv_threshold_w']:.0f}W and "
+                    f"soc {soc_pct if soc_pct is not None else 'NA'}% >= {manual_release['soc_threshold_pct']:.1f}%)"
+                )
+            else:
+                reason = (
+                    f"manual off_grid hold waiting for "
+                    f"pv >= {manual_release['pv_threshold_w']:.0f}W and "
+                    f"soc >= {manual_release['soc_threshold_pct']:.1f}%"
+                )
+        return {
+            "owner": "manual_hold",
+            "desired_state": manual_override.get("mode") or current_state,
+            "current_state": current_state,
+            "reason": reason,
+            "manual_override": manual_override,
+            "manual_release": manual_release,
+            "power_control": power_control,
+            "available_pv_w": available_pv_w,
+            "solark_soc_pct": soc_pct,
+        }
+
+    if (power_control.get("mode") or "off") != "off":
+        return {
+            "owner": "remote_power_control",
+            "desired_state": current_state,
+            "current_state": current_state,
+            "reason": f"manual /api/power-control {power_control.get('mode')} {power_control.get('watts')}W active",
+            "manual_override": manual_override,
+            "manual_release": manual_release,
+            "power_control": power_control,
+            "available_pv_w": available_pv_w,
+            "solark_soc_pct": soc_pct,
+        }
+
+    if get_solis_tou_charge_automation_enabled() and available_pv_w >= get_solis_tou_charge_available_pv_w():
+        return {
+            "owner": "auto_tou_charge",
+            "desired_state": "tou_charge",
+            "current_state": current_state,
+            "reason": f"available PV {available_pv_w:.0f}W >= TOU threshold {get_solis_tou_charge_available_pv_w():.0f}W",
+            "manual_override": manual_override,
+            "manual_release": manual_release,
+            "power_control": power_control,
+            "available_pv_w": available_pv_w,
+            "solark_soc_pct": soc_pct,
+        }
+
+    if get_solis_offgrid_automation_enabled() and soc_pct is not None and soc_pct >= get_solis_offgrid_enter_solark_soc_pct():
+        return {
+            "owner": "auto_off_grid",
+            "desired_state": "off_grid",
+            "current_state": current_state,
+            "reason": f"Solark SOC {soc_pct:.1f}% >= off-grid target {get_solis_offgrid_enter_solark_soc_pct():.1f}%",
+            "manual_override": manual_override,
+            "manual_release": manual_release,
+            "power_control": power_control,
+            "available_pv_w": available_pv_w,
+            "solark_soc_pct": soc_pct,
+        }
+
+    return {
+        "owner": "auto_self_use",
+        "desired_state": "self_use",
+        "current_state": current_state,
+        "reason": "fallback auto self_use (no higher-priority owner is active)",
+        "manual_override": manual_override,
+        "manual_release": manual_release,
+        "power_control": power_control,
+        "available_pv_w": available_pv_w,
+        "solark_soc_pct": soc_pct,
+    }
+
+
+def _get_solis_power_status() -> dict:
+    solis_data = _solis_cache_first().get("data") or {}
+    enabled = get_solis_power_controls_enabled()
+    storage_bits = get_storage_control_bits() or {n: False for n in _STORAGE_BIT_NAMES}
+    hybrid_bits = get_hybrid_control_bits() or {n: False for n in _HYBRID_BIT_NAMES}
+    tou = get_tou_config() if _modbus_available else {"ok": False, "error": "Modbus unavailable"}
+    solark = (_solark_cache.get("data") or {}) if isinstance(_solark_cache, dict) else {}
+    raw_soc_pptt, cal_soc_pptt = _solark_soc_calibrated_pptt(solark) if solark else (None, None)
+    decision = _evaluate_solis_power_control_decision(solis_data, solark)
+    owner = decision.get("owner") if enabled else "disabled"
+    reason = decision.get("reason") if enabled else "coordinator disabled"
+    if enabled and _solark_auto_self_use_active:
+        owner = "auto_high_soc_curtailment"
+        reason = (
+            f"high-SOC protection active at {SOLARK_SOC_SELF_USE_THRESHOLD_PCT}% "
+            f"(restores below {SOLARK_SOC_FEEDIN_BELOW_PCT}% or Option B restore conditions)"
+        )
+    return {
+        "enabled": enabled,
+        "state": _solis_power_control_state,
+        "owner": owner,
+        "reason": reason,
+        "storage_bits": storage_bits,
+        "hybrid_bits": hybrid_bits,
+        "storage_mode": _storage_mode_label(storage_bits),
+        "tou": tou,
+        "solark_soc_pct": round(cal_soc_pptt / 100.0, 1) if isinstance(cal_soc_pptt, int) else None,
+        "available_pv_w": round(_solark_available_pv_w(solark), 1),
+        "high_soc_curtailment_active": _solark_auto_self_use_active,
+        "high_soc_curtailment_threshold_pct": SOLARK_SOC_SELF_USE_THRESHOLD_PCT,
+        "high_soc_curtailment_restore_pct": SOLARK_SOC_FEEDIN_BELOW_PCT,
+        "offgrid_enabled": get_solis_offgrid_automation_enabled(),
+        "offgrid_enter_soc_pct": get_solis_offgrid_enter_solark_soc_pct(),
+        "manual_offgrid_auto_release_enabled": get_solis_manual_offgrid_auto_release_enabled(),
+        "manual_offgrid_release_pv_w": get_solis_manual_offgrid_release_pv_w(),
+        "manual_offgrid_release_solark_soc_pct": get_solis_manual_offgrid_release_solark_soc_pct(),
+        "tou_charge_enabled": get_solis_tou_charge_automation_enabled(),
+        "tou_charge_available_pv_w": get_solis_tou_charge_available_pv_w(),
+        "tou_charge_amps_setting": get_solis_tou_charge_amps(),
+        "tou_discharge_amps_setting": get_solis_tou_discharge_amps(),
+        "manual_override": decision.get("manual_override"),
+        "manual_release": decision.get("manual_release"),
+        "power_control": decision.get("power_control"),
+    }
+
+
 def _settings_values(overrides: dict | None = None) -> dict:
     saved = load_settings()
     values = {
@@ -1671,6 +2119,16 @@ def _settings_values(overrides: dict | None = None) -> dict:
         "ha_restore_on_batt_draw_enabled": _as_bool(saved.get("ha_restore_on_batt_draw_enabled", get_ha_restore_on_batt_draw_enabled())),
         "ha_restore_batt_draw_power_threshold_w": float(saved.get("ha_restore_batt_draw_power_threshold_w", get_ha_restore_batt_draw_power_threshold_w())),
         "ha_restore_batt_draw_hold_sec": int(saved.get("ha_restore_batt_draw_hold_sec", get_ha_restore_batt_draw_hold_sec())),
+        "solis_power_controls_enabled": _as_bool(saved.get("solis_power_controls_enabled", get_solis_power_controls_enabled())),
+        "solis_offgrid_automation_enabled": _as_bool(saved.get("solis_offgrid_automation_enabled", get_solis_offgrid_automation_enabled())),
+        "solis_offgrid_enter_solark_soc_pct": float(saved.get("solis_offgrid_enter_solark_soc_pct", get_solis_offgrid_enter_solark_soc_pct())),
+        "solis_manual_offgrid_auto_release_enabled": _as_bool(saved.get("solis_manual_offgrid_auto_release_enabled", get_solis_manual_offgrid_auto_release_enabled())),
+        "solis_manual_offgrid_release_pv_w": float(saved.get("solis_manual_offgrid_release_pv_w", get_solis_manual_offgrid_release_pv_w())),
+        "solis_manual_offgrid_release_solark_soc_pct": float(saved.get("solis_manual_offgrid_release_solark_soc_pct", get_solis_manual_offgrid_release_solark_soc_pct())),
+        "solis_tou_charge_automation_enabled": _as_bool(saved.get("solis_tou_charge_automation_enabled", get_solis_tou_charge_automation_enabled())),
+        "solis_tou_charge_available_pv_w": float(saved.get("solis_tou_charge_available_pv_w", get_solis_tou_charge_available_pv_w())),
+        "solis_tou_charge_amps": float(saved.get("solis_tou_charge_amps", get_solis_tou_charge_amps())),
+        "solis_tou_discharge_amps": float(saved.get("solis_tou_discharge_amps", get_solis_tou_discharge_amps())),
         "tesla_source_enabled": _as_bool(saved.get("tesla_source_enabled", True)),
         "tesla_source_type": str(saved.get("tesla_source_type", "mqtt") or "mqtt").strip().lower(),
         "tesla_source_host": saved.get("tesla_source_host", ""),
@@ -1726,6 +2184,16 @@ def _settings_form_overrides(form) -> dict:
         "ha_restore_on_batt_draw_enabled": _bool_from_form(form, "ha_restore_on_batt_draw_enabled"),
         "ha_restore_batt_draw_power_threshold_w": (form.get("ha_restore_batt_draw_power_threshold_w") or "").strip(),
         "ha_restore_batt_draw_hold_sec": (form.get("ha_restore_batt_draw_hold_sec") or "").strip(),
+        "solis_power_controls_enabled": _bool_from_form(form, "solis_power_controls_enabled"),
+        "solis_offgrid_automation_enabled": _bool_from_form(form, "solis_offgrid_automation_enabled"),
+        "solis_offgrid_enter_solark_soc_pct": (form.get("solis_offgrid_enter_solark_soc_pct") or "").strip(),
+        "solis_manual_offgrid_auto_release_enabled": _bool_from_form(form, "solis_manual_offgrid_auto_release_enabled"),
+        "solis_manual_offgrid_release_pv_w": (form.get("solis_manual_offgrid_release_pv_w") or "").strip(),
+        "solis_manual_offgrid_release_solark_soc_pct": (form.get("solis_manual_offgrid_release_solark_soc_pct") or "").strip(),
+        "solis_tou_charge_automation_enabled": _bool_from_form(form, "solis_tou_charge_automation_enabled"),
+        "solis_tou_charge_available_pv_w": (form.get("solis_tou_charge_available_pv_w") or "").strip(),
+        "solis_tou_charge_amps": (form.get("solis_tou_charge_amps") or "").strip(),
+        "solis_tou_discharge_amps": (form.get("solis_tou_discharge_amps") or "").strip(),
         "ha_url": (form.get("ha_url") or "").strip(),
         "ha_token": (form.get("ha_token") or "").strip(),
         "tesla_source_enabled": _bool_from_form(form, "tesla_source_enabled"),
@@ -1795,6 +2263,52 @@ def _validate_settings(form) -> dict:
                 min_val=0,
                 max_val=3600,
             )
+        ),
+        "solis_power_controls_enabled": overrides["solis_power_controls_enabled"],
+        "solis_offgrid_automation_enabled": overrides["solis_offgrid_automation_enabled"],
+        "solis_offgrid_enter_solark_soc_pct": _validate_float(
+            overrides["solis_offgrid_enter_solark_soc_pct"],
+            "Solis off-grid enter Solark SOC (%)",
+            default=90.0,
+            min_val=0.0,
+            max_val=100.0,
+        ),
+        "solis_manual_offgrid_auto_release_enabled": overrides["solis_manual_offgrid_auto_release_enabled"],
+        "solis_manual_offgrid_release_pv_w": _validate_float(
+            overrides["solis_manual_offgrid_release_pv_w"],
+            "Manual off-grid auto-release PV threshold (W)",
+            default=5000.0,
+            min_val=0.0,
+            max_val=100000.0,
+        ),
+        "solis_manual_offgrid_release_solark_soc_pct": _validate_float(
+            overrides["solis_manual_offgrid_release_solark_soc_pct"],
+            "Manual off-grid auto-release Solark SOC (%)",
+            default=30.0,
+            min_val=0.0,
+            max_val=100.0,
+        ),
+        "solis_tou_charge_automation_enabled": overrides["solis_tou_charge_automation_enabled"],
+        "solis_tou_charge_available_pv_w": _validate_float(
+            overrides["solis_tou_charge_available_pv_w"],
+            "Solis daytime TOU charge available PV (W)",
+            default=3000.0,
+            min_val=0.0,
+            max_val=100000.0,
+        ),
+        "solis_tou_charge_amps": _validate_float(
+            overrides["solis_tou_charge_amps"],
+            "Solis TOU charge amps",
+            default=52.0,
+            min_val=0.0,
+            max_val=70.0,
+        ),
+        "solis_tou_discharge_amps": _validate_float(
+            overrides["solis_tou_discharge_amps"],
+            "Solis TOU discharge amps",
+            default=10.0,
+            min_val=0.0,
+            max_val=70.0,
         ),
         "tesla_source_enabled": overrides["tesla_source_enabled"],
         "tesla_source_type": _validate_source_type(overrides["tesla_source_type"], "Tesla source mode"),
@@ -1909,6 +2423,7 @@ def _load_battery_source_statuses():
 
 def _build_settings_context(request: Request, *, form_overrides: dict | None = None, flash_error: str | None = None) -> dict:
     values = _settings_values(form_overrides)
+    solis_power_status = _get_solis_power_status()
     statuses, statuses_error = _load_battery_source_statuses()
     mqtt_runtime_restart_pending = (
         (values.get("mqtt_host") or "") != (MQTT_HOST or "")
@@ -1925,6 +2440,7 @@ def _build_settings_context(request: Request, *, form_overrides: dict | None = N
         battery_source_statuses=statuses,
         battery_source_status_error=statuses_error,
         mqtt_runtime_restart_pending=mqtt_runtime_restart_pending,
+        solis_power_status=solis_power_status,
         source_type_options=_BATTERY_SOURCE_TYPE_OPTIONS,
         **values,
     )
@@ -1949,6 +2465,7 @@ async def settings_save(request: Request):
         data = _validate_settings(form)
         current = load_settings()
         current.update(data)
+        current.pop("solis_restore_self_use_available_pv_w", None)
         save_settings(current)
         await _sync_llm_automation_task()
         return RedirectResponse(url="/settings?saved=1", status_code=303)
@@ -1964,6 +2481,35 @@ async def settings_save(request: Request):
             flash_error=f"Save failed: {exc}",
         )
         return templates.TemplateResponse("settings.html", ctx, status_code=500)
+
+
+@app.post("/settings/solis-action")
+async def settings_solis_action(request: Request):
+    """Run a small manual Solis action from the Settings page."""
+    try:
+        form = await request.form()
+        action = (form.get("action") or "").strip().lower()
+        if action == "clear_manual_override":
+            _clear_solis_manual_override()
+            return RedirectResponse(url="/settings?saved=1&solis_action=clear_manual_override", status_code=303)
+        if action != "off_grid_now":
+            return RedirectResponse(url="/settings?error=invalid_action", status_code=303)
+        loop = asyncio.get_event_loop()
+        timeout = _control_write_timeout("storage", _STORAGE_OFF_GRID_BIT, True)
+        ok, error = await asyncio.wait_for(
+            loop.run_in_executor(None, lambda: _apply_control_change("storage", _STORAGE_OFF_GRID_BIT, True)),
+            timeout=timeout,
+        )
+        if ok:
+            _save_solis_manual_override("off_grid", source="settings")
+            return RedirectResponse(url="/settings?saved=1&solis_action=off_grid_now", status_code=303)
+        return RedirectResponse(url=f"/settings?error={error or 'write_failed'}", status_code=303)
+    except asyncio.TimeoutError:
+        logger.warning("settings solis action timed out")
+        return RedirectResponse(url="/settings?error=timeout", status_code=303)
+    except Exception as exc:
+        logger.exception("settings solis action: %s", exc)
+        return RedirectResponse(url="/settings?error=server_error", status_code=303)
 
 
 @app.post("/settings/automation")
@@ -2545,6 +3091,8 @@ async def api_storage_toggle(request: Request):
         return JSONResponse({"ok": False, "error": "bit_index 0..11"}, status_code=400)
     on_bool = str(on).strip().lower() in ("1", "true", "on", "yes")
     ok, error = _apply_control_change("storage", bit_index, on_bool)
+    if ok:
+        _update_manual_override_for_control("storage", bit_index, on_bool, source="api_storage_toggle")
     return {"ok": ok, "error": error, "bit_index": bit_index, "on": on_bool}
 
 
@@ -2600,6 +3148,8 @@ async def control_toggle_redirect(request: Request):
             except asyncio.TimeoutError:
                 logger.warning("Modbus preset timed out")
                 return RedirectResponse(url="/control?error=timeout", status_code=303)
+            if ok:
+                _save_solis_manual_override("self_use", source="control")
             return RedirectResponse(
                 url="/control?saved=1" if ok else "/control?error=preset_failed",
                 status_code=303,
@@ -2625,6 +3175,8 @@ async def control_toggle_redirect(request: Request):
         except asyncio.TimeoutError:
             logger.warning("Modbus write timed out (control)")
             return RedirectResponse(url="/control?error=timeout", status_code=303)
+        if ok:
+            _update_manual_override_for_control(register, bit_index, on_bool, source="control")
         return RedirectResponse(
             url="/control?saved=1" if ok else f"/control?error={error or 'write_failed'}",
             status_code=303,
@@ -2649,6 +3201,8 @@ async def api_control(request: Request):
                 )
             except asyncio.TimeoutError:
                 return {"ok": False, "error": "timeout"}
+            if ok:
+                _save_solis_manual_override("self_use", source="api_control")
             return {"ok": bool(ok)}
         bit_index = int(body.get("bit_index", -1))
         on_bool = bool(body.get("on", True))
@@ -2664,6 +3218,8 @@ async def api_control(request: Request):
             )
         except asyncio.TimeoutError:
             return {"ok": False, "error": "timeout"}
+        if ok:
+            _update_manual_override_for_control(register, bit_index, on_bool, source="api_control")
         return {"ok": bool(ok), "error": error}
     except Exception as e:
         logger.exception("POST /api/control: %s", e)

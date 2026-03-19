@@ -75,6 +75,36 @@ def _get_bool(key: str, env_key: str, default: bool) -> bool:
         return str(o).strip().lower() in ("1", "true", "yes", "on")
     return default
 
+
+def _get_float_with_legacy(
+    key: str,
+    env_key: str,
+    default: float,
+    *,
+    min_val: float,
+    max_val: float,
+    legacy_key: str | None = None,
+    legacy_env_key: str | None = None,
+) -> float:
+    raw = os.environ.get(env_key)
+    if (raw is None or str(raw).strip() == "") and legacy_env_key:
+        raw = os.environ.get(legacy_env_key)
+    if (raw is None or str(raw).strip() == ""):
+        raw = _settings_overrides.get(key)
+    if (raw is None or str(raw).strip() == "") and legacy_key:
+        raw = _settings_overrides.get(legacy_key)
+    if raw is None or str(raw).strip() == "":
+        return default
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return default
+    if value < min_val:
+        return min_val
+    if value > max_val:
+        return max_val
+    return value
+
 # 10.10.53.90 = Tesla Battery Emulator (BE) board 1; Solis inverters are at .16 (and optional second). Solark is a separate data source.
 def get_solis_host() -> str:
     return str(_get("solis_host", "SOLIS_INVERTER_HOST", "10.10.53.16"))
@@ -164,14 +194,14 @@ ESPHOME_SOLARK_USER: str | None = os.environ.get("ESPHOME_SOLARK_USER", "").stri
 ESPHOME_SOLARK_PASSWORD: str | None = os.environ.get("ESPHOME_SOLARK_PASSWORD", "").strip() or None
 # MQTT topic for Solark data (board publishes same JSON as /solark_data). Empty = don't subscribe.
 SOLARK_MQTT_TOPIC = str(_get("solark_mqtt_topic", "SOLARK_MQTT_TOPIC", "solar/solark") or "").strip()
-# When Solark SOC >= this (percent), switch Solis to self-use. 0 = disabled.
+# When Solark SOC >= this (percent), the legacy Solis protection path curtails PV output. 0 = disabled.
 SOLARK_SOC_SELF_USE_THRESHOLD_PCT = int(os.environ.get("SOLARK_SOC_SELF_USE_THRESHOLD_PCT", "98"))
-# When Solark SOC drops below this, allow switching Solis back to feed-in (hysteresis).
+# When Solark SOC drops below this, allow legacy PV output restoration (hysteresis).
 SOLARK_SOC_FEEDIN_BELOW_PCT = int(os.environ.get("SOLARK_SOC_FEEDIN_BELOW_PCT", "95"))
 
 
 def get_solark_soc_automation_enabled() -> bool:
-    """Whether to switch Solis to self-use when Solark SOC >= threshold. Can be toggled in Settings or via API."""
+    """Whether to run the legacy Solis PV-curtailment protection path from Settings or API."""
     return _get_bool("solark_soc_automation_enabled", "SOLARK_SOC_AUTOMATION_ENABLED", True)
 
 
@@ -245,6 +275,105 @@ def get_ha_restore_batt_draw_hold_sec() -> int:
     if i > 3600:
         return 3600
     return i
+
+
+def get_solis_power_controls_enabled() -> bool:
+    return _get_bool("solis_power_controls_enabled", "SOLIS_POWER_CONTROLS_ENABLED", False)
+
+
+def get_solis_offgrid_automation_enabled() -> bool:
+    return _get_bool("solis_offgrid_automation_enabled", "SOLIS_OFFGRID_AUTOMATION_ENABLED", False)
+
+
+def get_solis_offgrid_enter_solark_soc_pct() -> float:
+    v = _get("solis_offgrid_enter_solark_soc_pct", "SOLIS_OFFGRID_ENTER_SOLARK_SOC_PCT", "90.0")
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return 90.0
+    if f < 0.0:
+        return 0.0
+    if f > 100.0:
+        return 100.0
+    return f
+
+
+def get_solis_manual_offgrid_auto_release_enabled() -> bool:
+    return _get_bool(
+        "solis_manual_offgrid_auto_release_enabled",
+        "SOLIS_MANUAL_OFFGRID_AUTO_RELEASE_ENABLED",
+        True,
+    )
+
+
+def get_solis_manual_offgrid_release_pv_w() -> float:
+    return _get_float_with_legacy(
+        "solis_manual_offgrid_release_pv_w",
+        "SOLIS_MANUAL_OFFGRID_RELEASE_PV_W",
+        5000.0,
+        min_val=0.0,
+        max_val=100000.0,
+        legacy_key="solis_restore_self_use_available_pv_w",
+        legacy_env_key="SOLIS_RESTORE_SELF_USE_AVAILABLE_PV_W",
+    )
+
+
+def get_solis_manual_offgrid_release_solark_soc_pct() -> float:
+    return _get_float_with_legacy(
+        "solis_manual_offgrid_release_solark_soc_pct",
+        "SOLIS_MANUAL_OFFGRID_RELEASE_SOLARK_SOC_PCT",
+        30.0,
+        min_val=0.0,
+        max_val=100.0,
+    )
+
+
+def get_solis_restore_self_use_available_pv_w() -> float:
+    """Deprecated alias preserved for older settings/env names."""
+    return get_solis_manual_offgrid_release_pv_w()
+
+
+def get_solis_tou_charge_automation_enabled() -> bool:
+    return _get_bool("solis_tou_charge_automation_enabled", "SOLIS_TOU_CHARGE_AUTOMATION_ENABLED", False)
+
+
+def get_solis_tou_charge_available_pv_w() -> float:
+    v = _get("solis_tou_charge_available_pv_w", "SOLIS_TOU_CHARGE_AVAILABLE_PV_W", "3000.0")
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return 3000.0
+    if f < 0.0:
+        return 0.0
+    if f > 100000.0:
+        return 100000.0
+    return f
+
+
+def get_solis_tou_charge_amps() -> float:
+    v = _get("solis_tou_charge_amps", "SOLIS_TOU_CHARGE_AMPS", "52.0")
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return 52.0
+    if f < 0.0:
+        return 0.0
+    if f > 70.0:
+        return 70.0
+    return f
+
+
+def get_solis_tou_discharge_amps() -> float:
+    v = _get("solis_tou_discharge_amps", "SOLIS_TOU_DISCHARGE_AMPS", "10.0")
+    try:
+        f = float(v)
+    except (TypeError, ValueError):
+        return 10.0
+    if f < 0.0:
+        return 0.0
+    if f > 70.0:
+        return 70.0
+    return f
 
 
 def load_settings() -> dict:

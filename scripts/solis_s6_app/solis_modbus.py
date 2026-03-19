@@ -90,6 +90,10 @@ _BLOCKS = [
 ]
 _REG_STORAGE_CONTROL = 43110   # Storage mode bits
 _REG_HYBRID_CONTROL = 43483    # Hybrid function: export, peak-shaving, etc.
+_REG_TOU_CHARGE_CURRENT = 43141
+_REG_TOU_DISCHARGE_CURRENT = 43142
+_REG_TOU_SLOT1_BASE = 43143
+_TOU_SLOT_REG_COUNT = 8
 
 
 def _input_addr(solis_reg: int) -> int:
@@ -185,6 +189,21 @@ def _write_holding(client: ModbusTcpClient, solis_reg: int, value: int) -> bool:
         return False
 
 
+def _write_holding_many(client: ModbusTcpClient, solis_reg: int, values: list[int]) -> bool:
+    try:
+        address = _holding_addr(solis_reg)
+        wr = client.write_registers(address=address, values=values, device_id=get_modbus_unit())
+        ok = not wr.isError()
+        logger.debug("write_holding_many %s=%s %s", solis_reg, values, "OK" if ok else "FAIL")
+        return ok
+    except (ModbusException, Exception) as e:
+        if _is_tid_mismatch(e):
+            logger.debug("write_holding_many %s=%s: %s", solis_reg, values, e)
+        else:
+            logger.warning("write_holding_many %s=%s: %s", solis_reg, values, e)
+        return False
+
+
 def _reg(regs: list[int] | None, offset: int, default: int = 0) -> int:
     if not regs or offset >= len(regs):
         return default
@@ -210,9 +229,58 @@ _STORAGE_BIT_NAMES = [
     "battery_current_correction", "battery_healing", "peak_shaving",
 ]
 
+_STORAGE_SELF_USE_BIT = 0
+_STORAGE_OFF_GRID_BIT = 2
+_STORAGE_RESERVE_BATTERY_BIT = 4
+_STORAGE_ALLOW_GRID_CHARGE_BIT = 5
+_STORAGE_FEED_IN_PRIORITY_BIT = 6
+_STORAGE_PEAK_SHAVING_BIT = 11
+_HYBRID_ALLOW_EXPORT_BIT = 3
+
+# Preserve only benign service/calibration flags when building an exact work-mode value.
+# We intentionally clear TOU / reserve / grid-charge / forcecharge helper bits unless the
+# caller explicitly requests them so app-driven writes do not inherit stale Solis Cloud state.
+_STORAGE_EXACT_PRESERVE_MASK = (
+    (1 << 7)   # batt_ovc
+    | (1 << 9)  # battery_current_correction
+    | (1 << 10)  # battery_healing
+)
+
 
 def _decode_storage_bits(val: int) -> dict[str, bool]:
     return {_STORAGE_BIT_NAMES[i]: bool((val >> i) & 1) for i in range(min(12, len(_STORAGE_BIT_NAMES)))}
+
+
+def _format_storage_bits(val: int) -> str:
+    names = [
+        name
+        for i, name in enumerate(_STORAGE_BIT_NAMES)
+        if bool((val >> i) & 1)
+    ]
+    return f"{val} ({', '.join(names) if names else 'none'})"
+
+
+def _build_exact_storage_control_value(
+    current_val: int,
+    *,
+    primary_bits: tuple[int, ...] = (),
+    allow_grid_charge: bool = False,
+    reserve_battery: bool = False,
+) -> int:
+    """
+    Build a deterministic 43110 value for app-driven control paths.
+
+    We keep only benign service flags from the current register and explicitly rebuild the
+    requested operating mode so stale cloud/app helper bits do not leak into new writes.
+    """
+    val = current_val & _STORAGE_EXACT_PRESERVE_MASK
+    for bit in primary_bits:
+        val |= 1 << bit
+    if allow_grid_charge:
+        val |= 1 << _STORAGE_ALLOW_GRID_CHARGE_BIT
+    if reserve_battery:
+        val |= 1 << _STORAGE_RESERVE_BATTERY_BIT
+    return val & 0xFFFF
 
 
 def _decode_hybrid_bits(val: int) -> dict[str, bool]:
@@ -427,7 +495,8 @@ def _set_storage_control_bits_locked(changes: dict) -> bool:
         if not h:
             client.close()
             return False
-        val = h[0]
+        original = h[0]
+        val = original
         for bit_index, on in changes.items():
             if on:
                 val |= 1 << bit_index
@@ -451,9 +520,21 @@ def _set_storage_control_bits_locked(changes: dict) -> bool:
             for b, on in changes.items()
         )
         if not bit_ok:
-            logger.warning("set_storage_control_bits: bit mismatch — changes=%s expected=%s got=%s", changes, expected, got)
+            logger.warning(
+                "set_storage_control_bits: bit mismatch — changes=%s before=%s expected=%s got=%s",
+                changes,
+                _format_storage_bits(original),
+                _format_storage_bits(expected),
+                _format_storage_bits(got),
+            )
         else:
-            logger.info("set_storage_control_bits: confirmed — wrote %s, got %s", expected, got)
+            logger.info(
+                "set_storage_control_bits: confirmed — changes=%s before=%s expected=%s got=%s",
+                changes,
+                _format_storage_bits(original),
+                _format_storage_bits(expected),
+                _format_storage_bits(got),
+            )
         return bit_ok
     except Exception as e:
         logger.exception("set_storage_control_bits: %s", e)
@@ -475,7 +556,8 @@ def _set_storage_control_bit_locked(bit_index: int, on: bool) -> bool:
         if not h:
             client.close()
             return False
-        val = h[0]
+        original = h[0]
+        val = original
         if on:
             val |= 1 << bit_index
         else:
@@ -493,7 +575,23 @@ def _set_storage_control_bit_locked(bit_index: int, on: bool) -> bool:
             return False
         confirmed = (rb[0] == expected)
         if not confirmed:
-            logger.warning("set_storage_control_bit: write mismatch — expected %s, got %s", expected, rb[0])
+            logger.warning(
+                "set_storage_control_bit: write mismatch — bit=%s on=%s before=%s expected=%s got=%s",
+                bit_index,
+                on,
+                _format_storage_bits(original),
+                _format_storage_bits(expected),
+                _format_storage_bits(rb[0]),
+            )
+        else:
+            logger.info(
+                "set_storage_control_bit: confirmed — bit=%s on=%s before=%s expected=%s got=%s",
+                bit_index,
+                on,
+                _format_storage_bits(original),
+                _format_storage_bits(expected),
+                _format_storage_bits(rb[0]),
+            )
         return confirmed
     except Exception as e:
         logger.exception("set_storage_control_bit: %s", e)
@@ -570,6 +668,9 @@ _REG_POWER_LIMIT_SWITCH = 43070
 _REG_POWER_LIMIT_PCT    = 43052
 _POWER_LIMIT_ENABLE     = 0xAA   # 170 — enable the limit
 _POWER_LIMIT_DISABLE    = 0x55   #  85 — disable (restore to rated power)
+
+_TOU_CURRENT_MIN_A = 0.0
+_TOU_CURRENT_MAX_A = 70.0
 
 
 def get_active_power_limit() -> dict:
@@ -654,6 +755,229 @@ def _set_active_power_limit_locked(limit_pct: float) -> bool:
         return False
 
 
+def get_tou_config() -> dict:
+    """Read TOU current settings and slot 1 schedule."""
+    with _modbus_lock:
+        client = _get_client()
+        try:
+            if not client.connect():
+                return {"ok": False, "error": "Modbus connect failed"}
+            charge = _read_holding(client, _REG_TOU_CHARGE_CURRENT, 1)
+            discharge = _read_holding(client, _REG_TOU_DISCHARGE_CURRENT, 1)
+            slot1 = _read_holding(client, _REG_TOU_SLOT1_BASE, _TOU_SLOT_REG_COUNT)
+            client.close()
+            if not charge or not discharge or not slot1:
+                return {"ok": False, "error": "TOU read failed"}
+            slot = {
+                "charge_start_h": slot1[0],
+                "charge_start_m": slot1[1],
+                "charge_end_h": slot1[2],
+                "charge_end_m": slot1[3],
+                "discharge_start_h": slot1[4],
+                "discharge_start_m": slot1[5],
+                "discharge_end_h": slot1[6],
+                "discharge_end_m": slot1[7],
+            }
+            return {
+                "ok": True,
+                "charge_amps": round(charge[0] / 10.0, 1),
+                "discharge_amps": round(discharge[0] / 10.0, 1),
+                "slot1_raw": slot1,
+                "slot1": slot,
+            }
+        except Exception as e:
+            logger.exception("get_tou_config: %s", e)
+            return {"ok": False, "error": str(e)}
+
+
+def _clamp_tou_amps(amps: float) -> float:
+    return max(_TOU_CURRENT_MIN_A, min(_TOU_CURRENT_MAX_A, float(amps)))
+
+
+def _set_tou_current_locked(reg: int, amps: float, label: str) -> dict:
+    client = _get_client()
+    writes: list[str] = []
+    try:
+        if not client.connect():
+            return {"ok": False, "message": "Modbus connect failed", "writes": writes}
+        amps = _clamp_tou_amps(amps)
+        reg_value = int(round(amps * 10.0))
+        before = _read_holding(client, reg, 1)
+        if not _write_holding(client, reg, reg_value):
+            client.close()
+            return {"ok": False, "message": f"Write {reg} failed", "writes": writes}
+        writes.append(f"{reg}={reg_value} ({amps:.1f} A)")
+        time.sleep(0.3)
+        after = _read_holding(client, reg, 1)
+        client.close()
+        if not after:
+            logger.warning("%s: read-back failed after write", label)
+            return {"ok": False, "message": "read-back failed", "writes": writes}
+        logger.info(
+            "%s: confirmed — reg=%s before=%s target=%s got=%s",
+            label,
+            reg,
+            before[0] if before else None,
+            reg_value,
+            after[0],
+        )
+        return {
+            "ok": after[0] == reg_value,
+            "message": f"{label} set to {amps:.1f} A",
+            "writes": writes,
+            "amps": amps,
+        }
+    except Exception as e:
+        logger.exception("%s: %s", label, e)
+        return {"ok": False, "message": str(e), "writes": writes}
+
+
+def set_tou_charge_amps(amps: float) -> dict:
+    with _modbus_lock:
+        return _set_tou_current_locked(_REG_TOU_CHARGE_CURRENT, amps, "set_tou_charge_amps")
+
+
+def set_tou_discharge_amps(amps: float) -> dict:
+    with _modbus_lock:
+        return _set_tou_current_locked(_REG_TOU_DISCHARGE_CURRENT, amps, "set_tou_discharge_amps")
+
+
+def set_tou_slot1(
+    *,
+    charge_start_h: int,
+    charge_start_m: int,
+    charge_end_h: int,
+    charge_end_m: int,
+    discharge_start_h: int,
+    discharge_start_m: int,
+    discharge_end_h: int,
+    discharge_end_m: int,
+) -> dict:
+    with _modbus_lock:
+        client = _get_client()
+        writes: list[str] = []
+        try:
+            if not client.connect():
+                return {"ok": False, "message": "Modbus connect failed", "writes": writes}
+            values = [
+                int(charge_start_h), int(charge_start_m),
+                int(charge_end_h), int(charge_end_m),
+                int(discharge_start_h), int(discharge_start_m),
+                int(discharge_end_h), int(discharge_end_m),
+            ]
+            before = _read_holding(client, _REG_TOU_SLOT1_BASE, _TOU_SLOT_REG_COUNT)
+            if not _write_holding_many(client, _REG_TOU_SLOT1_BASE, values):
+                client.close()
+                return {"ok": False, "message": "TOU slot1 write failed", "writes": writes}
+            writes.append(f"{_REG_TOU_SLOT1_BASE}={values}")
+            time.sleep(0.3)
+            after = _read_holding(client, _REG_TOU_SLOT1_BASE, _TOU_SLOT_REG_COUNT)
+            client.close()
+            if not after:
+                logger.warning("set_tou_slot1: read-back failed after write")
+                return {"ok": False, "message": "read-back failed", "writes": writes}
+            logger.info(
+                "set_tou_slot1: confirmed — before=%s target=%s got=%s",
+                before,
+                values,
+                after,
+            )
+            return {"ok": after == values, "message": "TOU slot 1 updated", "writes": writes}
+        except Exception as e:
+            logger.exception("set_tou_slot1: %s", e)
+            return {"ok": False, "message": str(e), "writes": writes}
+
+
+def apply_clean_self_use() -> dict:
+    """Set clean self-use and clear export/grid-charge helper state."""
+    with _modbus_lock:
+        client = _get_client()
+        writes: list[str] = []
+        try:
+            if not client.connect():
+                return {"ok": False, "message": "Modbus connect failed", "writes": writes}
+            storage = _read_holding(client, _REG_STORAGE_CONTROL, 1)
+            hybrid = _read_holding(client, _REG_HYBRID_CONTROL, 1)
+            if not storage or not hybrid:
+                client.close()
+                return {"ok": False, "message": "Read failed", "writes": writes}
+            new_storage = _build_exact_storage_control_value(
+                storage[0],
+                primary_bits=(_STORAGE_SELF_USE_BIT,),
+            )
+            new_hybrid = hybrid[0] & ~(1 << _HYBRID_ALLOW_EXPORT_BIT)
+            if new_storage != storage[0] and _write_holding(client, _REG_STORAGE_CONTROL, new_storage):
+                writes.append(f"43110=0x{new_storage:04X} (self-use)")
+            time.sleep(0.1)
+            if new_hybrid != hybrid[0] and _write_holding(client, _REG_HYBRID_CONTROL, new_hybrid):
+                writes.append(f"43483=0x{new_hybrid:04X} (allow export off)")
+            client.close()
+            return {"ok": True, "message": "Self-use applied", "writes": writes}
+        except Exception as e:
+            logger.exception("apply_clean_self_use: %s", e)
+            return {"ok": False, "message": str(e), "writes": writes}
+
+
+def apply_tou_charge_mode(*, charge_amps: float) -> dict:
+    """Apply self-use + TOU + allow-grid-charge, then set TOU charge amps."""
+    with _modbus_lock:
+        client = _get_client()
+        writes: list[str] = []
+        try:
+            if not client.connect():
+                return {"ok": False, "message": "Modbus connect failed", "writes": writes}
+            storage = _read_holding(client, _REG_STORAGE_CONTROL, 1)
+            hybrid = _read_holding(client, _REG_HYBRID_CONTROL, 1)
+            if not storage or not hybrid:
+                client.close()
+                return {"ok": False, "message": "Read failed", "writes": writes}
+            new_storage = _build_exact_storage_control_value(
+                storage[0],
+                primary_bits=(_STORAGE_SELF_USE_BIT,),
+                allow_grid_charge=True,
+            ) | (1 << 1)
+            new_hybrid = hybrid[0] & ~(1 << _HYBRID_ALLOW_EXPORT_BIT)
+            if new_storage != storage[0]:
+                logger.info(
+                    "apply_tou_charge_mode: 43110 before=%s target=%s",
+                    _format_storage_bits(storage[0]),
+                    _format_storage_bits(new_storage),
+                )
+                if _write_holding(client, _REG_STORAGE_CONTROL, new_storage):
+                    writes.append(f"43110=0x{new_storage:04X} (self-use + TOU + grid charge)")
+            time.sleep(0.1)
+            if new_hybrid != hybrid[0] and _write_holding(client, _REG_HYBRID_CONTROL, new_hybrid):
+                writes.append(f"43483=0x{new_hybrid:04X} (allow export off)")
+            time.sleep(0.1)
+            amps = _clamp_tou_amps(charge_amps)
+            reg_value = int(round(amps * 10.0))
+            if _write_holding(client, _REG_TOU_CHARGE_CURRENT, reg_value):
+                writes.append(f"{_REG_TOU_CHARGE_CURRENT}={reg_value} ({amps:.1f} A)")
+            time.sleep(0.3)
+            rb_storage = _read_holding(client, _REG_STORAGE_CONTROL, 1)
+            rb_charge = _read_holding(client, _REG_TOU_CHARGE_CURRENT, 1)
+            client.close()
+            ok = bool(rb_storage and rb_charge and rb_storage[0] == new_storage and rb_charge[0] == reg_value)
+            if ok:
+                logger.info(
+                    "apply_tou_charge_mode: confirmed — storage=%s charge_current=%s",
+                    rb_storage[0],
+                    rb_charge[0],
+                )
+            else:
+                logger.warning(
+                    "apply_tou_charge_mode: mismatch — target_storage=%s got_storage=%s target_current=%s got_current=%s",
+                    new_storage,
+                    rb_storage[0] if rb_storage else None,
+                    reg_value,
+                    rb_charge[0] if rb_charge else None,
+                )
+            return {"ok": ok, "message": "TOU charge mode applied", "writes": writes}
+        except Exception as e:
+            logger.exception("apply_tou_charge_mode: %s", e)
+            return {"ok": False, "message": str(e), "writes": writes}
+
+
 def apply_use_all_solar_preset() -> bool:
     """
     Preset: Self-use, no export — use all solar for load and battery (load-based; no export to grid).
@@ -669,12 +993,18 @@ def _apply_use_all_solar_preset_locked() -> bool:
         if not client.connect():
             return False
         ok = True
-        # 43110: set self_use (0), clear feed_in_priority (6)
+        # 43110: normalize to clean self-use.
         h = _read_holding(client, _REG_STORAGE_CONTROL, 1)
         if h:
-            val = h[0]
-            val |= 1 << 0   # self_use on
-            val &= ~(1 << 6)  # feed_in off
+            val = _build_exact_storage_control_value(
+                h[0],
+                primary_bits=(_STORAGE_SELF_USE_BIT,),
+            )
+            logger.info(
+                "apply_use_all_solar_preset: 43110 before=%s target=%s",
+                _format_storage_bits(h[0]),
+                _format_storage_bits(val & 0xFFFF),
+            )
             ok = _write_holding(client, _REG_STORAGE_CONTROL, val & 0xFFFF) and ok
         # 43483: clear allow_export (3) — load-based: no export
         h2 = _read_holding(client, _REG_HYBRID_CONTROL, 1)
@@ -727,14 +1057,24 @@ def _arm_grid_charge_locked(*, charge_limit_watts: int, max_amps: float) -> dict
         if not client.connect():
             return {"ok": False, "message": "Modbus connect failed", "writes": []}
 
-        # 43110 BIT05: allow grid charge (operator-verified: bit=1 enables on this system)
+        # Normalize 43110 to a clean grid-charge-capable state instead of OR-ing bit 5 onto
+        # whatever Solis Cloud or prior tests left behind.
         h = _read_holding(client, _REG_STORAGE_CONTROL, 1)
         if not h:
             client.close()
             return {"ok": False, "message": "Read 43110 failed", "writes": writes}
         mode = h[0]
-        new_mode = mode | 0x20
+        new_mode = _build_exact_storage_control_value(
+            mode,
+            primary_bits=(_STORAGE_SELF_USE_BIT,),
+            allow_grid_charge=True,
+        )
         if new_mode != mode:
+            logger.info(
+                "arm_grid_charge: 43110 before=%s target=%s",
+                _format_storage_bits(mode),
+                _format_storage_bits(new_mode),
+            )
             if _write_holding(client, _REG_STORAGE_CONTROL, new_mode):
                 writes.append(f"43110=0x{new_mode:04X} (allow grid charge)")
         time.sleep(0.1)
@@ -851,12 +1191,13 @@ def _set_grid_charge_limits_locked(
 # 43132=2, 43128=positive: remote control export. Dead-man ~4 min.
 # 43074: EPM export cap (100 W units). 114 = 11.4 kW.
 _REG_EPM_LIMIT = 43074
-_MODE_SELF_USE_FEEDIN = 0x0041  # Self use + Feed-in (required for export)
+_MODE_FEED_IN_ONLY = (1 << _STORAGE_FEED_IN_PRIORITY_BIT)
 
 
 def set_export_target(export_watts: int) -> dict:
     """
-    Force export to grid. 43110=Self use+Feed-in, 43074=EPM cap, 43132=2, 43128=positive.
+    Force export to grid. 43110=Feed-in Priority, 43483 allow_export=ON,
+    43074=EPM cap, 43132=2, 43128=positive.
     Dead-man ~4 min — must refresh. Uses Modbus lock.
     """
     with _modbus_lock:
@@ -872,13 +1213,38 @@ def _set_export_target_locked(export_watts: int) -> dict:
         export_watts = max(0, min(11400, export_watts))
         power_val = (export_watts // 10) & 0xFFFF
 
-        # 43110: Self use + Feed-in, clear Reserve
+        # Use a feed-in-first strategy instead of reintroducing self_use. This more closely
+        # matches the cloud-side behavior the operator sees when export holds successfully.
         h = _read_holding(client, _REG_STORAGE_CONTROL, 1)
         if h:
             mode = h[0]
-            new_mode = (mode & ~0x10) | _MODE_SELF_USE_FEEDIN
+            new_mode = _build_exact_storage_control_value(
+                mode,
+                primary_bits=(_STORAGE_FEED_IN_PRIORITY_BIT,),
+            )
+            if new_mode != mode:
+                logger.info(
+                    "set_export_target: 43110 before=%s target=%s",
+                    _format_storage_bits(mode),
+                    _format_storage_bits(new_mode),
+                )
             if new_mode != mode and _write_holding(client, _REG_STORAGE_CONTROL, new_mode):
-                writes.append(f"43110=0x{new_mode:04X} (self-use + feed-in)")
+                writes.append(f"43110=0x{new_mode:04X} (feed-in priority)")
+        time.sleep(0.1)
+
+        # 43483: explicitly enable allow_export so remote export is not immediately blocked.
+        h2 = _read_holding(client, _REG_HYBRID_CONTROL, 1)
+        if h2:
+            hybrid_mode = h2[0]
+            new_hybrid_mode = hybrid_mode | (1 << _HYBRID_ALLOW_EXPORT_BIT)
+            if new_hybrid_mode != hybrid_mode:
+                logger.info(
+                    "set_export_target: 43483 before=%s target=%s (allow_export on)",
+                    hybrid_mode,
+                    new_hybrid_mode,
+                )
+            if new_hybrid_mode != hybrid_mode and _write_holding(client, _REG_HYBRID_CONTROL, new_hybrid_mode):
+                writes.append(f"43483=0x{new_hybrid_mode:04X} (allow export)")
         time.sleep(0.1)
 
         # 43074: EPM cap (100 W units)
