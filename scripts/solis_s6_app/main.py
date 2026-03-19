@@ -346,6 +346,16 @@ _STORAGE_OFF_GRID_BIT = 2
 _STORAGE_ALLOW_GRID_CHARGE_BIT = 5
 _HYBRID_ALLOW_EXPORT_BIT = 3
 
+# When operators switch a primary Solis work mode, normalize away helper bits that can
+# create ambiguous / unexpected behavior if they were left behind from a prior test.
+# This keeps manual mode changes deterministic (e.g. "self_use" means a clean self-use mode,
+# not self_use + TOU + grid_charge + forcecharge_peakshaving).
+_STORAGE_MODE_HELPER_BITS_TO_CLEAR = (
+    1,  # time_of_use
+    5,  # allow_grid_charge
+    8,  # forcecharge_peakshaving
+)
+
 
 def _storage_changes_with_exclusions(bit_index: int, on: bool) -> dict:
     """Return full set of bit changes to apply, including mutual exclusions."""
@@ -354,6 +364,9 @@ def _storage_changes_with_exclusions(bit_index: int, on: bool) -> dict:
         for mode_bit in _STORAGE_WORK_MODE_BITS:
             if mode_bit != bit_index:
                 changes[mode_bit] = False
+        for helper_bit in _STORAGE_MODE_HELPER_BITS_TO_CLEAR:
+            if helper_bit != bit_index:
+                changes[helper_bit] = False
     return changes
 
 
