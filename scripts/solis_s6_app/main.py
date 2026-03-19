@@ -218,10 +218,13 @@ except Exception as e:
 
 # MQTT: optional
 try:
-    from mqtt_publish import publish_solis_sensors
+    from mqtt_publish import publish_solis_sensors, publish_solark_status
 except Exception as e:
     logging.warning("MQTT publish unavailable: %s", e)
     def publish_solis_sensors(*a, **k):
+        pass
+
+    def publish_solark_status(online: bool) -> None:
         pass
 
 # Modbus: optional – if this fails, app still runs with stub
@@ -818,6 +821,33 @@ def _fetch_esphome_solark_data_sync() -> tuple[dict, str | None]:
         return {}, err
 
 
+def _check_solark_connectivity_sync() -> bool | None:
+    """Check if Solark host (ESPHome or SOLARK1_HOST) is reachable. Returns True/False or None if no host configured."""
+    host = get_esphome_solark_host()
+    port = get_esphome_solark_port()
+    url_path = "/sensor/sunsynk_battery_soc"
+    use_esphome = bool(host)
+    if not host:
+        host = get_solark1_host()
+        if not host:
+            return None
+        port = get_solark1_http_port()
+        url_path = "/solark_data"
+    url = f"http://{host}:{port}{url_path}"
+    req = UrllibRequest(url)
+    if use_esphome and ESPHOME_SOLARK_USER and ESPHOME_SOLARK_PASSWORD:
+        creds = b64encode(f"{ESPHOME_SOLARK_USER}:{ESPHOME_SOLARK_PASSWORD}".encode()).decode()
+        req.add_header("Authorization", f"Basic {creds}")
+    elif not use_esphome and SOLARK_HTTP_USER and SOLARK_HTTP_PASSWORD:
+        creds = b64encode(f"{SOLARK_HTTP_USER}:{SOLARK_HTTP_PASSWORD}".encode()).decode()
+        req.add_header("Authorization", f"Basic {creds}")
+    try:
+        with urlopen(req, timeout=3) as r:
+            return getattr(r, "status", 200) == 200
+    except (URLError, OSError, Exception):
+        return False
+
+
 def _run_solis_power_controls_automation(solis_data: dict, solark_data: dict) -> None:
     """Coordinate Solis off-grid / TOU-charge / self-use states from config."""
     global _solis_power_control_state, _last_solis_auto_switch_ts
@@ -1225,6 +1255,31 @@ async def _background_power_control_refresher() -> None:
         await asyncio.sleep(_POWER_CONTROL_REFRESH_SEC)
 
 
+_SOLARK_STATUS_PUBLISH_INTERVAL_SEC = 30
+
+
+async def _background_solark_status_publisher() -> None:
+    """Check Solark host connectivity and publish to solar/solark/status for display LED."""
+    await asyncio.sleep(15)  # Delay first run
+    loop = asyncio.get_event_loop()
+    while True:
+        try:
+            result = await asyncio.wait_for(
+                loop.run_in_executor(None, _check_solark_connectivity_sync),
+                timeout=5,
+            )
+            if result is not None and MQTT_HOST:
+                publish_solark_status(result)
+        except asyncio.TimeoutError:
+            if MQTT_HOST:
+                publish_solark_status(False)
+        except Exception as e:
+            logger.debug("Solark status check: %s", e)
+            if MQTT_HOST:
+                publish_solark_status(False)
+        await asyncio.sleep(_SOLARK_STATUS_PUBLISH_INTERVAL_SEC)
+
+
 def _enforce_startup_safe_state() -> None:
     """
     *** CRITICAL — runs once at application startup ***
@@ -1286,6 +1341,7 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(_background_forecast_refresher())
     asyncio.create_task(_background_envoy_refresher())
     asyncio.create_task(_background_power_control_refresher())
+    asyncio.create_task(_background_solark_status_publisher())
     await _sync_llm_automation_task()
     if MQTT_HOST and SOLARK_MQTT_TOPIC:
         _mqtt_thread = threading.Thread(target=_run_solark_mqtt_subscriber, daemon=True)

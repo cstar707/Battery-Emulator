@@ -131,3 +131,19 @@ def publish_solis_sensors(
         client.disconnect()
     except Exception as e:
         logger.warning("MQTT publish failed: %s", e)
+
+
+def publish_solark_status(online: bool) -> None:
+    """Publish Solark connectivity status to solar/solark/status for display LED."""
+    if not MQTT_HOST:
+        return
+    try:
+        client = mqtt.Client(client_id=f"{MQTT_CLIENT_ID}-solark-status", protocol=mqtt.MQTTv311)
+        if MQTT_USER:
+            client.username_pw_set(MQTT_USER, MQTT_PASSWORD or "")
+        client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
+        payload = json.dumps({"online": online})
+        client.publish("solar/solark/status", payload, qos=0, retain=False)
+        client.disconnect()
+    except Exception as e:
+        logger.warning("MQTT publish solark status failed: %s", e)
