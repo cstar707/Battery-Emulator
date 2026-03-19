@@ -34,3 +34,9 @@ compile.bat
 
 # Ignore secret file
 USER_SECRETS.h
+
+# Solis S6 app: server deploy copy (not for version control)
+scripts/solis_s6_app_server_copy/
+
+# Python
+__pycache__/
