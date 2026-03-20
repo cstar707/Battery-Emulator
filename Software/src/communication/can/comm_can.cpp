@@ -42,6 +42,10 @@ volatile bool send_ok_native = 0;
 volatile bool send_ok_2515 = 0;
 volatile bool send_ok_2518 = 0;
 
+bool user_selected_can_read_only_native = false;
+bool user_selected_can_read_only_addon = false;
+bool user_selected_can_read_only_addon_fd = false;
+
 void map_can_frame_to_variable(CAN_frame* rx_frame, CAN_Interface interface);
 
 void register_can_receiver(CanReceiver* receiver, CAN_Interface interface, CAN_Speed speed) {
@@ -241,6 +245,25 @@ bool init_CAN() {
 
 void transmit_can_frame_to_interface(const CAN_frame* tx_frame, CAN_Interface interface) {
   if (!allowed_to_send_CAN) {
+    return;
+  }
+
+  bool read_only = false;
+  switch (interface) {
+    case CAN_NATIVE:
+      read_only = user_selected_can_read_only_native;
+      break;
+    case CAN_ADDON_MCP2515:
+      read_only = user_selected_can_read_only_addon;
+      break;
+    case CANFD_NATIVE:
+    case CANFD_ADDON_MCP2518:
+      read_only = user_selected_can_read_only_addon_fd;
+      break;
+    default:
+      break;
+  }
+  if (read_only) {
     return;
   }
   print_can_frame(*tx_frame, interface, frameDirection(MSG_TX));

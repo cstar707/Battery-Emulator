@@ -443,6 +443,18 @@ String raw_settings_processor(const String& var, BatteryEmulatorSettingsStore& s
     return settings.getBool("CANFDASCAN") ? "checked" : "";
   }
 
+  if (var == "CANRONATIVE") {
+    return settings.getBool("CANRONATIVE") ? "checked" : "";
+  }
+
+  if (var == "CANROADDON") {
+    return settings.getBool("CANROADDON") ? "checked" : "";
+  }
+
+  if (var == "CANROFD") {
+    return settings.getBool("CANROFD") ? "checked" : "";
+  }
+
   if (var == "WIFIAPENABLED") {
     return settings.getBool("WIFIAPENABLED", wifiap_enabled) ? "checked" : "";
   }
@@ -1542,6 +1554,18 @@ const char* getCANInterfaceName(CAN_Interface interface) {
         <label>Use CanFD as classic CAN: </label>
         <input type='checkbox' name='CANFDASCAN' value='on' %CANFDASCAN% 
         title="When enabled, CAN-FD channel will operate as normal 500kbps CAN" />
+
+        <label>Read-only Native CAN (no TX): </label>
+        <input type='checkbox' name='CANRONATIVE' value='on' %CANRONATIVE%
+        title="When enabled, native CAN only receives; no messages are transmitted. Use to monitor BMS/pack without bus conflicts." />
+
+        <label>Read-only CAN add-on MCP2515 (no TX): </label>
+        <input type='checkbox' name='CANROADDON' value='on' %CANROADDON%
+        title="When enabled, MCP2515 add-on CAN only receives; no messages are transmitted." />
+
+        <label>Read-only CAN-FD add-on MCP2518 (no TX): </label>
+        <input type='checkbox' name='CANROFD' value='on' %CANROFD%
+        title="When enabled, MCP2518 CAN-FD add-on only receives; no messages are transmitted." />
 
         <label>CAN addon crystal (Mhz): </label>
         <input type='number' name='CANFREQ' value="%CANFREQ%" 

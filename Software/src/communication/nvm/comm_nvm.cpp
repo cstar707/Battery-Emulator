@@ -168,6 +168,9 @@ void init_stored_settings() {
   datalayer.system.info.web_logging_active = settings.getBool("WEBENABLED", false);
   datalayer.system.info.CAN_SD_logging_active = settings.getBool("CANLOGSD", false);
   datalayer.system.info.SD_logging_active = settings.getBool("SDLOGENABLED", false);
+  user_selected_can_read_only_native = settings.getBool("CANRONATIVE", false);
+  user_selected_can_read_only_addon = settings.getBool("CANROADDON", false);
+  user_selected_can_read_only_addon_fd = settings.getBool("CANROFD", false);
   datalayer.battery.status.led_mode = (led_mode_enum)settings.getUInt("LEDMODE", false);
 
   //Some early integrations need manually set allowed charge/discharge power

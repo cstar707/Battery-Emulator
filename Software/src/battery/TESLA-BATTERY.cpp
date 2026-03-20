@@ -1277,6 +1277,12 @@ void TeslaBattery::handle_incoming_can_frame(CAN_frame rx_frame) {
                                ((rx_frame.data.u8[1] & 0xFC) >> 2));  //10|12@1+ (0.146484,0) [0|599.854] "V"
       battery_dcdcLvOutputCurrent =
           (((rx_frame.data.u8[4] & 0x0F) << 8) | rx_frame.data.u8[3]);  //24|12@1+ (0.1,0) [0|400] "A"
+      logging.printf("0x2B4 raw: %02X %02X %02X %02X %02X %02X %02X %02X -> LV=%u(%.2fV) HV=%u(%.2fV) I=%u(%.1fA)\n",
+                     rx_frame.data.u8[0], rx_frame.data.u8[1], rx_frame.data.u8[2], rx_frame.data.u8[3],
+                     rx_frame.data.u8[4], rx_frame.data.u8[5], rx_frame.data.u8[6], rx_frame.data.u8[7],
+                     battery_dcdcLvBusVolt, battery_dcdcLvBusVolt * 0.0390625,
+                     battery_dcdcHvBusVolt, battery_dcdcHvBusVolt * 0.146484,
+                     battery_dcdcLvOutputCurrent, battery_dcdcLvOutputCurrent * 0.1);
       break;
     case 0x292:  //BMS_socStatus
       datalayer.battery.status.CAN_battery_still_alive = CAN_STILL_ALIVE;
