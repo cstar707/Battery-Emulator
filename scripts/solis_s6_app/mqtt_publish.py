@@ -1,7 +1,7 @@
 """
-Publish Solis sensor data to MQTT broker.
-- One JSON payload on <prefix>/status with all sensors (and storage_bits/hybrid_bits).
-- Individual topics <prefix>/sensors/<name> for each scalar value (for HA or scripts).
+Publish Solis, Envoy sensor data to MQTT broker.
+- Solis: one JSON on <prefix>/status + per-sensor topics.
+- Envoy: full JSON on solar/envoy/status.
 """
 from __future__ import annotations
 
@@ -14,7 +14,6 @@ import paho.mqtt.client as mqtt
 from config import (
     MQTT_CLIENT_ID,
     MQTT_HOST,
-    MQTT_LEGACY_PREFIX,
     MQTT_PASSWORD,
     MQTT_PORT,
     MQTT_TOPIC_PREFIX,
@@ -60,6 +59,8 @@ _SENSOR_KEYS = [
     "energy_today_grid_export_kWh",
 ]
 
+ENVOY_TOPIC = "solar/envoy/status"
+
 
 def _serializable_payload(data: dict[str, Any]) -> dict[str, Any]:
     """Build JSON-serializable dict; exclude raw_blocks (large), include storage_bits/hybrid_bits."""
@@ -81,60 +82,61 @@ def _serializable_payload(data: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def _inverter_id_from_prefix(prefix: str) -> str:
-    """e.g. solar/solis/s6-inv-1 -> s6-inv-1; solar/solis -> solis."""
-    return prefix.split("/")[-1] if prefix else "s6-inv-1"
+def _publish_solis_to_topic(
+    client: mqtt.Client,
+    data: dict[str, Any],
+    topic_prefix: str,
+    ts: float | None = None,
+) -> None:
+    """Publish Solis data to given topic prefix."""
+    payload = _serializable_payload(data)
+    if ts is not None:
+        payload["ts"] = ts
+    client.publish(
+        f"{topic_prefix}/status",
+        json.dumps(payload),
+        qos=0,
+        retain=False,
+    )
+    for key in _SENSOR_KEYS:
+        if key not in data:
+            continue
+        val = data[key]
+        if isinstance(val, (dict, list)):
+            continue
+        topic = f"{topic_prefix}/sensors/{key}"
+        client.publish(topic, str(val) if val is not None else "", qos=0, retain=False)
 
 
 def publish_solis_sensors(
     data: dict[str, Any],
     ts: float | None = None,
+    *,
     topic_prefix: str | None = None,
-    publish_legacy: bool | None = None,
+    publish_legacy: bool = False,
 ) -> None:
-    """Publish to primary topic and optionally to legacy prefix for BE display.
-    topic_prefix: primary prefix (e.g. solar/solis/s6-inv-1). If None, use MQTT_TOPIC_PREFIX.
-    publish_legacy: if True, also publish to MQTT_LEGACY_PREFIX. If None, True only when topic_prefix is first inverter (s6-inv-1).
+    """Publish all sensors to MQTT: one JSON on <prefix>/status, and per-sensor on <prefix>/sensors/<name>.
+    Supports topic_prefix for per-inverter topics (e.g. solar/solis/s6-inv-1).
+    publish_legacy: also publish to legacy solar/solis prefix for BE compatibility.
     """
     if not MQTT_HOST:
         return
-    primary = (topic_prefix or MQTT_TOPIC_PREFIX).rstrip("/")
-    payload = _serializable_payload(data)
-    if ts is not None:
-        payload["ts"] = ts
-    payload["inverter_id"] = _inverter_id_from_prefix(primary)
-    prefixes = [primary]
-    if publish_legacy is None:
-        publish_legacy = "s6-inv-1" in primary
-    if publish_legacy and MQTT_LEGACY_PREFIX and MQTT_LEGACY_PREFIX.rstrip("/") != primary:
-        prefixes.append(MQTT_LEGACY_PREFIX.rstrip("/"))
+    prefix = topic_prefix or MQTT_TOPIC_PREFIX
     try:
         client = mqtt.Client(client_id=MQTT_CLIENT_ID, protocol=mqtt.MQTTv311)
         if MQTT_USER:
             client.username_pw_set(MQTT_USER, MQTT_PASSWORD or "")
         client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
-        json_str = json.dumps(payload)
-        for prefix in prefixes:
-            client.publish(f"{prefix}/status", json_str, qos=0, retain=False)
-            for key in _SENSOR_KEYS:
-                if key not in data:
-                    continue
-                val = data[key]
-                if isinstance(val, (dict, list)):
-                    continue
-                client.publish(
-                    f"{prefix}/sensors/{key}",
-                    str(val) if val is not None else "",
-                    qos=0,
-                    retain=False,
-                )
+        _publish_solis_to_topic(client, data, prefix, ts=ts)
+        if publish_legacy and prefix != "solar/solis":
+            _publish_solis_to_topic(client, data, "solar/solis", ts=ts)
         client.disconnect()
     except Exception as e:
-        logger.warning("MQTT publish failed: %s", e)
+        logger.warning("MQTT publish Solis failed: %s", e)
 
 
 def publish_solark_status(online: bool) -> None:
-    """Publish Solark connectivity status to solar/solark/status for display LED."""
+    """Publish Solark connectivity status to MQTT."""
     if not MQTT_HOST:
         return
     try:
@@ -142,8 +144,23 @@ def publish_solark_status(online: bool) -> None:
         if MQTT_USER:
             client.username_pw_set(MQTT_USER, MQTT_PASSWORD or "")
         client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
-        payload = json.dumps({"online": online})
-        client.publish("solar/solark/status", payload, qos=0, retain=False)
+        client.publish("solar/solark/status", "online" if online else "offline", qos=0, retain=False)
         client.disconnect()
     except Exception as e:
-        logger.warning("MQTT publish solark status failed: %s", e)
+        logger.warning("MQTT publish Solark status failed: %s", e)
+
+
+def publish_envoy_sensors(data: dict[str, Any]) -> None:
+    """Publish Envoy data to solar/envoy/status. data = raw response from 3004 /api/envoy/debug."""
+    if not MQTT_HOST:
+        return
+    try:
+        client = mqtt.Client(client_id=f"{MQTT_CLIENT_ID}-envoy", protocol=mqtt.MQTTv311)
+        if MQTT_USER:
+            client.username_pw_set(MQTT_USER, MQTT_PASSWORD or "")
+        client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
+        payload = _serializable_payload(data)
+        client.publish(ENVOY_TOPIC, json.dumps(payload), qos=0, retain=False)
+        client.disconnect()
+    except Exception as e:
+        logger.warning("MQTT publish Envoy failed: %s", e)

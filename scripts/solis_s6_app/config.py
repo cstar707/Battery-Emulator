@@ -195,6 +195,7 @@ ESPHOME_SOLARK_PASSWORD: str | None = os.environ.get("ESPHOME_SOLARK_PASSWORD", 
 # MQTT topic for Solark data (board publishes same JSON as /solark_data). Empty = don't subscribe.
 SOLARK_MQTT_TOPIC = str(_get("solark_mqtt_topic", "SOLARK_MQTT_TOPIC", "solar/solark") or "").strip()
 # When Solark SOC >= this (percent), the legacy Solis protection path curtails PV output. 0 = disabled.
+# Curtail headroom: set lower (e.g. 96) to shut down earlier and avoid overshooting 98% at peak solar.
 SOLARK_SOC_SELF_USE_THRESHOLD_PCT = int(os.environ.get("SOLARK_SOC_SELF_USE_THRESHOLD_PCT", "98"))
 # When Solark SOC drops below this, allow legacy PV output restoration (hysteresis).
 SOLARK_SOC_FEEDIN_BELOW_PCT = int(os.environ.get("SOLARK_SOC_FEEDIN_BELOW_PCT", "95"))
@@ -278,7 +279,7 @@ def get_ha_restore_batt_draw_hold_sec() -> int:
 
 
 def get_solis_power_controls_enabled() -> bool:
-    return _get_bool("solis_power_controls_enabled", "SOLIS_POWER_CONTROLS_ENABLED", False)
+    return _get_bool("solis_power_controls_enabled", "SOLIS_POWER_CONTROLS_ENABLED", True)
 
 
 def get_solis_offgrid_automation_enabled() -> bool:
@@ -364,16 +365,248 @@ def get_solis_tou_charge_amps() -> float:
 
 
 def get_solis_tou_discharge_amps() -> float:
-    v = _get("solis_tou_discharge_amps", "SOLIS_TOU_DISCHARGE_AMPS", "10.0")
+    v = _get("solis_tou_discharge_amps", "SOLIS_TOU_DISCHARGE_AMPS", "1.0")
     try:
         f = float(v)
     except (TypeError, ValueError):
-        return 10.0
+        return 1.0
     if f < 0.0:
         return 0.0
     if f > 70.0:
         return 70.0
     return f
+
+
+# --- Solis priority and export logic ---
+def get_solark_full_soc_pct() -> float:
+    """Solark SOC at which we stop allowing export (no export above this)."""
+    return _get_float_with_legacy(
+        "solark_full_soc_pct", "SOLARK_FULL_SOC_PCT", 98.0,
+        min_val=0.0, max_val=100.0,
+    )
+
+
+def get_solis_full_soc_pct() -> float:
+    """Solis battery SOC at which we consider it full; only then curtail Solis PV when Solark also full."""
+    return _get_float_with_legacy(
+        "solis_full_soc_pct", "SOLIS_FULL_SOC_PCT", 95.0,
+        min_val=0.0, max_val=100.0,
+    )
+
+
+def get_solis_curtail_when_both_full() -> bool:
+    """When both Solark and Solis full, curtail Solis PV to 0%."""
+    return _get_bool("solis_curtail_when_both_full", "SOLIS_CURTAIL_WHEN_BOTH_FULL", True)
+
+
+def get_solis_grid_charge_when_solark_full() -> bool:
+    """When Solark full, allow Solis to charge from grid."""
+    return _get_bool("solis_grid_charge_when_solark_full", "SOLIS_GRID_CHARGE_WHEN_SOLARK_FULL", True)
+
+
+# --- TOU schedule (configurable) ---
+def _get_int(key: str, env_key: str, default: int, min_val: int, max_val: int) -> int:
+    v = os.environ.get(env_key)
+    if v is not None and str(v).strip() != "":
+        try:
+            return max(min_val, min(max_val, int(v)))
+        except (TypeError, ValueError):
+            pass
+    o = _settings_overrides.get(key)
+    if o is not None:
+        try:
+            return max(min_val, min(max_val, int(o)))
+        except (TypeError, ValueError):
+            pass
+    return default
+
+
+def get_solis_tou_charge_start_h() -> int:
+    return _get_int("solis_tou_charge_start_h", "SOLIS_TOU_CHARGE_START_H", 7, 0, 23)
+
+
+def get_solis_tou_charge_start_m() -> int:
+    return _get_int("solis_tou_charge_start_m", "SOLIS_TOU_CHARGE_START_M", 0, 0, 59)
+
+
+def get_solis_tou_charge_end_h() -> int:
+    return _get_int("solis_tou_charge_end_h", "SOLIS_TOU_CHARGE_END_H", 19, 0, 23)
+
+
+def get_solis_tou_charge_end_m() -> int:
+    return _get_int("solis_tou_charge_end_m", "SOLIS_TOU_CHARGE_END_M", 0, 0, 59)
+
+
+def get_solis_tou_discharge_start_h() -> int:
+    return _get_int("solis_tou_discharge_start_h", "SOLIS_TOU_DISCHARGE_START_H", 19, 0, 23)
+
+
+def get_solis_tou_discharge_start_m() -> int:
+    return _get_int("solis_tou_discharge_start_m", "SOLIS_TOU_DISCHARGE_START_M", 1, 0, 59)
+
+
+def get_solis_tou_discharge_end_h() -> int:
+    return _get_int("solis_tou_discharge_end_h", "SOLIS_TOU_DISCHARGE_END_H", 6, 0, 23)
+
+
+def get_solis_tou_discharge_end_m() -> int:
+    return _get_int("solis_tou_discharge_end_m", "SOLIS_TOU_DISCHARGE_END_M", 0, 0, 59)
+
+
+# --- Charge ramp (morning PV follow) ---
+def get_solis_tou_charge_ramp_enabled() -> bool:
+    return _get_bool("solis_tou_charge_ramp_enabled", "SOLIS_TOU_CHARGE_RAMP_ENABLED", True)
+
+
+def get_solis_tou_charge_amps_min() -> float:
+    return _get_float_with_legacy(
+        "solis_tou_charge_amps_min", "SOLIS_TOU_CHARGE_AMPS_MIN", 10.0,
+        min_val=0.0, max_val=70.0,
+    )
+
+
+def get_solis_tou_charge_amps_max() -> float:
+    return _get_float_with_legacy(
+        "solis_tou_charge_amps_max", "SOLIS_TOU_CHARGE_AMPS_MAX", 52.0,
+        min_val=0.0, max_val=70.0,
+    )
+
+
+def get_solis_tou_charge_ramp_pv_threshold_w() -> float:
+    return _get_float_with_legacy(
+        "solis_tou_charge_ramp_pv_threshold_w", "SOLIS_TOU_CHARGE_RAMP_PV_THRESHOLD_W", 1000.0,
+        min_val=0.0, max_val=100000.0,
+    )
+
+
+def get_solis_tou_charge_ramp_pv_max_w() -> float:
+    return _get_float_with_legacy(
+        "solis_tou_charge_ramp_pv_max_w", "SOLIS_TOU_CHARGE_RAMP_PV_MAX_W", 8000.0,
+        min_val=0.0, max_val=100000.0,
+    )
+
+
+# --- Safe window (7am) ---
+def get_safe_window_start_h() -> int:
+    return _get_int("safe_window_start_h", "SAFE_WINDOW_START_H", 7, 0, 23)
+
+
+def get_safe_window_start_m() -> int:
+    return _get_int("safe_window_start_m", "SAFE_WINDOW_START_M", 0, 0, 59)
+
+
+def get_safe_window_ensure_ha_on() -> bool:
+    return _get_bool("safe_window_ensure_ha_on", "SAFE_WINDOW_ENSURE_HA_ON", True)
+
+
+def get_safe_window_allow_solis_grid_charge() -> bool:
+    return _get_bool("safe_window_allow_solis_grid_charge", "SAFE_WINDOW_ALLOW_SOLIS_GRID_CHARGE", True)
+
+
+# --- HA generation max peak ---
+def get_iq8_max_peak_kw() -> float:
+    return _get_float_with_legacy(
+        "iq8_max_peak_kw", "IQ8_MAX_PEAK_KW", 6.5,
+        min_val=0.0, max_val=100.0,
+    )
+
+
+def get_mseries_max_peak_kw() -> float:
+    return _get_float_with_legacy(
+        "mseries_max_peak_kw", "MSERIES_MAX_PEAK_KW", 2.5,
+        min_val=0.0, max_val=100.0,
+    )
+
+
+def get_tabuchi_max_peak_kw() -> float:
+    return _get_float_with_legacy(
+        "tabuchi_max_peak_kw", "TABUCHI_MAX_PEAK_KW", 3.0,
+        min_val=0.0, max_val=100.0,
+    )
+
+
+# --- Discharge ramp (evening load sharing) ---
+def get_solis_discharge_ramp_enabled() -> bool:
+    return _get_bool("solis_discharge_ramp_enabled", "SOLIS_DISCHARGE_RAMP_ENABLED", True)
+
+
+def get_solark_soc_discharge_ramp_threshold_pct() -> float:
+    return _get_float_with_legacy(
+        "solark_soc_discharge_ramp_threshold_pct", "SOLARK_SOC_DISCHARGE_RAMP_THRESHOLD_PCT", 50.0,
+        min_val=0.0, max_val=100.0,
+    )
+
+
+def get_solark_soc_discharge_ramp_floor_pct() -> float:
+    return _get_float_with_legacy(
+        "solark_soc_discharge_ramp_floor_pct", "SOLARK_SOC_DISCHARGE_RAMP_FLOOR_PCT", 30.0,
+        min_val=0.0, max_val=100.0,
+    )
+
+
+def get_solis_tou_discharge_amps_min() -> float:
+    return _get_float_with_legacy(
+        "solis_tou_discharge_amps_min", "SOLIS_TOU_DISCHARGE_AMPS_MIN", 1.0,
+        min_val=0.0, max_val=70.0,
+    )
+
+
+def get_solis_tou_discharge_amps_max() -> float:
+    return _get_float_with_legacy(
+        "solis_tou_discharge_amps_max", "SOLIS_TOU_DISCHARGE_AMPS_MAX", 15.0,
+        min_val=0.0, max_val=70.0,
+    )
+
+
+# --- Discharge export ---
+def get_solis_discharge_allow_export() -> bool:
+    return _get_bool("solis_discharge_allow_export", "SOLIS_DISCHARGE_ALLOW_EXPORT", True)
+
+
+def get_solis_discharge_export_cap_w() -> float:
+    return _get_float_with_legacy(
+        "solis_discharge_export_cap_w", "SOLIS_DISCHARGE_EXPORT_CAP_W", 0.0,
+        min_val=0.0, max_val=50000.0,
+    )
+
+
+def get_solis_discharge_export_mode() -> str:
+    v = str(_get("solis_discharge_export_mode", "SOLIS_DISCHARGE_EXPORT_MODE", "controlled")).strip().lower()
+    return v if v in ("zero", "controlled", "full") else "controlled"
+
+
+# --- Grid import during discharge ---
+def get_solis_discharge_allow_grid_import() -> bool:
+    return _get_bool("solis_discharge_allow_grid_import", "SOLIS_DISCHARGE_ALLOW_GRID_IMPORT", True)
+
+
+def get_solis_discharge_grid_import_max_w() -> float:
+    return _get_float_with_legacy(
+        "solis_discharge_grid_import_max_w", "SOLIS_DISCHARGE_GRID_IMPORT_MAX_W", 0.0,
+        min_val=0.0, max_val=50000.0,
+    )
+
+
+def get_solis_discharge_grid_import_mode() -> str:
+    v = str(_get("solis_discharge_grid_import_mode", "SOLIS_DISCHARGE_GRID_IMPORT_MODE", "auto")).strip().lower()
+    return v if v in ("off", "auto", "target") else "auto"
+
+
+# --- Load subsidy mode ---
+def get_solis_discharge_load_subsidy_pct() -> float:
+    return _get_float_with_legacy(
+        "solis_discharge_load_subsidy_pct", "SOLIS_DISCHARGE_LOAD_SUBSIDY_PCT", 50.0,
+        min_val=0.0, max_val=100.0,
+    )
+
+
+def get_solis_discharge_load_subsidy_enabled() -> bool:
+    return _get_bool("solis_discharge_load_subsidy_enabled", "SOLIS_DISCHARGE_LOAD_SUBSIDY_ENABLED", True)
+
+
+def get_solis_discharge_prioritize_higher_soc() -> bool:
+    """When true, if Solark SOC > Solis SOC, use 0 discharge amps so Solark supplies the load."""
+    return _get_bool("solis_discharge_prioritize_higher_soc", "SOLIS_DISCHARGE_PRIORITIZE_HIGHER_SOC", True)
 
 
 def load_settings() -> dict:
@@ -533,6 +766,19 @@ MQTT_USER = os.environ.get("MQTT_USER", "api").strip() or None
 MQTT_PASSWORD = os.environ.get("MQTT_PASSWORD", "test12345").strip() or None
 MQTT_CLIENT_ID = os.environ.get("MQTT_CLIENT_ID", "solis-s6-ui").strip()
 
+# InfluxDB — for /api/influx-health and /api/influx/query
+def get_influx_url() -> str:
+    return str(_get("influx_url", "INFLUX_URL", "http://localhost:8086")).strip()
+
+def get_influx_token() -> str:
+    return str(os.environ.get("INFLUX_TOKEN", "") or _settings_overrides.get("influx_token") or "").strip()
+
+def get_influx_bucket() -> str:
+    return str(_get("influx_bucket", "INFLUX_BUCKET", "solar")).strip()
+
+def get_influx_org() -> str:
+    return str(os.environ.get("INFLUX_ORG", "") or _settings_overrides.get("influx_org") or "").strip()
+
 # Forecast.Solar (Stage 4) — two toggles: API fetches, prediction mode (use forecast in automations)
 def get_solar_forecast_api_enabled() -> bool:
     """Whether to fetch Forecast.Solar API. When OFF, no external calls."""
@@ -546,7 +792,22 @@ def get_solar_prediction_enabled() -> bool:
 
 def get_solar_llm_automations_enabled() -> bool:
     """Master toggle for LLM-based automations and assistant features."""
-    return _get_bool("solar_llm_automations_enabled", "SOLAR_LLM_AUTOMATIONS_ENABLED", False)
+    return _get_bool("solar_llm_automations_enabled", "SOLAR_LLM_AUTOMATIONS_ENABLED", True)
+
+
+def get_assistant_system_prompt() -> str:
+    """Optional system prompt for the chat assistant. Documents setup for context-aware answers."""
+    return str(
+        os.environ.get("ASSISTANT_SYSTEM_PROMPT", "")
+        or _settings_overrides.get("assistant_system_prompt", "")
+        or (
+            "You are an assistant for a solar + storage system. Setup: Solis hybrid inverter(s) and Solark, "
+            "with Enphase IQ8 and M-series micro-inverters (Envoy). TOU charge/discharge windows control "
+            "when batteries charge from PV and when they discharge. Storage modes: self_use, off_grid, tou, etc. "
+            "Curtailment switches (IQ8, M-series, Tabuchi) can be turned off when SOC is full. "
+            "For historical PV/battery data, direct the user to the Data page or Grafana."
+        )
+    ).strip()
 
 
 def get_solar_prediction_lat() -> float:

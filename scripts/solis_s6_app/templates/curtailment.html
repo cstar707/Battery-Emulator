@@ -229,9 +229,6 @@ function updateAutoBar(auto) {
   const socPct   = auto.soc_pct;
   const thresh   = auto.threshold_pct;
   const restore  = auto.restore_pct;
-  const optB     = !!auto.optionB_restore_enabled;
-  const battW    = auto.optionB_restore_batt_power_threshold_W;
-  const holdSec  = auto.optionB_restore_hold_sec;
 
   if (!enabled) {
     dot.style.background = 'var(--muted)';
@@ -242,29 +239,17 @@ function updateAutoBar(auto) {
   } else if (active) {
     dot.style.background = 'var(--orange)';
     dot.style.boxShadow  = '0 0 6px var(--orange)';
-    if (optB) {
-      label.innerHTML = '<strong style="color:var(--orange)">CURTAILING</strong> — all 3 sources turned off by automation (SOC ≥ ' + thresh + '%). Option B restore when battery_total_power_W ≤ ' + battW + 'W for ' + holdSec + 's.';
-    } else {
-      label.innerHTML = '<strong style="color:var(--orange)">CURTAILING</strong> — all 3 sources turned off by automation (SOC ≥ ' + thresh + '%). Will restore at &lt; ' + restore + '%.';
-    }
+    label.innerHTML = '<strong style="color:var(--orange)">CURTAILING</strong> — all 3 sources turned off by automation (SOC ≥ ' + thresh + '%). Will restore at &lt; ' + restore + '%.';
     bar.style.borderColor = 'var(--orange)';
     bar.style.background  = 'rgba(210,153,34,0.1)';
   } else {
     dot.style.background = 'var(--green)';
     dot.style.boxShadow  = '0 0 6px var(--green)';
-    if (optB) {
-      label.innerHTML = 'Automation: <strong style="color:var(--green)">ACTIVE</strong> — monitoring. Will curtail at SOC ≥ ' + thresh + '%. Option B restore when battery_total_power_W ≤ ' + battW + 'W for ' + holdSec + 's.';
-    } else {
-      label.innerHTML = 'Automation: <strong style="color:var(--green)">ACTIVE</strong> — monitoring. Will curtail at SOC ≥ ' + thresh + '%, restore at &lt; ' + restore + '%.';
-    }
+    label.innerHTML = 'Automation: <strong style="color:var(--green)">ACTIVE</strong> — monitoring. Will curtail at SOC ≥ ' + thresh + '%, restore at &lt; ' + restore + '%.';
     bar.style.borderColor = 'var(--green)';
     bar.style.background  = 'rgba(63,185,80,0.07)';
   }
-  if (optB && auto.batt_power_W !== undefined && auto.batt_power_W !== null) {
-    soc.textContent = (socPct !== null ? `SOC ${socPct}%` : 'SOC: no data') + ` · batt ${Math.round(auto.batt_power_W)}W`;
-  } else {
-    soc.textContent = socPct !== null ? `SOC ${socPct}%` : 'SOC: no data';
-  }
+  soc.textContent = socPct !== null ? `SOC ${socPct}%` : 'SOC: no data';
 }
 
 async function refreshAll() {

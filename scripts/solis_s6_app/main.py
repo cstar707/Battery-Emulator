@@ -36,6 +36,7 @@ try:
         get_solar_prediction_dec,
         get_solar_prediction_enabled,
         get_solar_llm_automations_enabled,
+        get_assistant_system_prompt,
         get_solar_prediction_kwp,
         get_solar_prediction_lat,
         get_solar_prediction_lon,
@@ -64,6 +65,44 @@ try:
         get_solis_tou_charge_available_pv_w,
         get_solis_tou_charge_amps,
         get_solis_tou_discharge_amps,
+        get_solark_full_soc_pct,
+        get_solis_full_soc_pct,
+        get_solis_curtail_when_both_full,
+        get_solis_grid_charge_when_solark_full,
+        get_solis_tou_charge_start_h,
+        get_solis_tou_charge_start_m,
+        get_solis_tou_charge_end_h,
+        get_solis_tou_charge_end_m,
+        get_solis_tou_discharge_start_h,
+        get_solis_tou_discharge_start_m,
+        get_solis_tou_discharge_end_h,
+        get_solis_tou_discharge_end_m,
+        get_solis_tou_charge_ramp_enabled,
+        get_solis_tou_charge_amps_min,
+        get_solis_tou_charge_amps_max,
+        get_solis_tou_charge_ramp_pv_threshold_w,
+        get_solis_tou_charge_ramp_pv_max_w,
+        get_safe_window_start_h,
+        get_safe_window_start_m,
+        get_safe_window_ensure_ha_on,
+        get_safe_window_allow_solis_grid_charge,
+        get_iq8_max_peak_kw,
+        get_mseries_max_peak_kw,
+        get_tabuchi_max_peak_kw,
+        get_solis_discharge_ramp_enabled,
+        get_solark_soc_discharge_ramp_threshold_pct,
+        get_solark_soc_discharge_ramp_floor_pct,
+        get_solis_tou_discharge_amps_min,
+        get_solis_tou_discharge_amps_max,
+        get_solis_discharge_allow_export,
+        get_solis_discharge_export_cap_w,
+        get_solis_discharge_export_mode,
+        get_solis_discharge_allow_grid_import,
+        get_solis_discharge_grid_import_max_w,
+        get_solis_discharge_grid_import_mode,
+        get_solis_discharge_load_subsidy_pct,
+        get_solis_discharge_load_subsidy_enabled,
+        get_solis_discharge_prioritize_higher_soc,
         INVERTER_LABEL_SOLARK1,
         INVERTER_LABEL_SOLARK2,
         INVERTER_LABEL_SOLIS1,
@@ -89,6 +128,10 @@ try:
         HA_TOKEN,
         get_ha_url,
         get_ha_token,
+        get_influx_url,
+        get_influx_token,
+        get_influx_bucket,
+        get_influx_org,
         HA_SWITCH_IQ8,
         HA_SWITCH_MSERIES,
         HA_SWITCH_TABUCHI,
@@ -133,7 +176,7 @@ except Exception as e:
     def get_ha_restore_batt_draw_hold_sec():
         return 60
     def get_solis_power_controls_enabled():
-        return False
+        return True
     def get_solis_offgrid_automation_enabled():
         return False
     def get_solis_offgrid_enter_solark_soc_pct():
@@ -151,7 +194,83 @@ except Exception as e:
     def get_solis_tou_charge_amps():
         return 52.0
     def get_solis_tou_discharge_amps():
+        return 1.0
+    def get_solark_full_soc_pct():
+        return 98.0
+    def get_solis_full_soc_pct():
+        return 95.0
+    def get_solis_curtail_when_both_full():
+        return True
+    def get_solis_grid_charge_when_solark_full():
+        return True
+    def get_solis_tou_charge_start_h():
+        return 7
+    def get_solis_tou_charge_start_m():
+        return 0
+    def get_solis_tou_charge_end_h():
+        return 19
+    def get_solis_tou_charge_end_m():
+        return 0
+    def get_solis_tou_discharge_start_h():
+        return 19
+    def get_solis_tou_discharge_start_m():
+        return 1
+    def get_solis_tou_discharge_end_h():
+        return 6
+    def get_solis_tou_discharge_end_m():
+        return 0
+    def get_solis_tou_charge_ramp_enabled():
+        return True
+    def get_solis_tou_charge_amps_min():
         return 10.0
+    def get_solis_tou_charge_amps_max():
+        return 52.0
+    def get_solis_tou_charge_ramp_pv_threshold_w():
+        return 1000.0
+    def get_solis_tou_charge_ramp_pv_max_w():
+        return 8000.0
+    def get_safe_window_start_h():
+        return 7
+    def get_safe_window_start_m():
+        return 0
+    def get_safe_window_ensure_ha_on():
+        return True
+    def get_safe_window_allow_solis_grid_charge():
+        return True
+    def get_iq8_max_peak_kw():
+        return 6.5
+    def get_mseries_max_peak_kw():
+        return 2.5
+    def get_tabuchi_max_peak_kw():
+        return 3.0
+    def get_solis_discharge_ramp_enabled():
+        return True
+    def get_solark_soc_discharge_ramp_threshold_pct():
+        return 50.0
+    def get_solark_soc_discharge_ramp_floor_pct():
+        return 30.0
+    def get_solis_tou_discharge_amps_min():
+        return 1.0
+    def get_solis_tou_discharge_amps_max():
+        return 15.0
+    def get_solis_discharge_allow_export():
+        return True
+    def get_solis_discharge_export_cap_w():
+        return 0.0
+    def get_solis_discharge_export_mode():
+        return "controlled"
+    def get_solis_discharge_allow_grid_import():
+        return True
+    def get_solis_discharge_grid_import_max_w():
+        return 0.0
+    def get_solis_discharge_grid_import_mode():
+        return "auto"
+    def get_solis_discharge_load_subsidy_pct():
+        return 50.0
+    def get_solis_discharge_load_subsidy_enabled():
+        return True
+    def get_solis_discharge_prioritize_higher_soc():
+        return True
     def get_solar_forecast_api_enabled():
         return False
     def get_solar_prediction_enabled():
@@ -166,6 +285,10 @@ except Exception as e:
         return 0
     def get_solar_prediction_kwp():
         return 25.0
+    def get_solar_llm_automations_enabled():
+        return True
+    def get_assistant_system_prompt():
+        return ""
     def load_settings():
         return {}
     def get_solis_host():
@@ -218,13 +341,16 @@ except Exception as e:
 
 # MQTT: optional
 try:
-    from mqtt_publish import publish_solis_sensors, publish_solark_status
+    from mqtt_publish import publish_solis_sensors, publish_solark_status, publish_envoy_sensors
 except Exception as e:
     logging.warning("MQTT publish unavailable: %s", e)
     def publish_solis_sensors(*a, **k):
         pass
 
     def publish_solark_status(online: bool) -> None:
+        pass
+
+    def publish_envoy_sensors(data: dict) -> None:
         pass
 
 # Modbus: optional – if this fails, app still runs with stub
@@ -271,6 +397,7 @@ try:
         get_tou_config,
         set_tou_charge_amps,
         set_tou_discharge_amps,
+        set_tou_slot1,
     )
     _STORAGE_BIT_NAMES, _HYBRID_BIT_NAMES = _SM, _HM
     _modbus_available = True
@@ -294,6 +421,7 @@ except Exception as e:
     def get_tou_config(): return {"ok": False, "error": "Modbus unavailable"}
     def set_tou_charge_amps(*a, **kw): return {"ok": False, "message": "Modbus unavailable", "writes": []}
     def set_tou_discharge_amps(*a, **kw): return {"ok": False, "message": "Modbus unavailable", "writes": []}
+    def set_tou_slot1(*a, **kw): return {"ok": False, "message": "Modbus unavailable", "writes": []}
     get_storage_control_bits = _modbus_stub_return_dict_bits
     get_hybrid_control_bits = _modbus_stub_return_hybrid_bits
     def get_active_power_limit(): return {"ok": False, "enabled": False, "limit_pct": 100.0}
@@ -336,7 +464,42 @@ _solark_auto_self_use_active: bool = True  # assume curtailed until SOC confirme
 _last_solis_auto_switch_ts: float = 0
 _AUTO_SWITCH_COOLDOWN_SEC = 300  # don't flip Solis mode more than once per 5 min
 _last_solis_curtail_switch_ts: float = 0
-_SOLIS_CURTAIL_COOLDOWN_SEC = 300
+_last_tou_schedule_sync_ts: float = 0
+_TOU_SCHEDULE_SYNC_INTERVAL_SEC = 86400  # sync TOU slot 1 from config once per day
+
+
+def _sync_tou_schedule_from_config() -> None:
+    """Apply TOU slot 1 (charge/discharge windows) from config to inverter. Runs once per day."""
+    global _last_tou_schedule_sync_ts
+    now = time.time()
+    if now - _last_tou_schedule_sync_ts < _TOU_SCHEDULE_SYNC_INTERVAL_SEC:
+        return
+    try:
+        result = set_tou_slot1(
+            charge_start_h=get_solis_tou_charge_start_h(),
+            charge_start_m=get_solis_tou_charge_start_m(),
+            charge_end_h=get_solis_tou_charge_end_h(),
+            charge_end_m=get_solis_tou_charge_end_m(),
+            discharge_start_h=get_solis_tou_discharge_start_h(),
+            discharge_start_m=get_solis_tou_discharge_start_m(),
+            discharge_end_h=get_solis_tou_discharge_end_h(),
+            discharge_end_m=get_solis_tou_discharge_end_m(),
+        )
+        if result.get("ok"):
+            _last_tou_schedule_sync_ts = now
+            logger.info(
+                "TOU schedule synced from config: charge %d:%02d–%d:%02d, discharge %d:%02d–%d:%02d",
+                get_solis_tou_charge_start_h(), get_solis_tou_charge_start_m(),
+                get_solis_tou_charge_end_h(), get_solis_tou_charge_end_m(),
+                get_solis_tou_discharge_start_h(), get_solis_tou_discharge_start_m(),
+                get_solis_tou_discharge_end_h(), get_solis_tou_discharge_end_m(),
+            )
+        else:
+            logger.warning("TOU schedule sync failed: %s", result.get("message"))
+    except Exception as e:
+        logger.warning("TOU schedule sync error: %s", e)
+_SOLIS_CURTAIL_COOLDOWN_SEC = 300  # Restore: wait 5 min before allowing another restore (prevents oscillation)
+_SOLIS_CURTAIL_AFTER_RESTORE_COOLDOWN_SEC = 60  # After restore, allow curtail again after 60s (was 5 min — blocked shutdown in time at 98%)
 
 # Automation: HA switch curtailment (Steps 2-4) — fire alongside Solis mode switch
 _ha_curtail_active: bool = True            # assume curtailed at startup — only released when SOC < 95%
@@ -853,7 +1016,8 @@ def _run_solis_power_controls_automation(solis_data: dict, solark_data: dict) ->
     global _solis_power_control_state, _last_solis_auto_switch_ts
     if not get_solis_power_controls_enabled() or not _modbus_available:
         return
-    if _run_solis_high_soc_curtailment(solark_data, enabled=True, source="coordinator"):
+    _sync_tou_schedule_from_config()
+    if _run_solis_high_soc_curtailment(solark_data, solis_data=solis_data, enabled=True, source="coordinator"):
         _solis_power_control_state = "auto_high_soc_curtailment"
         return
     decision = _evaluate_solis_power_control_decision(solis_data, solark_data)
@@ -884,6 +1048,26 @@ def _run_solis_power_controls_automation(solis_data: dict, solark_data: dict) ->
     current_state = str(decision.get("current_state") or "unknown")
     if desired_state == current_state and current_state != "unknown":
         _solis_power_control_state = decision.get("owner") or current_state
+        if current_state == "tou_charge":
+            charge_amps = _compute_tou_charge_amps_ramp(solis_data, solark_data)
+            try:
+                set_tou_charge_amps(charge_amps)
+            except Exception as e:
+                logger.debug("tou charge ramp update: %s", e)
+        elif current_state == "self_use" and _is_in_tou_discharge_window():
+            discharge_amps = _compute_tou_discharge_amps(solis_data, solark_data)
+            try:
+                set_tou_discharge_amps(discharge_amps)
+            except Exception as e:
+                logger.debug("tou discharge ramp update: %s", e)
+            export_mode = get_solis_discharge_export_mode()
+            want_export = get_solis_discharge_allow_export() and export_mode != "zero"
+            try:
+                bits = get_hybrid_control_bits() or {}
+                if bits.get("allow_export") != want_export:
+                    set_hybrid_control_bit(_HYBRID_ALLOW_EXPORT_BIT, want_export)
+            except Exception as e:
+                logger.debug("discharge allow_export sync: %s", e)
         return
 
     try:
@@ -896,11 +1080,23 @@ def _run_solis_power_controls_automation(solis_data: dict, solark_data: dict) ->
         ok, err = _apply_control_change("storage", _STORAGE_OFF_GRID_BIT, True)
         result = {"ok": ok, "message": err or "off-grid applied", "writes": []}
     elif desired_state == "tou_charge":
-        result = apply_tou_charge_mode(charge_amps=get_solis_tou_charge_amps())
+        charge_amps = _compute_tou_charge_amps_ramp(solis_data, solark_data)
+        result = apply_tou_charge_mode(charge_amps=charge_amps)
         if result.get("ok"):
             set_tou_discharge_amps(get_solis_tou_discharge_amps())
     else:
         result = apply_clean_self_use()
+        if result.get("ok") and _is_in_tou_discharge_window():
+            discharge_amps = _compute_tou_discharge_amps(solis_data, solark_data)
+            try:
+                set_tou_discharge_amps(discharge_amps)
+            except Exception as e:
+                logger.debug("tou discharge amps on transition: %s", e)
+            if get_solis_discharge_allow_export() and get_solis_discharge_export_mode() != "zero":
+                try:
+                    set_hybrid_control_bit(_HYBRID_ALLOW_EXPORT_BIT, True)
+                except Exception as e:
+                    logger.debug("discharge allow_export on transition: %s", e)
 
     if result.get("ok"):
         _solis_power_control_state = decision.get("owner") or desired_state
@@ -922,45 +1118,84 @@ def _run_solis_power_controls_automation(solis_data: dict, solark_data: dict) ->
         )
 
 
-def _run_solis_high_soc_curtailment(solark_data: dict, *, enabled: bool, source: str) -> bool:
+def _run_solis_high_soc_curtailment(
+    solark_data: dict,
+    *,
+    solis_data: dict | None = None,
+    enabled: bool,
+    source: str,
+) -> bool:
     """Curtail/restore Solis PV output using the active power limit registers."""
     global _solark_auto_self_use_active, _last_solis_curtail_switch_ts, _solis_pv_restore_batt_draw_hold_since
     if not enabled or not _modbus_available or SOLARK_SOC_SELF_USE_THRESHOLD_PCT <= 0:
         return False
     now = time.time()
-    if now - _last_solis_curtail_switch_ts < _SOLIS_CURTAIL_COOLDOWN_SEC:
+    # Curtail: use shorter cooldown so we can shut down in time after a recent restore (SOC can rise 1–2%/5s at peak solar)
+    # Restore: use full cooldown to prevent rapid curtail→restore oscillation
+    cooldown = _SOLIS_CURTAIL_AFTER_RESTORE_COOLDOWN_SEC if (not _solark_auto_self_use_active) else _SOLIS_CURTAIL_COOLDOWN_SEC
+    if now - _last_solis_curtail_switch_ts < cooldown:
         return _solark_auto_self_use_active
     _raw_soc_pptt, soc_pptt = _solark_soc_calibrated_pptt(solark_data)
     if soc_pptt is None:
         return _solark_auto_self_use_active
     soc_pct = soc_pptt / 100.0
-    threshold_pptt = SOLARK_SOC_SELF_USE_THRESHOLD_PCT * 100
-    below_pptt = SOLARK_SOC_FEEDIN_BELOW_PCT * 100
-    logger.debug(
-        "solis automation check: soc_pptt=%d threshold=%d below=%d curtail_active=%s",
-        soc_pptt, threshold_pptt, below_pptt, _solark_auto_self_use_active,
-    )
-    if soc_pptt >= threshold_pptt and not _solark_auto_self_use_active:
+
+    use_two_stage = get_solis_curtail_when_both_full()
+    if use_two_stage:
+        threshold_pptt = int(get_solark_full_soc_pct() * 100)
+        below_pptt = int(get_solark_full_soc_pct() * 100)
+        solis_full_pptt = int(get_solis_full_soc_pct() * 100)
+        solis_soc_raw = solis_data.get("battery_soc_pct") if solis_data else None
+        solis_soc_pptt = int(solis_soc_raw * 100) if solis_soc_raw is not None and isinstance(solis_soc_raw, (int, float)) else None
+        both_full = soc_pptt >= threshold_pptt and (solis_soc_pptt is not None and solis_soc_pptt >= solis_full_pptt)
+        either_not_full = soc_pptt < below_pptt or (solis_soc_pptt is not None and solis_soc_pptt < solis_full_pptt)
+        if solis_soc_pptt is None:
+            both_full = False
+        logger.debug(
+            "solis automation check (two-stage): solark_pptt=%d solis_pptt=%s threshold=%d solis_full=%d both_full=%s curtail_active=%s",
+            soc_pptt, solis_soc_pptt, threshold_pptt, solis_full_pptt, both_full, _solark_auto_self_use_active,
+        )
+    else:
+        threshold_pptt = SOLARK_SOC_SELF_USE_THRESHOLD_PCT * 100
+        below_pptt = SOLARK_SOC_FEEDIN_BELOW_PCT * 100
+        both_full = soc_pptt >= threshold_pptt
+        either_not_full = soc_pptt < below_pptt
+        logger.debug(
+            "solis automation check (legacy): soc_pptt=%d threshold=%d below=%d curtail_active=%s",
+            soc_pptt, threshold_pptt, below_pptt, _solark_auto_self_use_active,
+        )
+
+    if both_full and not _solark_auto_self_use_active:
         # Curtail: limit Solis output to 0%
         try:
             if set_active_power_limit(0.0):
                 _solark_auto_self_use_active = True
                 _solis_pv_restore_batt_draw_hold_since = None
                 _last_solis_curtail_switch_ts = now
-                logger.info(
-                    "Solis high-SOC curtailment (%s): Solark SOC %.1f%% >= %d%%, power limited to 0%%",
-                    source,
-                    soc_pct,
-                    SOLARK_SOC_SELF_USE_THRESHOLD_PCT,
-                )
+                if use_two_stage and solis_soc_pptt is not None:
+                    logger.info(
+                        "Solis high-SOC curtailment (%s): Solark %.1f%% >= %.1f%% and Solis %.1f%% >= %.1f%%, power limited to 0%%",
+                        source,
+                        soc_pct,
+                        get_solark_full_soc_pct(),
+                        solis_soc_pptt / 100.0,
+                        get_solis_full_soc_pct(),
+                    )
+                else:
+                    logger.info(
+                        "Solis high-SOC curtailment (%s): Solark SOC %.1f%% >= %d%%, power limited to 0%%",
+                        source,
+                        soc_pct,
+                        SOLARK_SOC_SELF_USE_THRESHOLD_PCT,
+                    )
         except Exception as e:
             logger.warning("Automation curtail Solis: %s", e)
     elif _solark_auto_self_use_active:
         # Restore: disable power limit
-        # Default behavior: SOC hysteresis (restore at SOC < 95%).
+        # Default behavior: SOC hysteresis (restore when either battery no longer full).
         # Option B behavior (if enabled): restore earlier when Solark battery
         # begins drawing power (battery_total_power_W <= threshold W) for a hold time,
-        # even if SOC is still between the 95–98% band.
+        # even if SOC is still high.
         try:
             if get_ha_restore_on_batt_draw_enabled():
                 batt_power_w = solark_data.get("battery_total_power_W")
@@ -992,16 +1227,23 @@ def _run_solis_high_soc_curtailment(solark_data: dict, *, enabled: bool, source:
                 else:
                     _solis_pv_restore_batt_draw_hold_since = None
             else:
-                if soc_pptt < below_pptt:
+                if either_not_full:
                     if set_active_power_limit(100.0):
                         _solark_auto_self_use_active = False
                         _last_solis_curtail_switch_ts = now
-                        logger.info(
-                            "Solis high-SOC restore (%s): Solark SOC %.1f%% < %d%%, power limit disabled (full output)",
-                            source,
-                            soc_pct,
-                            SOLARK_SOC_FEEDIN_BELOW_PCT,
-                        )
+                        if use_two_stage:
+                            logger.info(
+                                "Solis high-SOC restore (%s): Solark %.1f%% or Solis below threshold, power limit disabled",
+                                source,
+                                soc_pct,
+                            )
+                        else:
+                            logger.info(
+                                "Solis high-SOC restore (%s): Solark SOC %.1f%% < %d%%, power limit disabled (full output)",
+                                source,
+                                soc_pct,
+                                SOLARK_SOC_FEEDIN_BELOW_PCT,
+                            )
         except Exception as e:
             logger.warning("Automation restore Solis: %s", e)
     return _solark_auto_self_use_active
@@ -1015,6 +1257,7 @@ def _run_solark_solis_automation(solis_data: dict, solark_data: dict) -> None:
     """
     _run_solis_high_soc_curtailment(
         solark_data,
+        solis_data=solis_data,
         enabled=get_solark_soc_automation_enabled(),
         source="legacy",
     )
@@ -1023,7 +1266,8 @@ def _run_solark_solis_automation(solis_data: dict, solark_data: dict) -> None:
 def _run_ha_curtailment_automation(solark_data: dict) -> None:
     """Turn all three HA generation switches off when SOC >= threshold; restore when below hysteresis."""
     global _ha_curtail_active, _last_ha_curtail_ts, _ha_batt_draw_hold_since
-    if not get_solark_soc_automation_enabled() or SOLARK_SOC_SELF_USE_THRESHOLD_PCT <= 0:
+    # Run when coordinator OR legacy path is on — both do high-SOC protection; coordinator alone was not turning off HA switches
+    if not (get_solark_soc_automation_enabled() or get_solis_power_controls_enabled()) or SOLARK_SOC_SELF_USE_THRESHOLD_PCT <= 0:
         return
     if not get_ha_token() or not get_ha_url():
         return
@@ -1032,13 +1276,14 @@ def _run_ha_curtailment_automation(solark_data: dict) -> None:
     if soc_pptt is None:
         return
     soc_pct = soc_pptt / 100.0
-    threshold_pptt = SOLARK_SOC_SELF_USE_THRESHOLD_PCT * 100
+    threshold_pct = get_solark_full_soc_pct()  # Match coordinator/Solis curtailment threshold
+    threshold_pptt = int(threshold_pct * 100)
     below_pptt = SOLARK_SOC_FEEDIN_BELOW_PCT * 100
 
     if soc_pptt >= threshold_pptt and not _ha_curtail_active:
         if now - _last_ha_curtail_ts < _HA_CURTAIL_COOLDOWN_SEC:
             return
-        logger.info("HA curtailment: SOC %.1f%% >= %d%% — turning off all generation switches", soc_pct, SOLARK_SOC_SELF_USE_THRESHOLD_PCT)
+        logger.info("HA curtailment: SOC %.1f%% >= %.1f%% — turning off all generation switches", soc_pct, threshold_pct)
         errors = []
         for sw in _CURTAIL_SWITCHES:
             result = _ha_switch_sync(sw["entity"], turn_on=False)
@@ -1104,6 +1349,63 @@ def _run_ha_curtailment_automation(solark_data: dict) -> None:
                     _ha_batt_draw_hold_since = None
         else:
             _ha_batt_draw_hold_since = None
+
+
+_last_safe_window_ha_sync_ts: float = 0
+_SAFE_WINDOW_HA_SYNC_COOLDOWN_SEC = 3600  # at most once per hour
+
+
+def _run_safe_window_automation(solark_data: dict) -> None:
+    """At safe window time (e.g. 7am), ensure HA switches are on when Solark SOC allows."""
+    global _last_safe_window_ha_sync_ts
+    if not get_safe_window_ensure_ha_on() or not get_ha_token() or not get_ha_url():
+        return
+    now_ts = time.time()
+    if now_ts - _last_safe_window_ha_sync_ts < _SAFE_WINDOW_HA_SYNC_COOLDOWN_SEC:
+        return
+    # Check if we're in the safe window (local time >= safe_window_start)
+    local = datetime.now(timezone.utc).astimezone()
+    start_h = get_safe_window_start_h()
+    start_m = get_safe_window_start_m()
+    now_minutes = local.hour * 60 + local.minute
+    start_minutes = start_h * 60 + start_m
+    if now_minutes < start_minutes:
+        return
+    # Don't turn on switches if Solark is full (would curtail immediately)
+    _raw, soc_pptt = _solark_soc_calibrated_pptt(solark_data)
+    if soc_pptt is None:
+        return
+    threshold_pptt = int(get_solark_full_soc_pct() * 100)
+    if soc_pptt >= threshold_pptt:
+        return
+    try:
+        data = _fetch_curtailment_sync()
+        if not data.get("auth_ok"):
+            return
+        to_turn_on = []
+        for sw in _CURTAIL_SWITCHES:
+            state = (data.get("switches") or {}).get(sw["key"], {}).get("state", "unknown")
+            if str(state).lower() == "off":
+                to_turn_on.append(sw)
+        if not to_turn_on:
+            return
+        errors = []
+        for sw in to_turn_on:
+            result = _ha_switch_sync(sw["entity"], turn_on=True)
+            if not result.get("ok"):
+                errors.append(f"{sw['key']}: {result.get('error', 'unknown')}")
+        if errors:
+            logger.warning("Safe window: failed to turn on some switches: %s", errors)
+        else:
+            _last_safe_window_ha_sync_ts = now_ts
+            logger.info(
+                "Safe window: turned on %s (Solark SOC %.1f%% < %.1f%%)",
+                ", ".join(s["key"] for s in to_turn_on),
+                soc_pptt / 100.0,
+                get_solark_full_soc_pct(),
+            )
+    except Exception as e:
+        logger.warning("Safe window automation: %s", e)
 
 
 def _poll_sync() -> None:
@@ -1194,6 +1496,7 @@ def _poll_sync() -> None:
             elif SOLARK_SOC_SELF_USE_THRESHOLD_PCT > 0:
                 _run_solark_solis_automation(data, cached_solark)
             _run_ha_curtailment_automation(cached_solark)
+            _run_safe_window_automation(cached_solark)
     except Exception as e:
         logger.exception("poll: %s", e)
         fail_ts = time.time()
@@ -1349,7 +1652,7 @@ async def lifespan(app: FastAPI):
     yield
 
 
-app = FastAPI(title="Solis S6 / Solark UI", lifespan=lifespan)
+app = FastAPI(title="Solis S6 / Solark UI", lifespan=lifespan, redirect_slashes=False)
 
 
 @app.exception_handler(Exception)
@@ -1494,6 +1797,27 @@ def _build_site_snapshot() -> dict:
             "tou_charge_available_pv_w": solis_power_status.get("tou_charge_available_pv_w"),
             "tou_charge_amps_setting": solis_power_status.get("tou_charge_amps_setting"),
             "tou_discharge_amps_setting": solis_power_status.get("tou_discharge_amps_setting"),
+            "solark_full_soc_pct": solis_power_status.get("solark_full_soc_pct"),
+            "solis_full_soc_pct": solis_power_status.get("solis_full_soc_pct"),
+            "solis_curtail_when_both_full": solis_power_status.get("solis_curtail_when_both_full"),
+            "tou_charge_start_h": solis_power_status.get("tou_charge_start_h"),
+            "tou_charge_end_h": solis_power_status.get("tou_charge_end_h"),
+            "tou_discharge_start_h": solis_power_status.get("tou_discharge_start_h"),
+            "tou_discharge_end_h": solis_power_status.get("tou_discharge_end_h"),
+            "charge_ramp_enabled": solis_power_status.get("charge_ramp_enabled"),
+            "charge_amps_min": solis_power_status.get("charge_amps_min"),
+            "charge_amps_max": solis_power_status.get("charge_amps_max"),
+            "safe_window_start_h": solis_power_status.get("safe_window_start_h"),
+            "safe_window_ensure_ha_on": solis_power_status.get("safe_window_ensure_ha_on"),
+            "discharge_ramp_enabled": solis_power_status.get("discharge_ramp_enabled"),
+            "discharge_ramp_solark_soc_threshold_pct": solis_power_status.get("discharge_ramp_solark_soc_threshold_pct"),
+            "discharge_ramp_solark_soc_floor_pct": solis_power_status.get("discharge_ramp_solark_soc_floor_pct"),
+            "discharge_amps_min": solis_power_status.get("discharge_amps_min"),
+            "discharge_amps_max": solis_power_status.get("discharge_amps_max"),
+            "discharge_load_subsidy_enabled": solis_power_status.get("discharge_load_subsidy_enabled"),
+            "discharge_load_subsidy_pct": solis_power_status.get("discharge_load_subsidy_pct"),
+            "discharge_allow_export": solis_power_status.get("discharge_allow_export"),
+            "discharge_export_mode": solis_power_status.get("discharge_export_mode"),
             "live_tou": solis_power_status.get("tou"),
             "manual_override": solis_power_status.get("manual_override"),
             "manual_release": solis_power_status.get("manual_release"),
@@ -1541,6 +1865,14 @@ def _build_ai_debug_metrics(snapshot: dict) -> dict:
         "solis_power_controls_manual_override_mode": ((solis_power_controls.get("manual_override") or {}).get("mode")),
         "solis_power_controls_manual_release_enabled": ((solis_power_controls.get("manual_release") or {}).get("enabled")),
         "solis_power_controls_manual_release_ready": ((solis_power_controls.get("manual_release") or {}).get("ready")),
+        "solis_power_controls_solark_full_soc_pct": solis_power_controls.get("solark_full_soc_pct"),
+        "solis_power_controls_solis_full_soc_pct": solis_power_controls.get("solis_full_soc_pct"),
+        "solis_power_controls_curtail_when_both_full": solis_power_controls.get("solis_curtail_when_both_full"),
+        "solis_power_controls_charge_ramp_enabled": solis_power_controls.get("charge_ramp_enabled"),
+        "solis_power_controls_discharge_ramp_enabled": solis_power_controls.get("discharge_ramp_enabled"),
+        "solis_power_controls_load_subsidy_enabled": solis_power_controls.get("discharge_load_subsidy_enabled"),
+        "solis_power_controls_load_subsidy_pct": solis_power_controls.get("discharge_load_subsidy_pct"),
+        "solis_power_controls_discharge_allow_export": solis_power_controls.get("discharge_allow_export"),
         "power_control_mode": power_control.get("mode"),
         "power_control_watts": power_control.get("watts"),
     }
@@ -1649,6 +1981,7 @@ def _template_ctx() -> dict:
         "label_solark1": INVERTER_LABEL_SOLARK1,
         "label_solark2": INVERTER_LABEL_SOLARK2,
         "solark1_host": get_solark1_host() or "(not set)",
+        "llm_automations_enabled": get_solar_llm_automations_enabled(),
     }
 
 
@@ -1809,6 +2142,64 @@ async def grid_status_page(request: Request):
     }
     ctx = _page_ctx(request, data=data, ok=_solis_cache_first().get("ok", False), grid_status=grid_status)
     return templates.TemplateResponse("grid-status.html", ctx)
+
+
+def _data_page_live_snapshot() -> dict:
+    """Build live snapshot from caches for /data page (works before Influx pipeline)."""
+    out = {"solis": [], "solark": {}, "envoy": {}, "influx_configured": bool(get_influx_token())}
+    for inv in _build_solis_inverters():
+        d = inv.get("data") or {}
+        out["solis"].append({
+            "label": inv.get("label", inv.get("topic_id", "?")),
+            "ok": inv.get("ok", False),
+            "pv_power_W": d.get("pv_power_W"),
+            "battery_power_W": d.get("battery_power_W"),
+            "battery_soc_pct": d.get("battery_soc_pct"),
+            "grid_power_W": d.get("grid_power_W"),
+            "load_power_W": d.get("load_power_W"),
+            "energy_today_pv_kWh": d.get("energy_today_pv_kWh"),
+        })
+    solark_data = _solark_cache.get("data") or {}
+    out["solark"] = {
+        "ok": _solark_cache.get("ok", False),
+        "pv_power_W": solark_data.get("pv_power_W") or solark_data.get("solar_power"),
+        "battery_soc_pct": solark_data.get("battery_soc_pct"),
+        "battery_power_W": solark_data.get("battery_power_W"),
+        "load_power_W": solark_data.get("load_power_W"),
+        "grid_power_W": solark_data.get("grid_power_W"),
+        "day_pv_energy_kWh": solark_data.get("day_pv_energy_kWh") or solark_data.get("day_pv_energy"),
+    }
+    envoy_data = _envoy_cache.get("data") or {}
+    for eid, edata in (list(envoy_data.items()) if isinstance(envoy_data, dict) else []):
+        if eid.startswith("envoy") and isinstance(edata, dict):
+            out["envoy"][eid] = {
+                "production_W": edata.get("production"),
+                "active_inverters": edata.get("active_inverters"),
+                "offline_inverters": edata.get("offline_inverters"),
+                "inverter_count": len(edata.get("inverters") or []),
+            }
+    return out
+
+
+@app.get("/data", response_class=HTMLResponse)
+async def data_page(request: Request):
+    """Data browser: source/field selectors, Chart.js chart, live snapshot from caches."""
+    live = _data_page_live_snapshot()
+    sources = [
+        {"id": "solis", "label": "Solis", "fields": ["pv_power_W", "battery_power_W", "battery_soc_pct", "grid_power_W", "load_power_W", "energy_today_pv_kWh"]},
+        {"id": "solark", "label": "Solark", "fields": ["pv_power_W", "battery_soc_pct", "battery_power_W", "load_power_W", "grid_power_W", "day_pv_energy_kWh"]},
+        {"id": "envoy_aggregate", "label": "Envoy (IQ8 + M-series)", "fields": ["production_W", "active_inverters", "offline_inverters", "inverter_count"]},
+        {"id": "envoy_inverter", "label": "Envoy per-inverter", "fields": ["production_W", "daily_kWh", "max_report_watts"]},
+        {"id": "battery_emulator", "label": "Battery Emulator", "fields": ["soc_pct", "stat_batt_power", "battery_voltage", "battery_current"]},
+    ]
+    ctx = _page_ctx(
+        request,
+        live_snapshot=live,
+        sources=sources,
+        ranges=[{"id": "1h", "label": "Last 1 hour"}, {"id": "6h", "label": "Last 6 hours"}, {"id": "24h", "label": "Last 24 hours"}, {"id": "7d", "label": "Last 7 days"}],
+        grafana_url="http://10.10.53.92:3000",
+    )
+    return templates.TemplateResponse("data.html", ctx)
 
 
 @app.get("/control", response_class=HTMLResponse)
@@ -1977,6 +2368,79 @@ def _solark_available_pv_w(solark_data: dict) -> float:
     return 0.0
 
 
+def _compute_tou_charge_amps_ramp(solis_data: dict, solark_data: dict) -> float:
+    """Compute TOU charge amps from PV (ramp: min at low PV, max at high PV)."""
+    if not get_solis_tou_charge_ramp_enabled():
+        return get_solis_tou_charge_amps()
+    pv_w = _solark_available_pv_w(solark_data)
+    amin = get_solis_tou_charge_amps_min()
+    amax = get_solis_tou_charge_amps_max()
+    thresh = get_solis_tou_charge_ramp_pv_threshold_w()
+    pv_max = get_solis_tou_charge_ramp_pv_max_w()
+    if pv_w <= thresh:
+        return amin
+    if pv_max <= thresh:
+        return amax
+    frac = (pv_w - thresh) / (pv_max - thresh)
+    frac = max(0.0, min(1.0, frac))
+    return round(amin + (amax - amin) * frac, 1)
+
+
+def _is_in_tou_discharge_window() -> bool:
+    """True if current local time is within the TOU discharge window (e.g. 19:01–06:00)."""
+    local = datetime.now(timezone.utc).astimezone()
+    now_m = local.hour * 60 + local.minute
+    start_min = get_solis_tou_discharge_start_h() * 60 + get_solis_tou_discharge_start_m()
+    end_min = get_solis_tou_discharge_end_h() * 60 + get_solis_tou_discharge_end_m()
+    if start_min <= end_min:
+        return start_min <= now_m < end_min
+    return now_m >= start_min or now_m < end_min
+
+
+def _compute_tou_discharge_amps(solis_data: dict, solark_data: dict) -> float:
+    """Compute TOU discharge amps: SOC-based ramp or load-subsidy from Solark battery draw."""
+    # Prioritize discharging the battery with higher SOC: when Solark > Solis, minimize Solis discharge.
+    if get_solis_discharge_prioritize_higher_soc():
+        _raw, solark_soc_pptt = _solark_soc_calibrated_pptt(solark_data)
+        solis_soc_raw = solis_data.get("battery_soc_pct") if solis_data else None
+        solis_soc_pptt = int(solis_soc_raw * 100) if solis_soc_raw is not None and isinstance(solis_soc_raw, (int, float)) else None
+        if solark_soc_pptt is not None and solis_soc_pptt is not None and solark_soc_pptt > solis_soc_pptt:
+            return 0.0
+    if get_solis_discharge_load_subsidy_enabled():
+        batt_w = solark_data.get("battery_total_power_W") or solark_data.get("battery_power_W")
+        if batt_w is not None and isinstance(batt_w, (int, float)) and batt_w < 0:
+            solark_discharge_w = abs(float(batt_w))
+            subsidy_pct = get_solis_discharge_load_subsidy_pct()
+            target_w = solark_discharge_w * (subsidy_pct / 100.0)
+            batt_v = solis_data.get("battery_voltage_V") or 50.0
+            if not isinstance(batt_v, (int, float)) or batt_v <= 0:
+                batt_v = 50.0
+            eff = 0.95
+            target_amps = target_w / (float(batt_v) * eff) if batt_v * eff > 0 else 0.0
+            amin = get_solis_tou_discharge_amps_min()
+            amax = get_solis_tou_discharge_amps_max()
+            return round(max(amin, min(amax, target_amps)), 1)
+    if not get_solis_discharge_ramp_enabled():
+        return get_solis_tou_discharge_amps()
+    _raw, soc_pptt = _solark_soc_calibrated_pptt(solark_data)
+    if soc_pptt is None:
+        return get_solis_tou_discharge_amps()
+    soc_pct = soc_pptt / 100.0
+    thresh = get_solark_soc_discharge_ramp_threshold_pct()
+    floor = get_solark_soc_discharge_ramp_floor_pct()
+    amin = get_solis_tou_discharge_amps_min()
+    amax = get_solis_tou_discharge_amps_max()
+    if soc_pct > thresh:
+        return amin
+    if soc_pct <= floor:
+        return amax
+    if thresh <= floor:
+        return amax
+    frac = (thresh - soc_pct) / (thresh - floor)
+    frac = max(0.0, min(1.0, frac))
+    return round(amin + (amax - amin) * frac, 1)
+
+
 def _detect_solis_power_control_state(storage_bits: dict) -> str:
     if storage_bits.get("off_grid"):
         return "off_grid"
@@ -2113,15 +2577,28 @@ def _get_solis_power_status() -> dict:
     tou = get_tou_config() if _modbus_available else {"ok": False, "error": "Modbus unavailable"}
     solark = (_solark_cache.get("data") or {}) if isinstance(_solark_cache, dict) else {}
     raw_soc_pptt, cal_soc_pptt = _solark_soc_calibrated_pptt(solark) if solark else (None, None)
+    solis_soc_raw = solis_data.get("battery_soc_pct") if solis_data else None
+    solis_soc_pct = round(float(solis_soc_raw), 1) if solis_soc_raw is not None and isinstance(solis_soc_raw, (int, float)) else None
     decision = _evaluate_solis_power_control_decision(solis_data, solark)
     owner = decision.get("owner") if enabled else "disabled"
     reason = decision.get("reason") if enabled else "coordinator disabled"
     if enabled and _solark_auto_self_use_active:
         owner = "auto_high_soc_curtailment"
-        reason = (
-            f"high-SOC protection active at {SOLARK_SOC_SELF_USE_THRESHOLD_PCT}% "
-            f"(restores below {SOLARK_SOC_FEEDIN_BELOW_PCT}% or Option B restore conditions)"
-        )
+        if get_solis_curtail_when_both_full():
+            reason = (
+                f"high-SOC curtailment: both Solark ≥{get_solark_full_soc_pct():.0f}% and Solis ≥{get_solis_full_soc_pct():.0f}% "
+                f"(restores when either drops below threshold or Option B restore)"
+            )
+        else:
+            reason = (
+                f"high-SOC protection active at {SOLARK_SOC_SELF_USE_THRESHOLD_PCT}% "
+                f"(restores below {SOLARK_SOC_FEEDIN_BELOW_PCT}% or Option B restore conditions)"
+            )
+    # High-SOC curtailment description: Solark SOC triggers, Solis PV gets curtailed
+    if get_solis_curtail_when_both_full():
+        high_soc_desc = f"Solark ≥{get_solark_full_soc_pct():.0f}% and Solis ≥{get_solis_full_soc_pct():.0f}% → curtail Solis PV"
+    else:
+        high_soc_desc = f"Solark ≥{SOLARK_SOC_SELF_USE_THRESHOLD_PCT}% → curtail Solis PV"
     return {
         "enabled": enabled,
         "state": _solis_power_control_state,
@@ -2132,8 +2609,10 @@ def _get_solis_power_status() -> dict:
         "storage_mode": _storage_mode_label(storage_bits),
         "tou": tou,
         "solark_soc_pct": round(cal_soc_pptt / 100.0, 1) if isinstance(cal_soc_pptt, int) else None,
+        "solis_soc_pct": solis_soc_pct,
         "available_pv_w": round(_solark_available_pv_w(solark), 1),
         "high_soc_curtailment_active": _solark_auto_self_use_active,
+        "high_soc_curtailment_desc": high_soc_desc,
         "high_soc_curtailment_threshold_pct": SOLARK_SOC_SELF_USE_THRESHOLD_PCT,
         "high_soc_curtailment_restore_pct": SOLARK_SOC_FEEDIN_BELOW_PCT,
         "offgrid_enabled": get_solis_offgrid_automation_enabled(),
@@ -2145,6 +2624,27 @@ def _get_solis_power_status() -> dict:
         "tou_charge_available_pv_w": get_solis_tou_charge_available_pv_w(),
         "tou_charge_amps_setting": get_solis_tou_charge_amps(),
         "tou_discharge_amps_setting": get_solis_tou_discharge_amps(),
+        "solark_full_soc_pct": get_solark_full_soc_pct(),
+        "solis_full_soc_pct": get_solis_full_soc_pct(),
+        "solis_curtail_when_both_full": get_solis_curtail_when_both_full(),
+        "tou_charge_start_h": get_solis_tou_charge_start_h(),
+        "tou_charge_end_h": get_solis_tou_charge_end_h(),
+        "tou_discharge_start_h": get_solis_tou_discharge_start_h(),
+        "tou_discharge_end_h": get_solis_tou_discharge_end_h(),
+        "charge_ramp_enabled": get_solis_tou_charge_ramp_enabled(),
+        "charge_amps_min": get_solis_tou_charge_amps_min(),
+        "charge_amps_max": get_solis_tou_charge_amps_max(),
+        "safe_window_start_h": get_safe_window_start_h(),
+        "safe_window_ensure_ha_on": get_safe_window_ensure_ha_on(),
+        "discharge_ramp_enabled": get_solis_discharge_ramp_enabled(),
+        "discharge_ramp_solark_soc_threshold_pct": get_solark_soc_discharge_ramp_threshold_pct(),
+        "discharge_ramp_solark_soc_floor_pct": get_solark_soc_discharge_ramp_floor_pct(),
+        "discharge_amps_min": get_solis_tou_discharge_amps_min(),
+        "discharge_amps_max": get_solis_tou_discharge_amps_max(),
+        "discharge_load_subsidy_enabled": get_solis_discharge_load_subsidy_enabled(),
+        "discharge_load_subsidy_pct": get_solis_discharge_load_subsidy_pct(),
+        "discharge_allow_export": get_solis_discharge_allow_export(),
+        "discharge_export_mode": get_solis_discharge_export_mode(),
         "manual_override": decision.get("manual_override"),
         "manual_release": decision.get("manual_release"),
         "power_control": decision.get("power_control"),
@@ -2185,6 +2685,44 @@ def _settings_values(overrides: dict | None = None) -> dict:
         "solis_tou_charge_available_pv_w": float(saved.get("solis_tou_charge_available_pv_w", get_solis_tou_charge_available_pv_w())),
         "solis_tou_charge_amps": float(saved.get("solis_tou_charge_amps", get_solis_tou_charge_amps())),
         "solis_tou_discharge_amps": float(saved.get("solis_tou_discharge_amps", get_solis_tou_discharge_amps())),
+        "solark_full_soc_pct": float(saved.get("solark_full_soc_pct", get_solark_full_soc_pct())),
+        "solis_full_soc_pct": float(saved.get("solis_full_soc_pct", get_solis_full_soc_pct())),
+        "solis_curtail_when_both_full": _as_bool(saved.get("solis_curtail_when_both_full", get_solis_curtail_when_both_full())),
+        "solis_grid_charge_when_solark_full": _as_bool(saved.get("solis_grid_charge_when_solark_full", get_solis_grid_charge_when_solark_full())),
+        "solis_tou_charge_start_h": int(saved.get("solis_tou_charge_start_h", get_solis_tou_charge_start_h())),
+        "solis_tou_charge_start_m": int(saved.get("solis_tou_charge_start_m", get_solis_tou_charge_start_m())),
+        "solis_tou_charge_end_h": int(saved.get("solis_tou_charge_end_h", get_solis_tou_charge_end_h())),
+        "solis_tou_charge_end_m": int(saved.get("solis_tou_charge_end_m", get_solis_tou_charge_end_m())),
+        "solis_tou_discharge_start_h": int(saved.get("solis_tou_discharge_start_h", get_solis_tou_discharge_start_h())),
+        "solis_tou_discharge_start_m": int(saved.get("solis_tou_discharge_start_m", get_solis_tou_discharge_start_m())),
+        "solis_tou_discharge_end_h": int(saved.get("solis_tou_discharge_end_h", get_solis_tou_discharge_end_h())),
+        "solis_tou_discharge_end_m": int(saved.get("solis_tou_discharge_end_m", get_solis_tou_discharge_end_m())),
+        "solis_tou_charge_ramp_enabled": _as_bool(saved.get("solis_tou_charge_ramp_enabled", get_solis_tou_charge_ramp_enabled())),
+        "solis_tou_charge_amps_min": float(saved.get("solis_tou_charge_amps_min", get_solis_tou_charge_amps_min())),
+        "solis_tou_charge_amps_max": float(saved.get("solis_tou_charge_amps_max", get_solis_tou_charge_amps_max())),
+        "solis_tou_charge_ramp_pv_threshold_w": float(saved.get("solis_tou_charge_ramp_pv_threshold_w", get_solis_tou_charge_ramp_pv_threshold_w())),
+        "solis_tou_charge_ramp_pv_max_w": float(saved.get("solis_tou_charge_ramp_pv_max_w", get_solis_tou_charge_ramp_pv_max_w())),
+        "safe_window_start_h": int(saved.get("safe_window_start_h", get_safe_window_start_h())),
+        "safe_window_start_m": int(saved.get("safe_window_start_m", get_safe_window_start_m())),
+        "safe_window_ensure_ha_on": _as_bool(saved.get("safe_window_ensure_ha_on", get_safe_window_ensure_ha_on())),
+        "safe_window_allow_solis_grid_charge": _as_bool(saved.get("safe_window_allow_solis_grid_charge", get_safe_window_allow_solis_grid_charge())),
+        "iq8_max_peak_kw": float(saved.get("iq8_max_peak_kw", get_iq8_max_peak_kw())),
+        "mseries_max_peak_kw": float(saved.get("mseries_max_peak_kw", get_mseries_max_peak_kw())),
+        "tabuchi_max_peak_kw": float(saved.get("tabuchi_max_peak_kw", get_tabuchi_max_peak_kw())),
+        "solis_discharge_ramp_enabled": _as_bool(saved.get("solis_discharge_ramp_enabled", get_solis_discharge_ramp_enabled())),
+        "solark_soc_discharge_ramp_threshold_pct": float(saved.get("solark_soc_discharge_ramp_threshold_pct", get_solark_soc_discharge_ramp_threshold_pct())),
+        "solark_soc_discharge_ramp_floor_pct": float(saved.get("solark_soc_discharge_ramp_floor_pct", get_solark_soc_discharge_ramp_floor_pct())),
+        "solis_tou_discharge_amps_min": float(saved.get("solis_tou_discharge_amps_min", get_solis_tou_discharge_amps_min())),
+        "solis_tou_discharge_amps_max": float(saved.get("solis_tou_discharge_amps_max", get_solis_tou_discharge_amps_max())),
+        "solis_discharge_allow_export": _as_bool(saved.get("solis_discharge_allow_export", get_solis_discharge_allow_export())),
+        "solis_discharge_export_cap_w": float(saved.get("solis_discharge_export_cap_w", get_solis_discharge_export_cap_w())),
+        "solis_discharge_export_mode": str(saved.get("solis_discharge_export_mode", get_solis_discharge_export_mode()) or "controlled"),
+        "solis_discharge_allow_grid_import": _as_bool(saved.get("solis_discharge_allow_grid_import", get_solis_discharge_allow_grid_import())),
+        "solis_discharge_grid_import_max_w": float(saved.get("solis_discharge_grid_import_max_w", get_solis_discharge_grid_import_max_w())),
+        "solis_discharge_grid_import_mode": str(saved.get("solis_discharge_grid_import_mode", get_solis_discharge_grid_import_mode()) or "auto"),
+        "solis_discharge_load_subsidy_pct": float(saved.get("solis_discharge_load_subsidy_pct", get_solis_discharge_load_subsidy_pct())),
+        "solis_discharge_load_subsidy_enabled": _as_bool(saved.get("solis_discharge_load_subsidy_enabled", get_solis_discharge_load_subsidy_enabled())),
+        "solis_discharge_prioritize_higher_soc": _as_bool(saved.get("solis_discharge_prioritize_higher_soc", get_solis_discharge_prioritize_higher_soc())),
         "tesla_source_enabled": _as_bool(saved.get("tesla_source_enabled", True)),
         "tesla_source_type": str(saved.get("tesla_source_type", "mqtt") or "mqtt").strip().lower(),
         "tesla_source_host": saved.get("tesla_source_host", ""),
@@ -2202,12 +2740,17 @@ def _settings_values(overrides: dict | None = None) -> dict:
         "ruxiu_source_spec_topic": saved.get("ruxiu_source_spec_topic", ""),
         "ruxiu_source_balancing_topic": saved.get("ruxiu_source_balancing_topic", ""),
         "tabuchi_today_pv_kwh": float(saved.get("tabuchi_today_pv_kwh", get_tabuchi_today_pv_kwh())),
+        "influx_url": saved.get("influx_url", get_influx_url()),
+        "influx_token_present": bool(get_influx_token()),
+        "influx_bucket": saved.get("influx_bucket", get_influx_bucket()),
+        "influx_org": saved.get("influx_org", get_influx_org()),
         "solis1_battery_kwh": float(saved.get("solis1_battery_kwh", get_solis1_battery_kwh())),
         "solis2_battery_kwh": float(saved.get("solis2_battery_kwh", get_solis2_battery_kwh())),
         "solark1_battery_kwh": float(saved.get("solark1_battery_kwh", get_solark1_battery_kwh())),
         "solar_forecast_api_enabled": _as_bool(saved.get("solar_forecast_api_enabled", get_solar_forecast_api_enabled())),
         "solar_prediction_enabled": _as_bool(saved.get("solar_prediction_enabled", get_solar_prediction_enabled())),
         "solar_llm_automations_enabled": _as_bool(saved.get("solar_llm_automations_enabled", get_solar_llm_automations_enabled())),
+        "assistant_system_prompt": str(saved.get("assistant_system_prompt", get_assistant_system_prompt()) or ""),
         "solar_prediction_lat": float(saved.get("solar_prediction_lat", get_solar_prediction_lat())),
         "solar_prediction_lon": float(saved.get("solar_prediction_lon", get_solar_prediction_lon())),
         "solar_prediction_dec": int(saved.get("solar_prediction_dec", get_solar_prediction_dec())),
@@ -2217,6 +2760,55 @@ def _settings_values(overrides: dict | None = None) -> dict:
     if overrides:
         values.update(overrides)
     return values
+
+
+# Keys for partial form saves (integration vs automations pages)
+_SETTINGS_INTEGRATION_KEYS = frozenset({
+    "solis_host", "solis_port", "solis_modbus_unit",
+    "solark1_host", "solark1_port", "solark1_http_port", "solark1_modbus_unit", "solark2_modbus_unit",
+    "esphome_solark_host", "esphome_solark_port", "solark_mqtt_topic",
+    "ha_url", "ha_token",
+    "solis1_battery_kwh", "solis2_battery_kwh", "solark1_battery_kwh",
+    "mqtt_host", "mqtt_port",
+    "tesla_source_enabled", "tesla_source_type", "tesla_source_host", "tesla_source_port",
+    "tesla_source_base_path", "tesla_source_info_topic", "tesla_source_spec_topic", "tesla_source_balancing_topic",
+    "ruxiu_source_enabled", "ruxiu_source_type", "ruxiu_source_host", "ruxiu_source_port",
+    "ruxiu_source_base_path", "ruxiu_source_info_topic", "ruxiu_source_spec_topic", "ruxiu_source_balancing_topic",
+    "tabuchi_today_pv_kwh",
+    "influx_url", "influx_token", "influx_bucket", "influx_org",
+})
+_SETTINGS_AUTOMATION_KEYS = frozenset({
+    "solark_soc_automation_enabled", "solark_soc_scale", "solark_soc_offset_pct",
+    "ha_restore_on_batt_draw_enabled", "ha_restore_batt_draw_power_threshold_w", "ha_restore_batt_draw_hold_sec",
+    "solis_power_controls_enabled", "solis_offgrid_automation_enabled", "solis_offgrid_enter_solark_soc_pct",
+    "solis_manual_offgrid_auto_release_enabled", "solis_manual_offgrid_release_pv_w", "solis_manual_offgrid_release_solark_soc_pct",
+    "solis_tou_charge_automation_enabled", "solis_tou_charge_available_pv_w", "solis_tou_charge_amps", "solis_tou_discharge_amps",
+    "solark_full_soc_pct", "solis_full_soc_pct", "solis_curtail_when_both_full", "solis_grid_charge_when_solark_full",
+    "solis_tou_charge_start_h", "solis_tou_charge_start_m", "solis_tou_charge_end_h", "solis_tou_charge_end_m",
+    "solis_tou_discharge_start_h", "solis_tou_discharge_start_m", "solis_tou_discharge_end_h", "solis_tou_discharge_end_m",
+    "solis_tou_charge_ramp_enabled", "solis_tou_charge_amps_min", "solis_tou_charge_amps_max",
+    "solis_tou_charge_ramp_pv_threshold_w", "solis_tou_charge_ramp_pv_max_w",
+    "safe_window_start_h", "safe_window_start_m", "safe_window_ensure_ha_on", "safe_window_allow_solis_grid_charge",
+    "iq8_max_peak_kw", "mseries_max_peak_kw", "tabuchi_max_peak_kw",
+    "solis_discharge_ramp_enabled", "solark_soc_discharge_ramp_threshold_pct", "solark_soc_discharge_ramp_floor_pct",
+    "solis_tou_discharge_amps_min", "solis_tou_discharge_amps_max",
+    "solis_discharge_allow_export", "solis_discharge_export_cap_w", "solis_discharge_export_mode",
+    "solis_discharge_allow_grid_import", "solis_discharge_grid_import_max_w", "solis_discharge_grid_import_mode",
+    "solis_discharge_load_subsidy_pct", "solis_discharge_load_subsidy_enabled", "solis_discharge_prioritize_higher_soc",
+    "solar_llm_automations_enabled", "assistant_system_prompt", "solar_forecast_api_enabled", "solar_prediction_enabled",
+    "solar_prediction_lat", "solar_prediction_lon", "solar_prediction_dec", "solar_prediction_az", "solar_prediction_kwp",
+})
+
+
+def _settings_form_overrides_for_page(form, keys: frozenset) -> dict:
+    """Extract form values for the given keys only. Use with merge: {**load_settings(), **this}."""
+    full = _settings_form_overrides(form)
+    out = {k: full[k] for k in keys if k in full}
+    if "ha_token" in out and (out.get("ha_token") or "").strip() == "":
+        del out["ha_token"]  # preserve existing token when field left empty
+    if "influx_token" in out and (out.get("influx_token") or "").strip() == "":
+        del out["influx_token"]  # preserve existing token when field left empty
+    return out
 
 
 def _settings_form_overrides(form) -> dict:
@@ -2250,6 +2842,44 @@ def _settings_form_overrides(form) -> dict:
         "solis_tou_charge_available_pv_w": (form.get("solis_tou_charge_available_pv_w") or "").strip(),
         "solis_tou_charge_amps": (form.get("solis_tou_charge_amps") or "").strip(),
         "solis_tou_discharge_amps": (form.get("solis_tou_discharge_amps") or "").strip(),
+        "solark_full_soc_pct": (form.get("solark_full_soc_pct") or "").strip(),
+        "solis_full_soc_pct": (form.get("solis_full_soc_pct") or "").strip(),
+        "solis_curtail_when_both_full": _bool_from_form(form, "solis_curtail_when_both_full"),
+        "solis_grid_charge_when_solark_full": _bool_from_form(form, "solis_grid_charge_when_solark_full"),
+        "solis_tou_charge_start_h": (form.get("solis_tou_charge_start_h") or "").strip(),
+        "solis_tou_charge_start_m": (form.get("solis_tou_charge_start_m") or "").strip(),
+        "solis_tou_charge_end_h": (form.get("solis_tou_charge_end_h") or "").strip(),
+        "solis_tou_charge_end_m": (form.get("solis_tou_charge_end_m") or "").strip(),
+        "solis_tou_discharge_start_h": (form.get("solis_tou_discharge_start_h") or "").strip(),
+        "solis_tou_discharge_start_m": (form.get("solis_tou_discharge_start_m") or "").strip(),
+        "solis_tou_discharge_end_h": (form.get("solis_tou_discharge_end_h") or "").strip(),
+        "solis_tou_discharge_end_m": (form.get("solis_tou_discharge_end_m") or "").strip(),
+        "solis_tou_charge_ramp_enabled": _bool_from_form(form, "solis_tou_charge_ramp_enabled"),
+        "solis_tou_charge_amps_min": (form.get("solis_tou_charge_amps_min") or "").strip(),
+        "solis_tou_charge_amps_max": (form.get("solis_tou_charge_amps_max") or "").strip(),
+        "solis_tou_charge_ramp_pv_threshold_w": (form.get("solis_tou_charge_ramp_pv_threshold_w") or "").strip(),
+        "solis_tou_charge_ramp_pv_max_w": (form.get("solis_tou_charge_ramp_pv_max_w") or "").strip(),
+        "safe_window_start_h": (form.get("safe_window_start_h") or "").strip(),
+        "safe_window_start_m": (form.get("safe_window_start_m") or "").strip(),
+        "safe_window_ensure_ha_on": _bool_from_form(form, "safe_window_ensure_ha_on"),
+        "safe_window_allow_solis_grid_charge": _bool_from_form(form, "safe_window_allow_solis_grid_charge"),
+        "iq8_max_peak_kw": (form.get("iq8_max_peak_kw") or "").strip(),
+        "mseries_max_peak_kw": (form.get("mseries_max_peak_kw") or "").strip(),
+        "tabuchi_max_peak_kw": (form.get("tabuchi_max_peak_kw") or "").strip(),
+        "solis_discharge_ramp_enabled": _bool_from_form(form, "solis_discharge_ramp_enabled"),
+        "solark_soc_discharge_ramp_threshold_pct": (form.get("solark_soc_discharge_ramp_threshold_pct") or "").strip(),
+        "solark_soc_discharge_ramp_floor_pct": (form.get("solark_soc_discharge_ramp_floor_pct") or "").strip(),
+        "solis_tou_discharge_amps_min": (form.get("solis_tou_discharge_amps_min") or "").strip(),
+        "solis_tou_discharge_amps_max": (form.get("solis_tou_discharge_amps_max") or "").strip(),
+        "solis_discharge_allow_export": _bool_from_form(form, "solis_discharge_allow_export"),
+        "solis_discharge_export_cap_w": (form.get("solis_discharge_export_cap_w") or "").strip(),
+        "solis_discharge_export_mode": (form.get("solis_discharge_export_mode") or "controlled").strip().lower(),
+        "solis_discharge_allow_grid_import": _bool_from_form(form, "solis_discharge_allow_grid_import"),
+        "solis_discharge_grid_import_max_w": (form.get("solis_discharge_grid_import_max_w") or "").strip(),
+        "solis_discharge_grid_import_mode": (form.get("solis_discharge_grid_import_mode") or "auto").strip().lower(),
+        "solis_discharge_load_subsidy_pct": (form.get("solis_discharge_load_subsidy_pct") or "").strip(),
+        "solis_discharge_load_subsidy_enabled": _bool_from_form(form, "solis_discharge_load_subsidy_enabled"),
+        "solis_discharge_prioritize_higher_soc": _bool_from_form(form, "solis_discharge_prioritize_higher_soc"),
         "ha_url": (form.get("ha_url") or "").strip(),
         "ha_token": (form.get("ha_token") or "").strip(),
         "tesla_source_enabled": _bool_from_form(form, "tesla_source_enabled"),
@@ -2269,12 +2899,17 @@ def _settings_form_overrides(form) -> dict:
         "ruxiu_source_spec_topic": (form.get("ruxiu_source_spec_topic") or "").strip(),
         "ruxiu_source_balancing_topic": (form.get("ruxiu_source_balancing_topic") or "").strip(),
         "tabuchi_today_pv_kwh": (form.get("tabuchi_today_pv_kwh") or "").strip(),
+        "influx_url": (form.get("influx_url") or "").strip(),
+        "influx_token": (form.get("influx_token") or "").strip(),
+        "influx_bucket": (form.get("influx_bucket") or "").strip(),
+        "influx_org": (form.get("influx_org") or "").strip(),
         "solis1_battery_kwh": (form.get("solis1_battery_kwh") or "").strip(),
         "solis2_battery_kwh": (form.get("solis2_battery_kwh") or "").strip(),
         "solark1_battery_kwh": (form.get("solark1_battery_kwh") or "").strip(),
         "solar_forecast_api_enabled": _bool_from_form(form, "solar_forecast_api_enabled"),
         "solar_prediction_enabled": _bool_from_form(form, "solar_prediction_enabled"),
         "solar_llm_automations_enabled": _bool_from_form(form, "solar_llm_automations_enabled"),
+        "assistant_system_prompt": (form.get("assistant_system_prompt") or "").strip(),
         "solar_prediction_lat": (form.get("solar_prediction_lat") or "").strip(),
         "solar_prediction_lon": (form.get("solar_prediction_lon") or "").strip(),
         "solar_prediction_dec": (form.get("solar_prediction_dec") or "").strip(),
@@ -2283,8 +2918,9 @@ def _settings_form_overrides(form) -> dict:
     }
 
 
-def _validate_settings(form) -> dict:
-    overrides = _settings_form_overrides(form)
+def _validate_settings(form=None, *, overrides: dict | None = None) -> dict:
+    if overrides is None:
+        overrides = _settings_form_overrides(form)
     data = {
         "solis_host": _validate_host(overrides["solis_host"], "Solis IP / host"),
         "solis_port": _validate_port(overrides["solis_port"], "Solis port", default=502),
@@ -2362,10 +2998,48 @@ def _validate_settings(form) -> dict:
         "solis_tou_discharge_amps": _validate_float(
             overrides["solis_tou_discharge_amps"],
             "Solis TOU discharge amps",
-            default=10.0,
+            default=1.0,
             min_val=0.0,
             max_val=70.0,
         ),
+        "solark_full_soc_pct": _validate_float(overrides["solark_full_soc_pct"], "Solark full SOC (%)", default=98.0, min_val=0.0, max_val=100.0),
+        "solis_full_soc_pct": _validate_float(overrides["solis_full_soc_pct"], "Solis full SOC (%)", default=95.0, min_val=0.0, max_val=100.0),
+        "solis_curtail_when_both_full": overrides["solis_curtail_when_both_full"],
+        "solis_grid_charge_when_solark_full": overrides["solis_grid_charge_when_solark_full"],
+        "solis_tou_charge_start_h": int(_validate_float(overrides["solis_tou_charge_start_h"], "TOU charge start hour", default=7, min_val=0, max_val=23)),
+        "solis_tou_charge_start_m": int(_validate_float(overrides["solis_tou_charge_start_m"], "TOU charge start minute", default=0, min_val=0, max_val=59)),
+        "solis_tou_charge_end_h": int(_validate_float(overrides["solis_tou_charge_end_h"], "TOU charge end hour", default=19, min_val=0, max_val=23)),
+        "solis_tou_charge_end_m": int(_validate_float(overrides["solis_tou_charge_end_m"], "TOU charge end minute", default=0, min_val=0, max_val=59)),
+        "solis_tou_discharge_start_h": int(_validate_float(overrides["solis_tou_discharge_start_h"], "TOU discharge start hour", default=19, min_val=0, max_val=23)),
+        "solis_tou_discharge_start_m": int(_validate_float(overrides["solis_tou_discharge_start_m"], "TOU discharge start minute", default=1, min_val=0, max_val=59)),
+        "solis_tou_discharge_end_h": int(_validate_float(overrides["solis_tou_discharge_end_h"], "TOU discharge end hour", default=6, min_val=0, max_val=23)),
+        "solis_tou_discharge_end_m": int(_validate_float(overrides["solis_tou_discharge_end_m"], "TOU discharge end minute", default=0, min_val=0, max_val=59)),
+        "solis_tou_charge_ramp_enabled": overrides["solis_tou_charge_ramp_enabled"],
+        "solis_tou_charge_amps_min": _validate_float(overrides["solis_tou_charge_amps_min"], "TOU charge amps min", default=10.0, min_val=0.0, max_val=70.0),
+        "solis_tou_charge_amps_max": _validate_float(overrides["solis_tou_charge_amps_max"], "TOU charge amps max", default=52.0, min_val=0.0, max_val=70.0),
+        "solis_tou_charge_ramp_pv_threshold_w": _validate_float(overrides["solis_tou_charge_ramp_pv_threshold_w"], "Charge ramp PV threshold (W)", default=1000.0, min_val=0.0, max_val=100000.0),
+        "solis_tou_charge_ramp_pv_max_w": _validate_float(overrides["solis_tou_charge_ramp_pv_max_w"], "Charge ramp PV max (W)", default=8000.0, min_val=0.0, max_val=100000.0),
+        "safe_window_start_h": int(_validate_float(overrides["safe_window_start_h"], "Safe window start hour", default=7, min_val=0, max_val=23)),
+        "safe_window_start_m": int(_validate_float(overrides["safe_window_start_m"], "Safe window start minute", default=0, min_val=0, max_val=59)),
+        "safe_window_ensure_ha_on": overrides["safe_window_ensure_ha_on"],
+        "safe_window_allow_solis_grid_charge": overrides["safe_window_allow_solis_grid_charge"],
+        "iq8_max_peak_kw": _validate_float(overrides["iq8_max_peak_kw"], "IQ8 max peak (kW)", default=6.5, min_val=0.0, max_val=100.0),
+        "mseries_max_peak_kw": _validate_float(overrides["mseries_max_peak_kw"], "M-series max peak (kW)", default=2.5, min_val=0.0, max_val=100.0),
+        "tabuchi_max_peak_kw": _validate_float(overrides["tabuchi_max_peak_kw"], "Tabuchi max peak (kW)", default=3.0, min_val=0.0, max_val=100.0),
+        "solis_discharge_ramp_enabled": overrides["solis_discharge_ramp_enabled"],
+        "solark_soc_discharge_ramp_threshold_pct": _validate_float(overrides["solark_soc_discharge_ramp_threshold_pct"], "Discharge ramp Solark SOC threshold (%)", default=50.0, min_val=0.0, max_val=100.0),
+        "solark_soc_discharge_ramp_floor_pct": _validate_float(overrides["solark_soc_discharge_ramp_floor_pct"], "Discharge ramp Solark SOC floor (%)", default=30.0, min_val=0.0, max_val=100.0),
+        "solis_tou_discharge_amps_min": _validate_float(overrides["solis_tou_discharge_amps_min"], "TOU discharge amps min", default=1.0, min_val=0.0, max_val=70.0),
+        "solis_tou_discharge_amps_max": _validate_float(overrides["solis_tou_discharge_amps_max"], "TOU discharge amps max", default=15.0, min_val=0.0, max_val=70.0),
+        "solis_discharge_allow_export": overrides["solis_discharge_allow_export"],
+        "solis_discharge_export_cap_w": _validate_float(overrides["solis_discharge_export_cap_w"], "Discharge export cap (W)", default=0.0, min_val=0.0, max_val=50000.0),
+        "solis_discharge_export_mode": overrides["solis_discharge_export_mode"] if overrides["solis_discharge_export_mode"] in ("zero", "controlled", "full") else "controlled",
+        "solis_discharge_allow_grid_import": overrides["solis_discharge_allow_grid_import"],
+        "solis_discharge_grid_import_max_w": _validate_float(overrides["solis_discharge_grid_import_max_w"], "Discharge grid import max (W)", default=0.0, min_val=0.0, max_val=50000.0),
+        "solis_discharge_grid_import_mode": overrides["solis_discharge_grid_import_mode"] if overrides["solis_discharge_grid_import_mode"] in ("off", "auto", "target") else "auto",
+        "solis_discharge_load_subsidy_pct": _validate_float(overrides["solis_discharge_load_subsidy_pct"], "Load subsidy (%)", default=50.0, min_val=0.0, max_val=100.0),
+        "solis_discharge_load_subsidy_enabled": overrides["solis_discharge_load_subsidy_enabled"],
+        "solis_discharge_prioritize_higher_soc": overrides.get("solis_discharge_prioritize_higher_soc", True),
         "tesla_source_enabled": overrides["tesla_source_enabled"],
         "tesla_source_type": _validate_source_type(overrides["tesla_source_type"], "Tesla source mode"),
         "tesla_source_host": _validate_host(overrides["tesla_source_host"], "Tesla direct HTTP host", allow_empty=True),
@@ -2383,12 +3057,16 @@ def _validate_settings(form) -> dict:
         "ruxiu_source_spec_topic": _validate_topic(overrides["ruxiu_source_spec_topic"], "Ruxiu MQTT cell topic", allow_empty=True),
         "ruxiu_source_balancing_topic": _validate_topic(overrides["ruxiu_source_balancing_topic"], "Ruxiu MQTT balancing topic", allow_empty=True),
         "tabuchi_today_pv_kwh": _validate_float(overrides["tabuchi_today_pv_kwh"], "Tabuchi today PV (kWh)", default=3.0, min_val=0, max_val=100),
+        "influx_url": str(overrides.get("influx_url", "") or "").strip() or "http://localhost:8086",
+        "influx_bucket": str(overrides.get("influx_bucket", "") or "").strip() or "solar",
+        "influx_org": str(overrides.get("influx_org", "") or "").strip(),
         "solis1_battery_kwh": _validate_float(overrides["solis1_battery_kwh"], "Solis1 battery (kWh)", default=48.0, min_val=1, max_val=200),
         "solis2_battery_kwh": _validate_float(overrides["solis2_battery_kwh"], "Solis2 battery (kWh)", default=48.0, min_val=1, max_val=200),
         "solark1_battery_kwh": _validate_float(overrides["solark1_battery_kwh"], "Solark1 battery (kWh)", default=64.0, min_val=1, max_val=200),
         "solar_forecast_api_enabled": overrides["solar_forecast_api_enabled"],
         "solar_prediction_enabled": overrides["solar_prediction_enabled"],
         "solar_llm_automations_enabled": overrides["solar_llm_automations_enabled"],
+        "assistant_system_prompt": str(overrides.get("assistant_system_prompt", "") or ""),
         "solar_prediction_lat": _validate_float(overrides["solar_prediction_lat"], "Latitude", default=40.7, min_val=-90, max_val=90),
         "solar_prediction_lon": _validate_float(overrides["solar_prediction_lon"], "Longitude", default=-74.0, min_val=-180, max_val=180),
         "solar_prediction_dec": int(_validate_float(overrides["solar_prediction_dec"], "Panel tilt (deg)", default=45, min_val=0, max_val=90)),
@@ -2400,6 +3078,9 @@ def _validate_settings(form) -> dict:
     ha_token_raw = (overrides.get("ha_token") or "").strip()
     if ha_token_raw:
         data["ha_token"] = ha_token_raw
+    influx_token_raw = (overrides.get("influx_token") or "").strip()
+    if influx_token_raw:
+        data["influx_token"] = influx_token_raw
 
     if data["tesla_source_enabled"] and data["tesla_source_type"] == "mqtt":
         if not data["tesla_source_info_topic"]:
@@ -2450,7 +3131,7 @@ def _format_endpoint_text(source: dict) -> str:
 def _load_battery_source_statuses():
     try:
         req = UrllibRequest("http://127.0.0.1:3008/api/battery-sources", headers={"User-Agent": "solis-s6-ui"})
-        with urlopen(req, timeout=2.5) as resp:
+        with urlopen(req, timeout=1.2) as resp:
             payload = json.loads(resp.read().decode("utf-8", "replace"))
         sources = payload.get("sources") or {}
         rows = []
@@ -2477,10 +3158,17 @@ def _load_battery_source_statuses():
         return [], f"Could not load battery-source status from :3008: {exc}"
 
 
-def _build_settings_context(request: Request, *, form_overrides: dict | None = None, flash_error: str | None = None) -> dict:
+def _build_settings_context(
+    request: Request,
+    *,
+    form_overrides: dict | None = None,
+    flash_error: str | None = None,
+    page: str = "integration",
+) -> dict:
+    """Build context for settings pages. page='integration' skips solis_power_status (Modbus); page='automations' skips battery_source_statuses (HTTP)."""
     values = _settings_values(form_overrides)
-    solis_power_status = _get_solis_power_status()
-    statuses, statuses_error = _load_battery_source_statuses()
+    solis_power_status = _get_solis_power_status() if page == "automations" else {}
+    statuses, statuses_error = ([], None) if page == "automations" else _load_battery_source_statuses()
     mqtt_runtime_restart_pending = (
         (values.get("mqtt_host") or "") != (MQTT_HOST or "")
         or int(values.get("mqtt_port") or 0) != int(MQTT_PORT or 0)
@@ -2510,46 +3198,73 @@ async def api_get_settings():
 
 @app.get("/settings", response_class=HTMLResponse)
 async def settings_page(request: Request):
-    return templates.TemplateResponse("settings.html", _build_settings_context(request))
+    """Integration settings (endpoints, battery sources)."""
+    return templates.TemplateResponse("settings_integration.html", _build_settings_context(request, page="integration"))
 
 
-@app.post("/settings")
-async def settings_save(request: Request):
-    """Save integration settings with validation; render errors inline for operators."""
+@app.get("/settings/automations", response_class=HTMLResponse)
+async def settings_automations_page(request: Request):
+    """Automations settings (coordinator, LLM, forecast)."""
+    return templates.TemplateResponse("settings_automations.html", _build_settings_context(request, page="automations"))
+
+
+@app.post("/settings/integration")
+async def settings_integration_save(request: Request):
+    """Save integration settings only."""
     form = await request.form()
     try:
-        data = _validate_settings(form)
+        overrides = {**load_settings(), **_settings_form_overrides_for_page(form, _SETTINGS_INTEGRATION_KEYS)}
+        data = _validate_settings(overrides=overrides)
+        current = load_settings()
+        current.update(data)
+        current.pop("solis_restore_self_use_available_pv_w", None)
+        save_settings(current)
+        return RedirectResponse(url="/settings?saved=1", status_code=303)
+    except ValueError as exc:
+        logger.warning("settings integration save validation: %s", exc)
+        ctx = _build_settings_context(request, form_overrides=_settings_form_overrides_for_page(form, _SETTINGS_INTEGRATION_KEYS), flash_error=str(exc), page="integration")
+        return templates.TemplateResponse("settings_integration.html", ctx, status_code=400)
+    except Exception as exc:
+        logger.exception("settings integration save: %s", exc)
+        ctx = _build_settings_context(request, flash_error=str(exc), page="integration")
+        return templates.TemplateResponse("settings_integration.html", ctx, status_code=500)
+
+
+@app.post("/settings/automations")
+async def settings_automations_save(request: Request):
+    """Save automations settings only."""
+    form = await request.form()
+    try:
+        overrides = {**load_settings(), **_settings_form_overrides_for_page(form, _SETTINGS_AUTOMATION_KEYS)}
+        data = _validate_settings(overrides=overrides)
         current = load_settings()
         current.update(data)
         current.pop("solis_restore_self_use_available_pv_w", None)
         save_settings(current)
         await _sync_llm_automation_task()
-        return RedirectResponse(url="/settings?saved=1", status_code=303)
+        return RedirectResponse(url="/settings/automations?saved=1", status_code=303)
     except ValueError as exc:
-        logger.warning("settings save validation: %s", exc)
-        ctx = _build_settings_context(request, form_overrides=_settings_form_overrides(form), flash_error=str(exc))
-        return templates.TemplateResponse("settings.html", ctx, status_code=400)
+        logger.warning("settings automations save validation: %s", exc)
+        ctx = _build_settings_context(request, form_overrides=_settings_form_overrides_for_page(form, _SETTINGS_AUTOMATION_KEYS), flash_error=str(exc), page="automations")
+        return templates.TemplateResponse("settings_automations.html", ctx, status_code=400)
     except Exception as exc:
-        logger.exception("settings save: %s", exc)
-        ctx = _build_settings_context(
-            request,
-            form_overrides=_settings_form_overrides(form),
-            flash_error=f"Save failed: {exc}",
-        )
-        return templates.TemplateResponse("settings.html", ctx, status_code=500)
+        logger.exception("settings automations save: %s", exc)
+        ctx = _build_settings_context(request, flash_error=str(exc), page="automations")
+        return templates.TemplateResponse("settings_automations.html", ctx, status_code=500)
 
 
 @app.post("/settings/solis-action")
 async def settings_solis_action(request: Request):
-    """Run a small manual Solis action from the Settings page."""
+    """Run a small manual Solis action from the Automations page."""
+    redirect_base = "/settings/automations"
     try:
         form = await request.form()
         action = (form.get("action") or "").strip().lower()
         if action == "clear_manual_override":
             _clear_solis_manual_override()
-            return RedirectResponse(url="/settings?saved=1&solis_action=clear_manual_override", status_code=303)
+            return RedirectResponse(url=f"{redirect_base}?saved=1&solis_action=clear_manual_override", status_code=303)
         if action != "off_grid_now":
-            return RedirectResponse(url="/settings?error=invalid_action", status_code=303)
+            return RedirectResponse(url=f"{redirect_base}?error=invalid_action", status_code=303)
         loop = asyncio.get_event_loop()
         timeout = _control_write_timeout("storage", _STORAGE_OFF_GRID_BIT, True)
         ok, error = await asyncio.wait_for(
@@ -2558,14 +3273,14 @@ async def settings_solis_action(request: Request):
         )
         if ok:
             _save_solis_manual_override("off_grid", source="settings")
-            return RedirectResponse(url="/settings?saved=1&solis_action=off_grid_now", status_code=303)
-        return RedirectResponse(url=f"/settings?error={error or 'write_failed'}", status_code=303)
+            return RedirectResponse(url=f"{redirect_base}?saved=1&solis_action=off_grid_now", status_code=303)
+        return RedirectResponse(url=f"{redirect_base}?error={error or 'write_failed'}", status_code=303)
     except asyncio.TimeoutError:
         logger.warning("settings solis action timed out")
-        return RedirectResponse(url="/settings?error=timeout", status_code=303)
+        return RedirectResponse(url=f"{redirect_base}?error=timeout", status_code=303)
     except Exception as exc:
         logger.exception("settings solis action: %s", exc)
-        return RedirectResponse(url="/settings?error=server_error", status_code=303)
+        return RedirectResponse(url=f"{redirect_base}?error=server_error", status_code=303)
 
 
 @app.post("/settings/automation")
@@ -2808,6 +3523,123 @@ async def api_status():
     }
 
 
+@app.get("/api/influx-health")
+async def api_influx_health():
+    """Proxy Influx 'last seen' status per measurement. Returns ages in seconds or error."""
+    sources = {}
+    token = get_influx_token()
+    if not token:
+        return JSONResponse(
+            {"ok": False, "error": "INFLUX_TOKEN not configured", "sources": sources},
+            status_code=503,
+        )
+    try:
+        from influxdb_client import InfluxDBClient
+    except ImportError:
+        return JSONResponse(
+            {"ok": False, "error": "influxdb_client not installed", "sources": {}},
+            status_code=503,
+        )
+    url = get_influx_url()
+    bucket = get_influx_bucket()
+    org = get_influx_org()
+    now = time.time()
+    sources = {}
+    try:
+        client = InfluxDBClient(url=url, token=token, org=org)
+        query_api = client.query_api()
+        for measurement in ("solis", "solark", "envoy_aggregate", "envoy_inverter", "battery_emulator"):
+            flux = f'from(bucket:"{bucket}") |> range(start: -1h) |> filter(fn: (r) => r["_measurement"] == "{measurement}") |> last()'
+            try:
+                tables = query_api.query(flux)
+                last_ts = None
+                for table in tables:
+                    for record in table.records:
+                        t = record.get_time()
+                        if t:
+                            last_ts = t.timestamp()
+                            break
+                if last_ts is not None:
+                    sources[measurement] = {"last_seen_s": round(now - last_ts, 1), "ok": (now - last_ts) < 120}
+                else:
+                    sources[measurement] = {"last_seen_s": None, "ok": False}
+            except Exception as e:
+                sources[measurement] = {"error": str(e), "ok": False}
+        client.close()
+        any_ok = any(s.get("ok") for s in sources.values())
+        return {"ok": any_ok, "sources": sources}
+    except Exception as e:
+        return JSONResponse(
+            {"ok": False, "error": str(e), "sources": sources},
+            status_code=502,
+        )
+
+
+_RANGE_TO_FLUX = {"1h": "-1h", "6h": "-6h", "24h": "-24h", "7d": "-7d"}
+
+
+@app.get("/api/influx/query")
+async def api_influx_query(
+    measurement: str = "",
+    field: str = "",
+    tag: str = "",
+    range_id: str = "6h",
+):
+    """Proxy InfluxDB Flux query for /data page charts. Returns {times, values, series_labels} or error."""
+    if not measurement or not field:
+        return JSONResponse(
+            {"ok": False, "error": "measurement and field required"},
+            status_code=400,
+        )
+    token = get_influx_token()
+    if not token:
+        return JSONResponse(
+            {"ok": False, "error": "INFLUX_TOKEN not configured"},
+            status_code=503,
+        )
+    try:
+        from influxdb_client import InfluxDBClient
+    except ImportError:
+        return JSONResponse(
+            {"ok": False, "error": "influxdb_client not installed"},
+            status_code=503,
+        )
+    flux_range = _RANGE_TO_FLUX.get(range_id, "-6h")
+    url = get_influx_url()
+    bucket = get_influx_bucket()
+    org = get_influx_org()
+    flux = f'from(bucket:"{bucket}") |> range(start: {flux_range}) |> filter(fn: (r) => r["_measurement"] == "{measurement}") |> filter(fn: (r) => r["_field"] == "{field}")'
+    if tag:
+        flux += f' |> filter(fn: (r) => r["{tag.split("=")[0].strip()}"] == "{tag.split("=", 1)[1].strip() if "=" in tag else ""}")'
+    flux += " |> sort(columns: [\"_time\"])"
+    try:
+        client = InfluxDBClient(url=url, token=token, org=org)
+        query_api = client.query_api()
+        tables = query_api.query(flux)
+        series_map: dict[str, list[dict]] = {}
+        for table in tables:
+            for record in table.records:
+                t = record.get_time()
+                ts_str = t.strftime("%Y-%m-%dT%H:%M:%SZ") if t else ""
+                val = record.get_value()
+                tag_parts = [(k, v) for k, v in (record.values or {}).items() if k not in ("_time", "_value", "_field", "_measurement") and not k.startswith("_")]
+                tag_str = ",".join(f"{k}={v}" for k, v in tag_parts)
+                label = tag_str or measurement
+                if label not in series_map:
+                    series_map[label] = []
+                series_map[label].append({"time": ts_str, "value": float(val) if val is not None and isinstance(val, (int, float)) else 0.0})
+        for arr in series_map.values():
+            arr.sort(key=lambda x: x["time"])
+        series_list = [{"label": k, "data": v} for k, v in series_map.items()]
+        client.close()
+        return {"ok": True, "series": series_list}
+    except Exception as e:
+        return JSONResponse(
+            {"ok": False, "error": str(e)},
+            status_code=502,
+        )
+
+
 @app.get("/api/version")
 async def api_version():
     """Return UI version (from VERSION file or SOLIS_UI_VERSION env)."""
@@ -2916,6 +3748,9 @@ async def api_assistant_chat(req: Request):
     first_ent = solis_inverters[0] if solis_inverters else {"data": {}, "ok": False, "ts": 0}
     data = first_ent.get("data", {}) or {}
     solark_data = _enrich_solark_battery_runtime(_solark_cache.get("data", {}) or {}, get_solark1_battery_kwh())
+    power_status = _get_solis_power_status()
+    envoy_data = _envoy_cache.get("data") or {}
+    envoy_agg = {k: {"production_W": v.get("production"), "active_inverters": v.get("active_inverters"), "offline_inverters": v.get("offline_inverters")} for k, v in (envoy_data.items() if isinstance(envoy_data, dict) else []) if k.startswith("envoy") and isinstance(v, dict)}
 
     summary = {
         "question": question,
@@ -2929,6 +3764,25 @@ async def api_assistant_chat(req: Request):
             "data": solark_data,
             "source": _solark_cache.get("source"),
         },
+        "coordinator": {
+            "enabled": power_status.get("enabled"),
+            "state": power_status.get("state"),
+            "owner": power_status.get("owner"),
+            "storage_mode": power_status.get("storage_mode"),
+            "high_soc_curtailment_active": power_status.get("high_soc_curtailment_active"),
+            "manual_override": power_status.get("manual_override"),
+        },
+        "tou": {
+            "charge_start": f"{power_status.get('tou_charge_start_h', 0):02d}:{power_status.get('tou_charge_start_m', 0):02d}",
+            "charge_end": f"{power_status.get('tou_charge_end_h', 0):02d}:{power_status.get('tou_charge_end_m', 0):02d}",
+            "discharge_start": f"{power_status.get('tou_discharge_start_h', 0):02d}:{power_status.get('tou_discharge_start_m', 0):02d}",
+            "discharge_end": f"{power_status.get('tou_discharge_end_h', 0):02d}:{power_status.get('tou_discharge_end_m', 0):02d}",
+            "charge_enabled": power_status.get("tou_charge_enabled"),
+            "charge_amps": power_status.get("tou_charge_amps_setting"),
+            "discharge_amps": power_status.get("tou_discharge_amps_setting"),
+        },
+        "envoy": envoy_agg,
+        "system_prompt": get_assistant_system_prompt(),
     }
 
     try:
@@ -3304,6 +4158,10 @@ def _refresh_envoy_cache() -> None:
         data = _fetch_envoy_data_sync()
         _envoy_cache = {"data": data, "ts": time.time(), "error": None}
         logger.debug("envoy cache refreshed")
+        try:
+            publish_envoy_sensors(data)
+        except Exception as mqtt_e:
+            logger.warning("Envoy MQTT publish failed: %s", mqtt_e)
     except Exception as exc:
         _envoy_cache["error"] = str(exc)
         _envoy_cache["ts"] = time.time()
@@ -3517,11 +4375,24 @@ def _forecast_page_context() -> dict:
     ratelimit = (cached.get("ratelimit") or data.get("ratelimit") or {}) if isinstance(data, dict) else {}
     ts = cached.get("ts", 0)
     last_fetch = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M UTC") if ts else None
+    # Normalize daily_kwh: Forecast.Solar uses date keys; ensure dict and Wh->kWh for display
+    daily_wh = dict(watt_hours_day) if watt_hours_day else {}
+    now = datetime.now(timezone.utc)
+    today_str = now.strftime("%Y-%m-%d")
+    tomorrow_str = (now + timedelta(days=1)).strftime("%Y-%m-%d")
+    today_kwh = (daily_wh.get(today_str) or 0) / 1000.0
+    tomorrow_kwh = (daily_wh.get(tomorrow_str) or 0) / 1000.0
+    if today_kwh == 0 and tomorrow_kwh == 0 and daily_wh:
+        dates = sorted(daily_wh.keys())
+        today_kwh = (daily_wh.get(dates[0]) or 0) / 1000.0
+        tomorrow_kwh = (daily_wh.get(dates[1]) or 0) / 1000.0 if len(dates) > 1 else 0.0
     return {
         "forecast_api_enabled": get_solar_forecast_api_enabled(),
         "solar_prediction_enabled": get_solar_prediction_enabled(),
-        "daily_kwh": dict(watt_hours_day),
-        "hourly_watts": dict(watts),
+        "daily_kwh": daily_wh,
+        "hourly_watts": dict(watts) if watts else {},
+        "today_kwh": today_kwh,
+        "tomorrow_kwh": tomorrow_kwh,
         "last_fetch": last_fetch,
         "error": cached.get("error"),
         "ratelimit": ratelimit,
@@ -3713,6 +4584,11 @@ async def api_curtailment_get():
         "optionB_restore_hold_sec": get_ha_restore_batt_draw_hold_sec(),
         "optionB_hold_elapsed_sec": batt_hold_elapsed_sec,
         "optionB_hold_since_ts": _ha_batt_draw_hold_since,
+    }
+    data["max_peak_kw"] = {
+        "iq8": get_iq8_max_peak_kw(),
+        "mseries": get_mseries_max_peak_kw(),
+        "tabuchi": get_tabuchi_max_peak_kw(),
     }
     return data
 

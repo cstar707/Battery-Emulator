@@ -90,7 +90,7 @@
 
   <div class="card">
     <h2>Solis storage mode (register 43110)</h2>
-    <p class="muted">App-driven work-mode, export, and grid-charge writes are normalized on write: switching to Self-Use / Feed-In / Off-Grid clears stale helper bits such as TOU, allow-grid-charge, and forcecharge-peakshaving so the mode is deterministic. Solis Cloud can still overwrite the same register later.</p>
+    <p class="muted">Toggle one bit at a time. Read → modify bit → write back so other modes are preserved.</p>
     <table style="width:100%; border-collapse: collapse;">
       <tr><th class="muted" style="text-align:left;">Mode</th><th class="muted">On</th><th>Action</th></tr>
       {% set sbits = [

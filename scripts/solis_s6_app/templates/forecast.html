@@ -32,9 +32,16 @@
 </div>
 {% endif %}
 
-{% if forecast_api_enabled and daily_kwh %}
+{% if forecast_api_enabled and (daily_kwh or today_kwh or tomorrow_kwh) %}
 <div class="card">
   <h2>Daily forecast (kWh)</h2>
+  {% if today_kwh or tomorrow_kwh %}
+  <div class="grid2" style="margin-bottom: 1rem;">
+    <div class="kpi"><div class="val">{{ "%.1f" | format(today_kwh) }}</div><div class="unit">Today (kWh)</div></div>
+    <div class="kpi"><div class="val">{{ "%.1f" | format(tomorrow_kwh) }}</div><div class="unit">Tomorrow (kWh)</div></div>
+  </div>
+  {% endif %}
+  {% if daily_kwh %}
   <div class="forecast-daily">
     {% for date, wh in daily_kwh.items() %}
     <div class="forecast-day">
@@ -43,6 +50,7 @@
     </div>
     {% endfor %}
   </div>
+  {% endif %}
   <div class="meta-row">Last fetch: {{ last_fetch or '—' }}{% if ratelimit %} · Rate: {{ ratelimit.get('remaining', '—') }} / {{ ratelimit.get('limit', '—') }} remaining{% endif %}</div>
 </div>
 

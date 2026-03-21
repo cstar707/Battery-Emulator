@@ -13,12 +13,12 @@
 
   <div class="card">
     <h2>Battery (Solis)</h2>
-    <p class="muted" style="margin: 0 0 0.75rem 0;">Remaining = capacity × SOC. +W = discharging (time to empty); −W = charging (time to full).</p>
+    <p class="muted" style="margin: 0 0 0.75rem 0;">Remaining = capacity × SOC. +W = charging (time to full); −W = discharging (time remaining).</p>
     <div class="grid2">
       <div class="kpi"><div class="val" id="gs-battery_soc_pct">{{ data.battery_soc_pct | default(0) | int }}%</div><div class="unit">SOC</div></div>
       <div class="kpi"><div class="val" id="gs-battery_remaining_kWh">{{ "%.2f" | format(data.battery_remaining_kWh | default(0)) }}</div><div class="unit">Remaining kWh</div></div>
-      <div class="kpi"><div class="val" id="gs-battery_runtime_hours">{{ data.battery_runtime_hours | format_runtime_hours }}</div><div class="unit" id="gs-battery_runtime_label">{% if data.battery_runtime_direction == 'charge' %}Time to full{% elif data.battery_runtime_direction == 'discharge' %}Time to empty{% else %}Est. runtime{% endif %}</div></div>
-      <div class="kpi"><div class="val" id="gs-battery_power_W">{% if data.battery_runtime_direction == 'charge' %}+{{ (data.battery_power_W or 0) | int | abs }}{% elif data.battery_runtime_direction == 'discharge' %}−{{ (data.battery_power_W or 0) | int | abs }}{% elif data.battery_runtime_direction %}0{% else %}—{% endif %}</div><div class="unit">Battery W</div></div>
+      <div class="kpi"><div class="val" id="gs-battery_runtime_hours">{% if data.battery_runtime_hours is not none %}{{ "%.2f" | format(data.battery_runtime_hours) }}{% else %}—{% endif %}</div><div class="unit" id="gs-battery_runtime_label">{% if data.battery_runtime_direction == 'charge' %}Time to full (h){% elif data.battery_runtime_direction == 'discharge' %}Time remaining (h){% else %}Est. runtime (h){% endif %}</div></div>
+      <div class="kpi"><div class="val" id="gs-battery_power_W">{{ data.battery_power_W | default(0) | int }}</div><div class="unit">Battery W</div></div>
     </div>
   </div>
 
@@ -26,15 +26,6 @@
 
   <script>
   (function() {
-    function formatRuntimeHours(h) {
-      if (h == null) return '—';
-      h = Number(h);
-      if (isNaN(h) || h < 0) return '—';
-      if (h < 24) return h.toFixed(1) + ' h';
-      var d = Math.floor(h / 24);
-      var r = h % 24;
-      return (r < 0.05) ? (d + ' d') : (d + ' d ' + r.toFixed(1) + ' h');
-    }
     function refresh() {
       fetch('/api/dashboard').then(function(r) { return r.json(); }).then(function(res) {
         var d = res.data || {};
@@ -44,13 +35,11 @@
         document.getElementById('gs-total-today').textContent = (gs.total_today_pv_kWh != null) ? Number(gs.total_today_pv_kWh).toFixed(2) : '—';
         document.getElementById('gs-battery_soc_pct').textContent = (d.battery_soc_pct != null) ? (Math.round(d.battery_soc_pct) + '%') : '—';
         document.getElementById('gs-battery_remaining_kWh').textContent = (d.battery_remaining_kWh != null) ? Number(d.battery_remaining_kWh).toFixed(2) : '—';
-        document.getElementById('gs-battery_runtime_hours').textContent = formatRuntimeHours(d.battery_runtime_hours);
+        document.getElementById('gs-battery_runtime_hours').textContent = (d.battery_runtime_hours != null) ? Number(d.battery_runtime_hours).toFixed(2) : '—';
         var dir = d.battery_runtime_direction;
         var labelEl = document.getElementById('gs-battery_runtime_label');
-        if (labelEl) labelEl.textContent = (dir === 'charge') ? 'Time to full' : (dir === 'discharge') ? 'Time to empty' : 'Est. runtime';
-        var w = d.battery_power_W;
-        var pw = (dir === 'charge') ? '+' + Math.round(Math.abs(w || 0)) : (dir === 'discharge') ? '−' + Math.round(Math.abs(w || 0)) : (dir ? '0' : '—');
-        document.getElementById('gs-battery_power_W').textContent = pw;
+        if (labelEl) labelEl.textContent = (dir === 'charge') ? 'Time to full (h)' : (dir === 'discharge') ? 'Time remaining (h)' : 'Est. runtime (h)';
+        document.getElementById('gs-battery_power_W').textContent = (d.battery_power_W != null) ? String(Math.round(d.battery_power_W)) : '—';
         if (res.ts) document.getElementById('gs-updated').textContent = new Date(res.ts * 1000).toLocaleTimeString();
       }).catch(function() {});
     }
