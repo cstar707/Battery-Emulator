@@ -1,0 +1,420 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block head %}
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+{% endblock %}
+{% block content %}
+  {% if flash_saved %}
+  <div class="card flash flash-ok" role="alert">Setting saved. State may take a few seconds to update.</div>
+  {% endif %}
+  {% if flash_automation %}
+  <div class="card flash flash-ok" role="alert">Automation turned {{ flash_automation }}.</div>
+  {% endif %}
+  {% if flash_error %}
+  <div class="card flash flash-err" role="alert">Error: {% if flash_error == 'write_failed' %}Modbus write failed (check inverter connection).{% elif flash_error == 'timeout' %}Inverter did not respond in time.{% elif flash_error == 'server_error' %}Server error. Try again.{% elif flash_error == 'invalid_bit' %}Invalid setting.{% elif flash_error == 'off_grid_policy' %}Off-Grid keeps Export and Grid Charge off.{% else %}{{ flash_error }}{% endif %}</div>
+  {% endif %}
+  <div class="card">
+    <h2>Status</h2>
+    <p id="status-msg"><strong>Solis:</strong> {% if ok %}<span class="status-ok">Connected</span>{% else %}<span class="status-fail">Not connected — check Modbus</span>{% endif %}
+    <strong style="margin-left: 1rem;">Solark:</strong> {% if solark_ok %}<span class="status-ok">Connected</span>{% if solark_source %} <span class="muted">({{ solark_source }})</span>{% endif %}{% else %}<span class="muted">No data</span>{% if solark_last_error %} <span class="muted">— {{ solark_last_error }}</span>{% endif %}{% endif %}</p>
+    <p class="muted" style="margin: 0.5rem 0 0 0;">Last updated: <span id="last-updated">{{ last_updated | default('—') }}</span> <button type="button" class="btn" id="btn-refresh" style="margin-left:0.5rem; padding:0.25rem 0.5rem; font-size:0.85rem;">Refresh</button></p>
+  </div>
+
+  <div class="card" style="border-left: 4px solid var(--orange);">
+    <h2>Solark {% if solark_source %}<span class="muted">({{ solark_source }})</span>{% else %}<span class="muted">(HTTP or MQTT)</span>{% endif %}</h2>
+    {% if not solark_ok and solark_last_error %}
+    <p class="muted" style="margin: 0 0 0.75rem 0;">Last error: {{ solark_last_error }}</p>
+    {% endif %}
+
+    <p class="muted" style="margin: 0 0 0.4rem 0; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">PV</p>
+    <div class="grid2" style="margin-bottom: 1rem;">
+      <div class="kpi"><div class="val" id="kpi-solark_pv_power_W">{{ solark_data.pv_power_W | default(solark_data.total_pv_power_W) | default('—') }}</div><div class="unit">Total Solar W</div></div>
+      <div class="kpi"><div class="val" id="kpi-solark_pv1_power_W">{{ solark_data.pv1_power_W | default('—') }}</div><div class="unit">String 1 W</div></div>
+      <div class="kpi"><div class="val" id="kpi-solark_pv2_power_W">{{ solark_data.pv2_power_W | default('—') }}</div><div class="unit">String 2 W</div></div>
+    </div>
+    <p class="muted" style="margin: 0 0 0.4rem 0; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">Power (AC)</p>
+    <div class="grid2" style="margin-bottom: 1rem;">
+      <div class="kpi"><div class="val" id="kpi-solark_grid_ct_power_W">{{ solark_data.grid_ct_power_W if solark_data.grid_ct_power_W is defined and solark_data.grid_ct_power_W is not none else '—' }}</div><div class="unit">Grid CT W</div></div>
+      <div class="kpi"><div class="val" id="kpi-solark_inverter_power_W">{{ solark_data.inverter_power_W if solark_data.inverter_power_W is defined and solark_data.inverter_power_W is not none else '—' }}</div><div class="unit">Inverter W</div></div>
+      <div class="kpi"><div class="val" id="kpi-solark_inverter_current_A">{% if solark_data.inverter_current_dA is defined and solark_data.inverter_current_dA is not none %}{% set a = (solark_data.inverter_current_dA / 10) %}{% if a > 0 %}+{% endif %}{{ a | round(1) }}{% else %}—{% endif %}</div><div class="unit">Inverter A</div></div>
+    </div>
+    <p class="muted" style="margin: 0 0 0.4rem 0; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">Battery</p>
+    <div class="grid2" style="margin-bottom: 1rem;">
+      <div class="kpi"><div class="val" id="kpi-solark_battery_soc_pct">{% if solark_data.battery_soc_pptt is defined %}{{ (solark_data.battery_soc_pptt / 100) | int }}%{% else %}—{% endif %}</div><div class="unit">SOC</div></div>
+      <div class="kpi"><div class="val" id="kpi-solark_battery_voltage_V">{% if solark_data.battery_voltage_dV is defined %}{{ (solark_data.battery_voltage_dV / 10) | round(1) }}{% else %}—{% endif %}</div><div class="unit">Batt V</div></div>
+      <div class="kpi"><div class="val" id="kpi-solark_battery_current_A">{% if solark_data.battery_current_dA is defined and solark_data.battery_current_dA is not none %}{% set a = (solark_data.battery_current_dA / 10) %}{% if a > 0 %}+{% endif %}{{ a | round(1) }}{% else %}—{% endif %}</div><div class="unit">Batt A</div></div>
+      <div class="kpi"><div class="val" id="kpi-solark_battery_total_power_W">{% set w = solark_data.battery_total_power_W | default(solark_data.battery_power_W) %}{% if w is not none %}{% if w > 0 %}+{% endif %}{{ w | int }}{% else %}—{% endif %}</div><div class="unit">Batt W</div></div>
+      <div class="kpi"><div class="val" id="kpi-solark_battery_temperature">{% if solark_data.battery_temperature is defined and solark_data.battery_temperature is not none %}{{ "%.1f" | format(solark_data.battery_temperature) }}°C{% else %}—{% endif %}</div><div class="unit">Batt temp</div></div>
+    </div>
+
+    <p class="muted" style="margin: 0 0 0.4rem 0; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">Today</p>
+    <div class="grid2" style="margin-bottom: 1rem;">
+      <div class="kpi"><div class="val" id="kpi-solark_day_pv_energy">{{ solark_data.day_pv_energy_kWh | default('—') }}</div><div class="unit">PV kWh</div></div>
+      <div class="kpi"><div class="val" id="kpi-solark_day_batt_charge">{{ solark_data.day_batt_charge_kWh | default('—') }}</div><div class="unit">Batt charge kWh</div></div>
+      <div class="kpi"><div class="val" id="kpi-solark_day_batt_discharge">{{ solark_data.day_batt_discharge_kWh | default('—') }}</div><div class="unit">Batt dis kWh</div></div>
+      <div class="kpi"><div class="val" id="kpi-solark_day_load_energy">{{ solark_data.day_load_energy_kWh | default('—') }}</div><div class="unit">Load kWh</div></div>
+    </div>
+
+    <p class="muted" style="margin: 0 0 0.4rem 0; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">Lifetime totals</p>
+    <div class="grid2">
+      <div class="kpi"><div class="val" id="kpi-solark_total_pv_energy">{{ solark_data.total_pv_energy_kWh | default('—') }}</div><div class="unit">PV kWh</div></div>
+      <div class="kpi"><div class="val" id="kpi-solark_total_batt_charge">{{ solark_data.total_batt_charge_kWh | default('—') }}</div><div class="unit">Batt charge kWh</div></div>
+      <div class="kpi"><div class="val" id="kpi-solark_total_batt_dis">{{ solark_data.total_batt_dis_kWh | default('—') }}</div><div class="unit">Batt dis kWh</div></div>
+      <div class="kpi"><div class="val" id="kpi-solark_total_load_energy">{{ solark_data.total_load_energy_kWh | default('—') }}</div><div class="unit">Load kWh</div></div>
+      <div class="kpi"><div class="val" id="kpi-solark_total_grid_export">{{ solark_data.total_grid_export_kWh | default('—') }}</div><div class="unit">Grid export kWh</div></div>
+      <div class="kpi"><div class="val" id="kpi-solark_total_grid_import">{{ solark_data.total_grid_import_kWh | default('—') }}</div><div class="unit">Grid import kWh</div></div>
+    </div>
+  </div>
+
+  <div class="card" style="border-left: 4px solid var(--accent);">
+    <h2>Controls &amp; buttons</h2>
+    <p class="muted" style="margin: 0 0 0.75rem 0;">Quick mode toggles here. For all inverter controls (export, charging, storage/hybrid bits), go to:</p>
+    <a href="/control" class="btn" style="display: inline-block; text-decoration: none;">Control page →</a>
+  </div>
+
+  <div class="card" style="border-left: 4px solid var(--orange);" id="curtailment-card">
+    <h2 style="display:flex; align-items:center; gap:0.6rem;">
+      Generation Curtailment
+      <span id="curt-auth-dot" style="width:9px;height:9px;border-radius:50%;background:var(--muted);display:inline-block;" title="HA connection status"></span>
+      <a href="/curtailment" class="muted" style="font-size:0.8rem; font-weight:400; margin-left:auto;">Full page →</a>
+    </h2>
+    <div id="curt-switches" style="display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:0.75rem;">
+
+      {# Step 1: Solis mode (Modbus) #}
+      <div id="curt-tile-solis" style="background:var(--bg); border:2px solid var(--muted); border-radius:8px; padding:0.75rem; display:flex; flex-direction:column; gap:0.4rem;">
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+          <span style="font-weight:600; font-size:0.9rem;">Solis Mode</span>
+          <span id="curt-badge-solis" style="font-size:0.75rem; font-weight:700; padding:0.15rem 0.5rem; border-radius:12px; background:rgba(139,148,158,0.2); color:var(--muted);">{{ storage_mode_label | default('?') }}</span>
+        </div>
+        <span style="font-size:0.72rem; color:var(--muted);">Step 1 · Modbus · 10.10.53.16</span>
+        <div style="display:flex; gap:0.4rem; margin-top:0.2rem;">
+          <form method="post" action="/" style="flex:1; margin:0;">
+            <input type="hidden" name="register" value="storage"><input type="hidden" name="bit_index" value="0"><input type="hidden" name="on" value="true">
+            <button type="submit" style="width:100%; padding:0.35rem 0; font-size:0.8rem; background:var(--green); color:#fff; border:none; border-radius:5px; cursor:pointer; {% if storage_bits.self_use %}opacity:0.4;{% endif %}" {% if storage_bits.self_use %}disabled{% endif %}>Self-Use</button>
+          </form>
+          <form method="post" action="/" style="flex:1; margin:0;">
+            <input type="hidden" name="register" value="storage"><input type="hidden" name="bit_index" value="6"><input type="hidden" name="on" value="true">
+            <button type="submit" style="width:100%; padding:0.35rem 0; font-size:0.8rem; background:var(--accent); color:#fff; border:none; border-radius:5px; cursor:pointer; {% if storage_bits.feed_in_priority %}opacity:0.4;{% endif %}" {% if storage_bits.feed_in_priority %}disabled{% endif %}>Feed-In</button>
+          </form>
+        </div>
+      </div>
+
+      {# Steps 2-4: AC generation switches via HA #}
+      {% for key, label, sub in [('tabuchi','Tabuchi Export','Step 2 · Grid export'), ('mseries','Shed Micros','Step 3 · Envoy 1 · 12 units'), ('iq8','IQ8 Micros','Step 4 · Envoy 2 · 14 units')] %}
+      <div id="curt-tile-{{ key }}" style="background:var(--bg); border:2px solid var(--muted); border-radius:8px; padding:0.75rem; display:flex; flex-direction:column; gap:0.4rem;">
+        <div style="display:flex; align-items:center; justify-content:space-between;">
+          <span style="font-weight:600; font-size:0.9rem;">{{ label }}</span>
+          <span id="curt-badge-{{ key }}" style="font-size:0.75rem; font-weight:700; padding:0.15rem 0.5rem; border-radius:12px; background:rgba(139,148,158,0.2); color:var(--muted);">?</span>
+        </div>
+        <span style="font-size:0.72rem; color:var(--muted);">{{ sub }}</span>
+        <div style="display:flex; gap:0.4rem; margin-top:0.2rem;">
+          <button id="curt-on-{{ key }}" onclick="curtSwitchSet('{{ key }}','on')" style="flex:1; padding:0.35rem 0; font-size:0.8rem; background:var(--green); color:#fff; border:none; border-radius:5px; cursor:pointer;" disabled>▶ On</button>
+          <button id="curt-off-{{ key }}" onclick="curtSwitchSet('{{ key }}','off')" style="flex:1; padding:0.35rem 0; font-size:0.8rem; background:var(--orange); color:#fff; border:none; border-radius:5px; cursor:pointer;" disabled>■ Off</button>
+        </div>
+      </div>
+      {% endfor %}
+
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Solis mode</h2>
+    <p class="muted" style="margin: 0 0 0.75rem 0;"><strong>Current mode:</strong> <span id="current-mode" class="status-ok">{{ storage_mode_label | default('—') }}</span>{% if solark_ok and automation_enabled %} — At 98% Solark SOC, Solis switches to self-use{% if solark_auto_self_use %} <span class="muted">(auto self-use active)</span>{% endif %}{% endif %}</p>
+    <p style="margin: 0 0 0.75rem 0;"><strong>Solark SOC automation:</strong> {% if automation_enabled %}<span class="status-ok">On</span>{% else %}<span class="muted">Off</span>{% endif %}
+      <form method="post" action="/settings/automation" style="display:inline; margin-left:0.5rem;">
+        {% if automation_enabled %}
+        <input type="hidden" name="enabled" value="0" /><button type="submit" class="btn" style="padding:0.2rem 0.5rem; font-size:0.85rem;">Turn off</button>
+        {% else %}
+        <input type="hidden" name="enabled" value="1" /><button type="submit" class="btn" style="padding:0.2rem 0.5rem; font-size:0.85rem; background:var(--green);">Turn on</button>
+        {% endif %}
+      </form>
+    </p>
+    <div style="display:flex; flex-wrap:wrap; gap:1rem; align-items:center;">
+      <form class="inline" method="post" action="/">
+        <input type="hidden" name="register" value="storage"><input type="hidden" name="bit_index" value="0">
+        <input type="hidden" name="on" value="{{ 'false' if storage_bits.self_use else 'true' }}">
+        <button type="submit" class="btn" style="{% if storage_bits.self_use %}background:var(--green);{% else %}background:var(--muted);{% endif %}">{{ 'Self-Use On' if storage_bits.self_use else 'Enable Self-Use' }}</button>
+      </form>
+      <form class="inline" method="post" action="/">
+        <input type="hidden" name="register" value="storage"><input type="hidden" name="bit_index" value="6">
+        <input type="hidden" name="on" value="{{ 'false' if storage_bits.feed_in_priority else 'true' }}">
+        <button type="submit" class="btn" style="{% if storage_bits.feed_in_priority %}background:var(--accent);{% else %}background:var(--muted);{% endif %}">{{ 'Feed-In On' if storage_bits.feed_in_priority else 'Enable Feed-In' }}</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Solis S6-INV-1</h2>
+    <p class="muted" style="margin: 0 0 0.4rem 0; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">PV</p>
+    <div class="grid2" style="margin-bottom: 1rem;">
+      <div class="kpi"><div class="val" id="kpi-pv_power_W">{{ data.pv_power_W | default(0) | int }}</div><div class="unit">PV W</div></div>
+      <div class="kpi"><div class="val" id="kpi-pv_voltage_1_V">{{ "%.1f" | format((data.pv_voltage_1_V | default(0)) or 0) }}</div><div class="unit">PV1 V</div></div>
+      <div class="kpi"><div class="val" id="kpi-pv_current_1_A">{{ "%.1f" | format((data.pv_current_1_A | default(0)) or 0) }}</div><div class="unit">PV1 A</div></div>
+      <div class="kpi"><div class="val" id="kpi-pv_voltage_2_V">{{ "%.1f" | format((data.pv_voltage_2_V | default(0)) or 0) }}</div><div class="unit">PV2 V</div></div>
+      <div class="kpi"><div class="val" id="kpi-pv_current_2_A">{{ "%.1f" | format((data.pv_current_2_A | default(0)) or 0) }}</div><div class="unit">PV2 A</div></div>
+    </div>
+    <p class="muted" style="margin: 0 0 0.4rem 0; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">Power (AC)</p>
+    <div class="grid2" style="margin-bottom: 1rem;">
+      <div class="kpi">
+        <div class="val" id="kpi-grid_power_W">{{ data.grid_power_W | default(0) | int }}</div>
+        <div class="unit">Grid W &nbsp;<span id="kpi-grid-direction" style="font-weight:700;font-size:0.75rem;padding:0.1rem 0.35rem;border-radius:4px;">—</span></div>
+      </div>
+      <div class="kpi"><div class="val" id="kpi-load_power_W">{{ data.load_power_W | default(0) | int }}</div><div class="unit">Backup load</div></div>
+      <div class="kpi"><div class="val" id="kpi-active_power_W">{{ data.active_power_W | default(0) | int }}</div><div class="unit">Solis AC out <span style="font-size:0.65rem;opacity:0.7">(internal)</span></div></div>
+      <div class="kpi">
+        <div class="val" id="kpi-solis-net-export">—</div>
+        <div class="unit">Solis net <span style="font-size:0.65rem;opacity:0.7">(PV−load±batt)</span> &nbsp;<span id="kpi-solis-net-direction" style="font-weight:700;font-size:0.75rem;padding:0.1rem 0.35rem;border-radius:4px;"></span></div>
+      </div>
+      <div class="kpi"><div class="val" id="kpi-ac_voltage_V">{{ "%.1f" | format((data.ac_voltage_V | default(0)) or 0) }}</div><div class="unit">Grid V</div></div>
+      <div class="kpi"><div class="val" id="kpi-grid_freq_Hz">{{ "%.2f" | format((data.grid_freq_Hz | default(0)) or 0) }}</div><div class="unit">Grid Hz</div></div>
+      <div class="kpi"><div class="val" id="kpi-inverter_temp_C">{{ "%.1f" | format((data.inverter_temp_C | default(0)) or 0) }}</div><div class="unit">Inverter °C</div></div>
+    </div>
+    <p class="muted" style="margin: 0 0 0.4rem 0; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">Battery</p>
+    <div class="grid2" style="margin-bottom: 1rem;">
+      <div class="kpi"><div class="val" id="kpi-battery_soc_pct">{{ data.battery_soc_pct | default(0) | int }}%</div><div class="unit">SOC</div></div>
+      <div class="kpi"><div class="val" id="kpi-battery_remaining_kWh">{{ "%.2f" | format((data.battery_remaining_kWh | default(0)) or 0) }}</div><div class="unit">Remaining kWh</div></div>
+      <div class="kpi"><div class="val" id="kpi-battery_runtime_hours">{% if data.battery_runtime_hours is not none %}{{ "%.2f" | format(data.battery_runtime_hours) }}{% else %}—{% endif %}</div><div class="unit" id="kpi-battery_runtime_label">{% if data.battery_runtime_direction == 'charge' %}Time to full (h){% elif data.battery_runtime_direction == 'discharge' %}Time remaining (h){% else %}Est. runtime (h){% endif %}</div></div>
+      <div class="kpi"><div class="val" id="kpi-battery_power_W_signed">{% if data.battery_power_W is not none %}{% if data.battery_power_W > 0 %}+{% elif data.battery_power_W < 0 %}{% endif %}{{ data.battery_power_W | int }}{% else %}—{% endif %}</div><div class="unit">Battery W</div></div>
+      <div class="kpi"><div class="val" id="kpi-battery_voltage_V">{{ "%.1f" | format((data.battery_voltage_V | default(0)) or 0) }}</div><div class="unit">Battery V</div></div>
+      <div class="kpi"><div class="val" id="kpi-battery_current_A">{{ "%.1f" | format((data.battery_current_A | default(0)) or 0) }}</div><div class="unit">Battery A</div></div>
+    </div>
+    <p class="muted" style="margin: 0 0 0.4rem 0; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em;">Energy today (kWh)</p>
+    <div class="grid2">
+      <div class="kpi"><div class="val" id="kpi-energy_today_pv_kWh">{{ "%.2f" | format((data.energy_today_pv_kWh | default(0)) or 0) }}</div><div class="unit">PV today</div></div>
+      <div class="kpi"><div class="val" id="kpi-total_pv_energy_kWh">{{ "%.1f" | format((data.total_pv_energy_kWh | default(0)) or 0) }}</div><div class="unit">PV total</div></div>
+      <div class="kpi"><div class="val" id="kpi-energy_today_load_kWh">{{ "%.2f" | format((data.energy_today_load_kWh | default(0)) or 0) }}</div><div class="unit">Load</div></div>
+      <div class="kpi"><div class="val" id="kpi-energy_today_grid_import_kWh">{{ "%.2f" | format((data.energy_today_grid_import_kWh | default(0)) or 0) }}</div><div class="unit">Grid Import</div></div>
+      <div class="kpi"><div class="val" id="kpi-energy_today_grid_export_kWh">{{ "%.2f" | format((data.energy_today_grid_export_kWh | default(0)) or 0) }}</div><div class="unit">Grid Export</div></div>
+      <div class="kpi"><div class="val" id="kpi-energy_today_bat_charge_kWh">{{ "%.2f" | format((data.energy_today_bat_charge_kWh | default(0)) or 0) }}</div><div class="unit">Bat charge</div></div>
+      <div class="kpi"><div class="val" id="kpi-energy_today_bat_discharge_kWh">{{ "%.2f" | format((data.energy_today_bat_discharge_kWh | default(0)) or 0) }}</div><div class="unit">Bat discharge</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Grid status · generation today total</h2>
+    <p class="muted" style="margin: 0 0 0.75rem 0;">Solis today PV + Tabuchi (static). Use <a href="/settings">Settings</a> to change Tabuchi from 15 to 3 (or any value).</p>
+    <div class="grid2">
+      <div class="kpi"><div class="val" id="kpi-grid-solis-today">{{ "%.2f" | format(((grid_status | default({})).solis_today_pv_kWh | default(0)) or 0) }}</div><div class="unit">Solis today</div></div>
+      <div class="kpi"><div class="val" id="kpi-grid-tabuchi-today">{{ "%.2f" | format(((grid_status | default({})).tabuchi_today_pv_kWh | default(0)) or 0) }}</div><div class="unit">Tabuchi (static)</div></div>
+      <div class="kpi"><div class="val" id="kpi-grid-total-today">{{ "%.2f" | format(((grid_status | default({})).total_today_pv_kWh | default(0)) or 0) }}</div><div class="unit">Total today (kWh)</div></div>
+    </div>
+  </div>
+
+  <div id="dashboard-data" style="display:none;"></div>
+  <script>
+  (function() {
+    var INTERVAL_MS = 20000;  /* update every 20s to avoid jank */
+    function fmtNum(v, decimals) {
+      if (v == null || v === undefined) return '0';
+      if (decimals === 0) return String(Math.round(v));
+      return Number(v).toFixed(decimals);
+    }
+    function updateDashboard() {
+      fetch('/api/dashboard').then(function(r) { return r.json(); }).then(function(res) {
+        var d = res.data || {};
+        var solisOk = res.ok;
+        var solark = res.solark || {};
+        var solarkData = solark.data || {};
+        var solarkOk = solark.ok;
+        var solarkSource = solark.source || '';
+        var solarkErr = solark.last_error || '';
+        var statusEl = document.getElementById('status-msg');
+        var solisStr = solisOk ? '<span class="status-ok">Connected</span>' : '<span class="status-fail">Not connected</span>';
+        var solarkStr = solarkOk
+          ? '<span class="status-ok">Connected</span>' + (solarkSource ? ' <span class="muted">(' + solarkSource + ')</span>' : '')
+          : '<span class="muted">No data</span>' + (solarkErr ? ' <span class="muted">— ' + solarkErr + '</span>' : '');
+        var newStatus = '<strong>Solis:</strong> ' + solisStr + ' <strong style="margin-left: 1rem;">Solark:</strong> ' + solarkStr;
+        if (statusEl.innerHTML !== newStatus) statusEl.innerHTML = newStatus;
+        if (res.ts) {
+          var dt = new Date(res.ts * 1000);
+          var newTime = dt.toLocaleTimeString();
+          var timeEl = document.getElementById('last-updated');
+          if (timeEl.textContent !== newTime) timeEl.textContent = newTime;
+        }
+        var modeEl = document.getElementById('current-mode');
+        if (modeEl && d.storage_mode !== undefined && modeEl.textContent !== d.storage_mode) modeEl.textContent = d.storage_mode;
+        var kpis = [
+          ['pv_power_W', 0], ['pv_voltage_1_V', 1], ['pv_current_1_A', 1], ['pv_voltage_2_V', 1], ['pv_current_2_A', 1],
+          ['grid_power_W', 0], ['load_power_W', 0], ['active_power_W', 0],
+          ['ac_voltage_V', 1], ['grid_freq_Hz', 2], ['inverter_temp_C', 1],
+          ['battery_soc_pct', 0, '%'], ['battery_remaining_kWh', 2], ['battery_runtime_hours', 2],
+          ['battery_voltage_V', 1], ['battery_current_A', 1],
+          ['energy_today_pv_kWh', 2], ['total_pv_energy_kWh', 1], ['energy_today_load_kWh', 2], ['energy_today_bat_charge_kWh', 2], ['energy_today_bat_discharge_kWh', 2],
+          ['energy_today_grid_export_kWh', 1], ['energy_today_grid_import_kWh', 1]
+        ];
+        kpis.forEach(function(k) {
+          var key = k[0], dec = k[1], suffix = k[2] || '';
+          var newVal = fmtNum(d[key], dec) + suffix;
+          var el = document.getElementById('kpi-' + key);
+          if (el && el.textContent !== newVal) el.textContent = newVal;
+        });
+        // Battery runtime: show — when idle; label = Time to full (charging) or Time remaining (discharging)
+        var rtEl = document.getElementById('kpi-battery_runtime_hours');
+        var rtLabel = document.getElementById('kpi-battery_runtime_label');
+        if (rtEl) rtEl.textContent = (d.battery_runtime_hours != null) ? Number(d.battery_runtime_hours).toFixed(2) : '—';
+        if (rtLabel) rtLabel.textContent = (d.battery_runtime_direction === 'charge') ? 'Time to full (h)' : (d.battery_runtime_direction === 'discharge') ? 'Time remaining (h)' : 'Est. runtime (h)';
+        // Battery W with + / − for direction (in Battery card)
+        var battWEl = document.getElementById('kpi-battery_power_W_signed');
+        if (battWEl) {
+          var w = d.battery_power_W;
+          var signed = (w == null || w === undefined) ? '—' : (w > 0 ? '+' : '') + Math.round(w);
+          if (battWEl.textContent !== signed) battWEl.textContent = signed;
+        }
+        // Grid status total (Solis today + Tabuchi static)
+        var gs = res.grid_status || {};
+        [['solis_today_pv_kWh','kpi-grid-solis-today',2], ['tabuchi_today_pv_kWh','kpi-grid-tabuchi-today',2], ['total_today_pv_kWh','kpi-grid-total-today',2]].forEach(function(t) {
+          var el = document.getElementById(t[1]);
+          var v = gs[t[0]];
+          if (el) { var n = (v != null) ? Number(v).toFixed(t[2]) : '0'; if (el.textContent !== n) el.textContent = n; }
+        });
+        // Grid export/import direction badge (meter = all inverters)
+        var gridW = d['grid_power_W'];
+        var dirEl = document.getElementById('kpi-grid-direction');
+        if (dirEl && gridW != null) {
+          var exporting = gridW < 0;
+          var label = exporting ? '⬆ EXPORT' : '⬇ IMPORT';
+          var bg    = exporting ? '#166534' : '#7c2d12';
+          var col   = exporting ? '#bbf7d0' : '#fed7aa';
+          if (dirEl.textContent !== label) { dirEl.textContent = label; dirEl.style.background = bg; dirEl.style.color = col; }
+        }
+        // Solis net export = PV - backup_load - battery_charge (battery_power_W positive=charge, negative=discharge)
+        // When positive: Solis is sending power to grid. When negative: Solis is drawing from grid.
+        var pvW   = d['pv_power_W']      || 0;
+        var loadW = d['load_power_W']    || 0;
+        var battW = d['battery_power_W'] || 0;  // positive = charging, negative = discharging
+        var solisNet = pvW - loadW - battW;  // what Solis is pushing to the AC bus beyond its own load
+        var netEl  = document.getElementById('kpi-solis-net-export');
+        var netDir = document.getElementById('kpi-solis-net-direction');
+        if (netEl) { var ns = String(Math.round(solisNet)); if (netEl.textContent !== ns) netEl.textContent = ns; }
+        if (netDir) {
+          var netExporting = solisNet > 0;
+          var nl = netExporting ? '⬆ EXPORT' : (solisNet < 0 ? '⬇ DRAW' : '—');
+          var nb = netExporting ? '#166534' : (solisNet < 0 ? '#7c2d12' : '#374151');
+          var nc = netExporting ? '#bbf7d0' : (solisNet < 0 ? '#fed7aa' : '#9ca3af');
+          if (netDir.textContent !== nl) { netDir.textContent = nl; netDir.style.background = nb; netDir.style.color = nc; }
+        }
+        // SOC
+        var solarkSoc = solarkData.battery_soc_pptt != null ? (Math.round(solarkData.battery_soc_pptt / 100) + '%') : '—';
+        var elSolarkSoc = document.getElementById('kpi-solark_battery_soc_pct');
+        if (elSolarkSoc && elSolarkSoc.textContent !== solarkSoc) elSolarkSoc.textContent = solarkSoc;
+        // Total batt W with +/− (same convention as Solis: + charge, − discharge)
+        var totalW = solarkData.battery_total_power_W != null ? solarkData.battery_total_power_W : solarkData.battery_power_W;
+        function signedW(w) { return (w != null) ? ((w > 0 ? '+' : '') + Math.round(w)) : '—'; }
+        var elTotal = document.getElementById('kpi-solark_battery_total_power_W');
+        if (elTotal) { var n = signedW(totalW); if (elTotal.textContent !== n) elTotal.textContent = n; }
+        // PV: total + string 1 & 2
+        var elPv = document.getElementById('kpi-solark_pv_power_W');
+        var pvTotal = solarkData.pv_power_W != null ? solarkData.pv_power_W : solarkData.total_pv_power_W;
+        if (elPv) { var n = (pvTotal != null) ? String(pvTotal) : '—'; if (elPv.textContent !== n) elPv.textContent = n; }
+        var elPv1 = document.getElementById('kpi-solark_pv1_power_W');
+        if (elPv1) { var n = (solarkData.pv1_power_W != null) ? String(solarkData.pv1_power_W) : '—'; if (elPv1.textContent !== n) elPv1.textContent = n; }
+        var elPv2 = document.getElementById('kpi-solark_pv2_power_W');
+        if (elPv2) { var n = (solarkData.pv2_power_W != null) ? String(solarkData.pv2_power_W) : '—'; if (elPv2.textContent !== n) elPv2.textContent = n; }
+        // Power (AC): Grid CT W, Inverter W (show as-is; can be +/−)
+        var elGrid = document.getElementById('kpi-solark_grid_ct_power_W');
+        var elInvW = document.getElementById('kpi-solark_inverter_power_W');
+        if (elGrid) { var n = (solarkData.grid_ct_power_W != null) ? String(solarkData.grid_ct_power_W) : '—'; if (elGrid.textContent !== n) elGrid.textContent = n; }
+        if (elInvW) { var n = (solarkData.inverter_power_W != null) ? String(solarkData.inverter_power_W) : '—'; if (elInvW.textContent !== n) elInvW.textContent = n; }
+        // Battery temperature
+        var battTemp = solarkData.battery_temperature;
+        var elBattTemp = document.getElementById('kpi-solark_battery_temperature');
+        if (elBattTemp) { var n = (battTemp != null && battTemp !== '') ? (Number(battTemp).toFixed(1) + '°C') : '—'; if (elBattTemp.textContent !== n) elBattTemp.textContent = n; }
+        // Batt V (no sign), Batt A and Inverter A (with + for positive)
+        var elBattV = document.getElementById('kpi-solark_battery_voltage_V');
+        var v = solarkData.battery_voltage_dV;
+        if (elBattV) { var n = (v != null) ? (v/10).toFixed(1) : '—'; if (elBattV.textContent !== n) elBattV.textContent = n; }
+        var elBattA = document.getElementById('kpi-solark_battery_current_A');
+        v = solarkData.battery_current_dA;
+        if (elBattA) { var n = (v != null) ? ((v/10 >= 0 ? '+' : '') + (v/10).toFixed(1)) : '—'; if (elBattA.textContent !== n) elBattA.textContent = n; }
+        var elInvA = document.getElementById('kpi-solark_inverter_current_A');
+        v = solarkData.inverter_current_dA;
+        if (elInvA) { var n = (v != null) ? ((v/10 >= 0 ? '+' : '') + (v/10).toFixed(1)) : '—'; if (elInvA.textContent !== n) elInvA.textContent = n; }
+        // kWh fields (today + lifetime)
+        [['day_pv_energy_kWh','kpi-solark_day_pv_energy'],
+         ['day_batt_charge_kWh','kpi-solark_day_batt_charge'],
+         ['day_batt_discharge_kWh','kpi-solark_day_batt_discharge'],
+         ['day_load_energy_kWh','kpi-solark_day_load_energy'],
+         ['total_pv_energy_kWh','kpi-solark_total_pv_energy'],
+         ['total_batt_charge_kWh','kpi-solark_total_batt_charge'],
+         ['total_batt_dis_kWh','kpi-solark_total_batt_dis'],
+         ['total_load_energy_kWh','kpi-solark_total_load_energy'],
+         ['total_grid_export_kWh','kpi-solark_total_grid_export'],
+         ['total_grid_import_kWh','kpi-solark_total_grid_import']
+        ].forEach(function(p) {
+          var el = document.getElementById(p[1]);
+          var v = solarkData[p[0]];
+          if (el) { var n = (v != null) ? String(v) : '—'; if (el.textContent !== n) el.textContent = n; }
+        });
+      }).catch(function() {});
+    }
+    updateDashboard();
+    document.getElementById('btn-refresh').addEventListener('click', function() { updateDashboard(); });
+    setInterval(updateDashboard, INTERVAL_MS);
+  })();
+
+  // ── Curtailment switches ────────────────────────────────────────────────
+  function curtUpdateTile(key, state) {
+      var tile  = document.getElementById('curt-tile-' + key);
+      var badge = document.getElementById('curt-badge-' + key);
+      var btnOn  = document.getElementById('curt-on-'  + key);
+      var btnOff = document.getElementById('curt-off-' + key);
+      if (!tile) return;
+      var borderColor = state === 'on' ? 'var(--green)' : state === 'off' ? 'var(--orange)' : 'var(--muted)';
+      tile.style.borderColor = borderColor;
+      if (badge) {
+        badge.textContent = state === 'on' ? '● ON' : state === 'off' ? '○ OFF' : '?';
+        badge.style.background = state === 'on' ? 'rgba(63,185,80,0.15)' : state === 'off' ? 'rgba(210,153,34,0.15)' : 'rgba(139,148,158,0.15)';
+        badge.style.color = state === 'on' ? 'var(--green)' : state === 'off' ? 'var(--orange)' : 'var(--muted)';
+      }
+      if (btnOn)  { btnOn.disabled  = (state === 'on');  btnOn.style.opacity  = state === 'on'  ? '0.4' : '1'; }
+      if (btnOff) { btnOff.disabled = (state === 'off'); btnOff.style.opacity = state === 'off' ? '0.4' : '1'; }
+    }
+  (function() {
+    var KEYS = ['iq8', 'mseries', 'tabuchi'];
+
+    function curtRefresh() {
+      fetch('/api/curtailment').then(function(r) { return r.json(); }).then(function(d) {
+        var dot = document.getElementById('curt-auth-dot');
+        if (dot) {
+          var auto = d.auto || {};
+          var color = !d.auth_ok ? 'var(--red)' :
+                      !auto.enabled ? 'var(--muted)' :
+                      auto.curtail_active ? 'var(--orange)' : 'var(--green)';
+          var tip = !d.auth_ok ? ('HA error: ' + (d.auth_error || '?')) :
+                    !auto.enabled ? 'Automation disabled' :
+                    auto.curtail_active ? ('CURTAILING · SOC ' + (auto.soc_pct||'?') + '%') :
+                    ('Auto ON · SOC ' + (auto.soc_pct||'?') + '% · curtails at ' + (auto.threshold_pct||97) + '%');
+          dot.style.background = color;
+          dot.style.boxShadow  = 'none';
+          dot.title = tip;
+        }
+        KEYS.forEach(function(key) {
+          var sw = (d.switches || {})[key] || {};
+          curtUpdateTile(key, sw.state || 'unknown');
+        });
+      }).catch(function() {});
+    }
+
+    curtRefresh();
+    setInterval(curtRefresh, 30000);
+  })();
+
+  function curtSwitchSet(key, action) {
+    var btnOn  = document.getElementById('curt-on-'  + key);
+    var btnOff = document.getElementById('curt-off-' + key);
+    if (btnOn)  btnOn.disabled  = true;
+    if (btnOff) btnOff.disabled = true;
+    fetch('/api/curtailment/' + key + '/' + action, {method:'POST'})
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.ok) { setTimeout(function() {
+          fetch('/api/curtailment').then(function(r){return r.json();}).then(function(data){
+            var sw = (data.switches||{})[key]||{};
+            curtUpdateTile(key, sw.state||'unknown');
+          });
+        }, 800); }
+        else { alert('Failed: ' + (d.error||'unknown error')); if (btnOn) btnOn.disabled=false; if (btnOff) btnOff.disabled=false; }
+      }).catch(function(e) { alert('Request failed: '+e); if (btnOn) btnOn.disabled=false; if (btnOff) btnOff.disabled=false; });
+  }
+  </script>
+{% endblock %}

@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Solar Forecast{% endblock %}
+
+{% block head %}
+<style>
+  .forecast-daily { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 1rem; margin-bottom: 1rem; }
+  .forecast-day { background: var(--bg); border-radius: 6px; padding: 0.75rem; border: 1px solid #30363d; }
+  .forecast-day .date { font-size: 0.85rem; color: var(--muted); margin-bottom: 0.25rem; }
+  .forecast-day .kwh { font-size: 1.5rem; font-weight: 600; color: var(--green); }
+  .forecast-day .unit { font-size: 0.8rem; color: var(--muted); }
+  .hourly-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  .hourly-table th { text-align: left; color: var(--muted); font-weight: 500; padding: 0.35rem 0.5rem; border-bottom: 1px solid #30363d; }
+  .hourly-table td { padding: 0.35rem 0.5rem; border-bottom: 1px solid #21262d; }
+  .hourly-table tr:last-child td { border-bottom: none; }
+  .w-bar { display: inline-block; background: var(--green); height: 8px; border-radius: 2px; min-width: 2px; vertical-align: middle; margin-left: 0.5rem; }
+  .meta-row { font-size: 0.9rem; color: var(--muted); margin-top: 1rem; }
+</style>
+{% endblock %}
+
+{% block content %}
+<h1 style="margin:0 0 1rem; font-size:1.4rem;">Solar Forecast</h1>
+
+<p class="muted" style="margin-bottom:1rem;">Forecast.Solar — today and tomorrow. Two toggles in Settings: <strong>Forecast API</strong> (fetches on/off), <strong>Solar prediction</strong> (use in automations on/off).</p>
+
+{% if error %}
+<div class="card flash flash-err">{{ error }}</div>
+{% endif %}
+
+{% if not forecast_api_enabled %}
+<div class="card" style="border-left: 4px solid var(--orange);">
+  <p class="muted">Forecast API is <strong>off</strong>. Enable it in Settings to fetch Forecast.Solar data. Until then, no forecast is available.</p>
+</div>
+{% endif %}
+
+{% if forecast_api_enabled and (daily_kwh or today_kwh or tomorrow_kwh) %}
+<div class="card">
+  <h2>Daily forecast (kWh)</h2>
+  {% if today_kwh or tomorrow_kwh %}
+  <div class="grid2" style="margin-bottom: 1rem;">
+    <div class="kpi"><div class="val">{{ "%.1f" | format(today_kwh) }}</div><div class="unit">Today (kWh)</div></div>
+    <div class="kpi"><div class="val">{{ "%.1f" | format(tomorrow_kwh) }}</div><div class="unit">Tomorrow (kWh)</div></div>
+  </div>
+  {% endif %}
+  {% if daily_kwh %}
+  <div class="forecast-daily">
+    {% for date, wh in daily_kwh.items() %}
+    <div class="forecast-day">
+      <div class="date">{{ date }}</div>
+      <div class="kwh">{{ "%.1f" | format(wh / 1000) }} <span class="unit">kWh</span></div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  <div class="meta-row">Last fetch: {{ last_fetch or '—' }}{% if ratelimit %} · Rate: {{ ratelimit.get('remaining', '—') }} / {{ ratelimit.get('limit', '—') }} remaining{% endif %}</div>
+</div>
+
+{% if hourly_watts %}
+<div class="card">
+  <h2>Hourly power (W)</h2>
+  <div style="max-height: 360px; overflow-y: auto;">
+    <table class="hourly-table">
+      <thead><tr><th>Time</th><th>Watts</th></tr></thead>
+      <tbody>
+        {% for ts, w in hourly_watts.items() %}
+        <tr>
+          <td>{{ ts }}</td>
+          <td>{{ w | int }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endif %}
+
+{% if forecast_api_enabled and not daily_kwh and not error %}
+<div class="card">
+  <p class="muted">No forecast data yet. First fetch runs shortly after enabling the Forecast API. Check back in a few minutes.</p>
+  <div class="meta-row">Last fetch: {{ last_fetch or '—' }}</div>
+</div>
+{% endif %}
+{% endblock %}

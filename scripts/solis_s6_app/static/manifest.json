@@ -1,0 +1,17 @@
+{
+  "name": "Solar & Storage Dashboard",
+  "short_name": "Solar",
+  "description": "Solis / Solark controls, data browser, and assistant",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f1419",
+  "theme_color": "#58a6ff",
+  "icons": [
+    {
+      "src": "/static/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

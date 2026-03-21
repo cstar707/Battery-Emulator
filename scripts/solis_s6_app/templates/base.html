@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0f1419">
+  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+  <link rel="manifest" href="/static/manifest.json">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <title>{% block title %}Solis / Solark{% endblock %} | 10.10.53.92</title>
+  <style>
+    :root, [data-theme="dark"] {
+      --bg: #0f1419;
+      --card: #1a2332;
+      --text: #e6edf3;
+      --muted: #8b949e;
+      --accent: #58a6ff;
+      --green: #3fb950;
+      --orange: #d29922;
+      --red: #f85149;
+      --pv-accent: #f59e0b;
+      --battery-accent: #22d3ee;
+    }
+    [data-theme="light"] {
+      --bg: #f6f8fa;
+      --card: #ffffff;
+      --text: #1f2328;
+      --muted: #656d76;
+      --accent: #0969da;
+      --green: #1a7f37;
+      --orange: #9a6700;
+      --red: #cf222e;
+      --pv-accent: #b45309;
+      --battery-accent: #0891b2;
+      --border: rgba(31, 35, 40, 0.15);
+    }
+    [data-theme="dark"], :root {
+      --border: rgba(48, 54, 61, 0.8);
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      transition: background 0.3s ease, color 0.3s ease;
+    }
+    .kpi .val, .live-card .val, [data-numeric] { font-family: 'JetBrains Mono', ui-monospace, monospace; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .nav { position: sticky; top: 0; z-index: 100; background: var(--card); padding: 0.75rem 1.5rem; display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; align-items: center; border-bottom: 1px solid #30363d; overflow-x: auto; overflow-y: visible; }
+    .nav a {
+      color: var(--text);
+      padding: 0.4rem 0.5rem;
+      border-radius: 6px;
+      transition: color 0.2s, background 0.2s;
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+    .nav a:hover { background: rgba(88, 166, 255, 0.1); }
+    .nav a.active { color: var(--accent); font-weight: 600; box-shadow: inset 0 -2px 0 var(--accent); }
+    .container { max-width: 960px; margin: 0 auto; padding: 1.5rem; }
+    .card {
+      background: var(--card);
+      border-radius: 10px;
+      padding: 1.25rem;
+      margin-bottom: 1rem;
+      border: 1px solid rgba(48, 54, 61, 0.6);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+      animation: cardEnter 0.4s ease backwards;
+    }
+    .card:hover { box-shadow: 0 6px 20px rgba(0,0,0,0.12); }
+    @keyframes cardEnter {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .card h2 { margin: 0 0 0.75rem 0; font-size: 1.1rem; color: var(--muted); }
+    .status-ok { color: var(--green); }
+    .status-fail { color: var(--red); }
+    .muted { color: var(--muted); font-size: 0.9rem; }
+    .grid2 { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 1rem; }
+    .kpi { text-align: center; }
+    .kpi .val { font-size: 1.5rem; font-weight: 600; }
+    .kpi .unit { font-size: 0.85rem; color: var(--muted); }
+    form.inline { display: inline; }
+    button, .btn {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 0.95rem;
+      font-weight: 500;
+      min-height: 2rem;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+      transition: transform 0.15s ease, box-shadow 0.2s ease;
+    }
+    button:hover, .btn:hover { opacity: 0.95; filter: brightness(1.1); }
+    button:active, .btn:active { transform: scale(0.97); }
+    button.secondary { background: var(--muted); }
+    table button, table .btn { padding: 0.35rem 0.75rem; font-size: 0.9rem; }
+    .flash { margin-bottom: 0.75rem; animation: fadeSlideIn 0.35s ease; }
+    .flash-ok { border-left: 4px solid var(--green); background: rgba(63, 185, 80, 0.1); }
+    .flash-err { border-left: 4px solid var(--red); background: rgba(248, 81, 73, 0.1); }
+    @keyframes fadeSlideIn {
+      from { opacity: 0; transform: translateY(-4px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    label { display: inline-block; margin-right: 0.5rem; }
+    input[type="checkbox"] { margin-right: 0.25rem; }
+    input[type="text"], input[type="number"], select {
+      background: var(--bg);
+      color: var(--text);
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      padding: 0.5rem 0.6rem;
+      font-size: 1rem;
+      min-width: 8rem;
+    }
+    input[type="text"]:focus, input[type="number"]:focus, select:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.25);
+    }
+    .service-shell {
+      padding: 0.9rem 1.5rem 1rem;
+      border-bottom: 1px solid #30363d;
+      background: linear-gradient(180deg, rgba(15,20,25,0.98), rgba(20,28,40,0.94));
+      box-shadow: 0 10px 24px rgba(0,0,0,0.18);
+    }
+    .service-shell__row {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem 1.25rem;
+      flex-wrap: wrap;
+    }
+    .service-shell__identity {
+      display: flex;
+      flex-direction: column;
+      gap: 0.25rem;
+      max-width: 52rem;
+    }
+    .service-shell__eyebrow {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+    .service-shell__title {
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--text);
+    }
+    .service-shell__desc {
+      color: var(--muted);
+      font-size: 0.92rem;
+    }
+    .service-shell__chips {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .service-chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 2rem;
+      padding: 0.4rem 0.75rem;
+      border-radius: 999px;
+      border: 1px solid #30363d;
+      background: rgba(15,20,25,0.65);
+      color: var(--muted);
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .service-chip:hover {
+      text-decoration: none;
+      color: var(--text);
+      border-color: rgba(230,237,243,0.22);
+      background: rgba(15,20,25,0.88);
+    }
+    .service-chip--primary {
+      color: var(--accent);
+      border-color: rgba(88,166,255,0.28);
+      background: rgba(88,166,255,0.08);
+    }
+    .service-chip--support {
+      color: #86efac;
+      border-color: rgba(63,185,80,0.28);
+    }
+    .service-chip--legacy {
+      color: #fcd34d;
+      border-color: rgba(210,153,34,0.28);
+    }
+    .service-chip--neutral {
+      color: #cbd5e1;
+      border-color: rgba(139,148,158,0.28);
+    }
+    .settings-row { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.75rem; flex-wrap: wrap; }
+    .settings-row label { min-width: 10rem; margin: 0; }
+    .settings-row input, .settings-row select { flex: 1; min-width: 10rem; max-width: 20rem; }
+    @media (max-width: 900px) {
+      .nav { flex-wrap: wrap; }
+      .service-shell { padding: 0.9rem 1rem; }
+      .service-shell__chips { justify-content: flex-start; }
+    }
+    .theme-toggle {
+      background: transparent;
+      border: 1px solid rgba(139, 148, 158, 0.5);
+      font-size: 1.1rem;
+      padding: 0.35rem 0.5rem;
+      border-radius: 6px;
+      cursor: pointer;
+      color: var(--muted);
+      margin-left: 0.5rem;
+    }
+    .theme-toggle:hover { color: var(--text); border-color: var(--muted); }
+    [data-theme="light"] .theme-toggle { color: var(--muted); }
+    @media (max-width: 640px) {
+      .service-chip {
+        flex: 1 1 calc(50% - 0.5rem);
+        justify-content: center;
+        text-align: center;
+      }
+      .container { padding: 1rem; }
+    }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <section class="service-shell">
+    <div class="service-shell__row">
+      <div class="service-shell__identity">
+        <span class="service-shell__eyebrow">Consolidated dashboard shell · admin owner</span>
+        <span class="service-shell__title">Controls, settings, curtailment, and debug stay on :3007</span>
+        <span class="service-shell__desc">Keep <strong>:3008</strong> as the status/read-only surface. Retained support services stay separate and clearly labeled while port 80 remains the current main entry owner.</span>
+      </div>
+      <div class="service-shell__chips">
+        <a href="http://10.10.53.92:3008/" class="service-chip service-chip--primary">Status &amp; Overview · :3008</a>
+        <a href="/data" class="service-chip service-chip--primary">Data · Charts</a>
+        <a href="http://10.10.53.92:3000/" class="service-chip service-chip--support" target="_blank" rel="noopener noreferrer">Grafana · :3000</a>
+        <a href="http://10.10.53.92:3004/" class="service-chip service-chip--support" target="_blank" rel="noopener noreferrer">Envoy Diagnostics · :3004</a>
+        <a href="http://10.10.53.92:3002/" class="service-chip service-chip--support" target="_blank" rel="noopener noreferrer">SolarK Support · :3002</a>
+        <a href="http://10.10.53.92:3001/" class="service-chip service-chip--legacy" target="_blank" rel="noopener noreferrer">Legacy Dashboard · :3001</a>
+        <a href="http://10.10.53.92/" class="service-chip service-chip--neutral" target="_blank" rel="noopener noreferrer">Port 80 Current Entry</a>
+      </div>
+    </div>
+  </section>
+  <nav class="nav">
+    <a href="/" class="{% if request.url.path == '/' %}active{% endif %}">Admin Home</a>
+    <a href="/data" class="{% if request.url.path == '/data' %}active{% endif %}" title="Browse InfluxDB data and charts">Data</a>
+    <a href="/control" class="{% if request.url.path == '/control' %}active{% endif %}" title="All inverter controls and buttons">Controls</a>
+    <a href="/settings" class="{% if request.url.path == '/settings' or request.url.path == '/settings/automations' %}active{% endif %}">Settings</a>
+    <a href="/envoys" class="{% if request.url.path == '/envoys' %}active{% endif %}" title="Enphase micro-inverter live data">Envoy Summary</a>
+    <a href="/curtailment" class="{% if request.url.path == '/curtailment' %}active{% endif %}" title="Curtailment switch control">Curtailment</a>
+    <a href="/grid-status" class="{% if request.url.path == '/grid-status' %}active{% endif %}" title="Generation today + battery remaining/runtime">Grid status</a>
+    <a href="/forecast" class="{% if request.url.path == '/forecast' %}active{% endif %}" title="Solar forecast (Forecast.Solar)">Solar Forecast</a>
+    <a href="/debug" class="{% if request.url.path == '/debug' %}active{% endif %}" title="Modbus debug stream">Debug</a>
+    <a href="/ai-debug" class="{% if request.url.path == '/ai-debug' %}active{% endif %}" title="AI / LLM decisions and intents">AI Debug</a>
+    <button type="button" id="themeToggle" class="theme-toggle" title="Toggle dark/light" aria-label="Toggle theme">🌙</button>
+    <span class="muted" style="margin-left: auto;">{{ inverter_label }}</span>
+    <span class="muted" style="margin-left: 0.5rem;" title="UI version">v{{ app_version | default('?') }}</span>
+  </nav>
+  <main class="container">
+    {% block content %}{% endblock %}
+  </main>
+
+  {% if llm_automations_enabled %}
+  <div id="chatShell" class="chat-shell">
+    <button type="button" id="chatToggle" class="chat-toggle" title="Assistant" aria-label="Open assistant">💬</button>
+    <div id="chatPanel" class="chat-panel chat-panel--closed">
+      <div class="chat-panel__header">
+        <span>Assistant</span>
+        <button type="button" id="chatClose" class="chat-close" aria-label="Close">×</button>
+      </div>
+      <div id="chatMessages" class="chat-messages"></div>
+      <div class="chat-input-wrap">
+        <input type="text" id="chatInput" class="chat-input" placeholder="Ask about solar, battery, TOU..." />
+        <button type="button" id="chatSend" class="btn chat-send">Send</button>
+      </div>
+    </div>
+  </div>
+  <style>
+    .chat-shell { position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 1000; }
+    .chat-toggle { width: 3rem; height: 3rem; border-radius: 50%; background: var(--accent); color: #fff; border: none; cursor: pointer; font-size: 1.25rem; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+    .chat-toggle:hover { filter: brightness(1.1); }
+    .chat-panel { position: absolute; bottom: 4rem; right: 0; width: 360px; max-height: 420px; background: var(--card); border: 1px solid var(--border, #30363d); border-radius: 10px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); display: flex; flex-direction: column; overflow: hidden; backdrop-filter: blur(8px); }
+    .chat-panel--closed { display: none; }
+    .chat-panel__header { padding: 0.6rem 1rem; border-bottom: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center; background: var(--bg); }
+    .chat-panel__header span { font-weight: 600; }
+    .chat-close { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 1.5rem; line-height: 1; padding: 0 0.25rem; }
+    .chat-close:hover { color: var(--text); }
+    .chat-messages { flex: 1; overflow-y: auto; padding: 1rem; min-height: 160px; max-height: 280px; }
+    .chat-msg { margin-bottom: 0.75rem; padding: 0.5rem 0.75rem; border-radius: 6px; font-size: 0.9rem; }
+    .chat-msg--user { background: rgba(88, 166, 255, 0.15); margin-left: 1.5rem; }
+    .chat-msg--assistant { background: #21262d; margin-right: 1.5rem; }
+    .chat-input-wrap { padding: 0.75rem; border-top: 1px solid #30363d; display: flex; gap: 0.5rem; }
+    .chat-input { flex: 1; min-width: 0; }
+    .chat-send { flex-shrink: 0; }
+  </style>
+  <script>
+  (function(){
+    var toggle=document.getElementById('chatToggle'); var panel=document.getElementById('chatPanel'); var close=document.getElementById('chatClose');
+    var msgs=document.getElementById('chatMessages'); var input=document.getElementById('chatInput'); var send=document.getElementById('chatSend');
+    if(!toggle||!panel) return;
+    function open(){ panel.classList.remove('chat-panel--closed'); panel.style.display='flex'; }
+    function closePanel(){ panel.classList.add('chat-panel--closed'); panel.style.display='none'; }
+    toggle.onclick=open; close.onclick=closePanel;
+    function addMsg(role,text){
+      var div=document.createElement('div'); div.className='chat-msg chat-msg--'+role; div.textContent=text; msgs.appendChild(div);
+      msgs.scrollTop=msgs.scrollHeight;
+    }
+    function appendTyping(){ var el=document.createElement('div'); el.className='chat-msg chat-msg--assistant'; el.id='chatTyping'; el.textContent='…'; msgs.appendChild(el); msgs.scrollTop=msgs.scrollHeight; return el; }
+    function removeTyping(){ var el=document.getElementById('chatTyping'); if(el) el.remove(); }
+    function doSend(){
+      var q=input.value.trim(); if(!q) return;
+      addMsg('user',q); input.value='';
+      var typing=appendTyping();
+      fetch('/api/assistant/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q})})
+        .then(function(r){ return r.json(); })
+        .then(function(data){ removeTyping(); addMsg('assistant', data.ok ? (data.answer||'') : (data.error||'Error')); })
+        .catch(function(e){ removeTyping(); addMsg('assistant','Request failed'); });
+    }
+    send.onclick=doSend;
+    input.onkeydown=function(e){ if(e.key==='Enter'){ e.preventDefault(); doSend(); } };
+  })();
+  </script>
+  {% else %}
+  {# Chat disabled: no UI shown. User can enable in Settings → Automations. #}
+  {% endif %}
+  <script>
+  (function(){
+    var theme=localStorage.getItem('solar-theme')||'dark';
+    document.documentElement.setAttribute('data-theme',theme);
+    var btn=document.getElementById('themeToggle');
+    if(btn){
+      btn.textContent=theme==='light'?'🌙':'☀️';
+      btn.onclick=function(){
+        theme=theme==='dark'?'light':'dark';
+        localStorage.setItem('solar-theme',theme);
+        document.documentElement.setAttribute('data-theme',theme);
+        btn.textContent=theme==='light'?'🌙':'☀️';
+      };
+    }
+  })();
+  </script>
+</body>
+</html>

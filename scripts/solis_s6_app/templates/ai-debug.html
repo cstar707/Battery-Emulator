@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}AI Debug{% endblock %}
+{% block content %}
+  <div class="card">
+    <h2>AI / LLM events</h2>
+    <p class="muted">Recent AI automation decisions and intents. Updates every 5s.</p>
+    <pre id="ai-log" style="background: var(--bg); padding: 1rem; border-radius: 6px; overflow: auto; max-height: 60vh; font-size: 0.85rem; margin: 0; border: 1px solid var(--border); white-space: pre-wrap;"></pre>
+  </div>
+  <script>
+  (function() {
+    var pre = document.getElementById('ai-log');
+    function fetchLog() {
+      fetch('/api/ai-debug').then(function(r) { return r.json(); }).then(function(res) {
+        if (!res.ok) {
+          pre.textContent = '(LLM automations disabled or error: ' + (res.error || '') + ')';
+          return;
+        }
+        var events = res.events || [];
+        var lines = events.map(function(e) {
+          var t = new Date((e.ts || 0) * 1000).toLocaleTimeString();
+          var payload = typeof e.payload === 'object' ? JSON.stringify(e.payload, null, 0).replace(/\n/g, ' ') : String(e.payload || '');
+          return '[' + t + '] [' + (e.kind || '') + '] ' + payload;
+        });
+        pre.textContent = lines.join('\n') || '(no AI events yet)';
+        pre.scrollTop = pre.scrollHeight;
+      }).catch(function() { pre.textContent = '(failed to load)'; });
+    }
+    fetchLog();
+    setInterval(fetchLog, 5000);
+  })();
+  </script>
+{% endblock %}
