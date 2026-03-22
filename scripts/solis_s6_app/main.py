@@ -10,6 +10,7 @@ import asyncio
 import ipaddress
 import json
 import logging
+import math
 import re
 import threading
 import time
@@ -74,6 +75,9 @@ try:
         get_solis_grid_charge_at_low_soc_threshold_pct,
         get_solis_grid_charge_at_low_soc_restore_pct,
         get_solis_grid_charge_at_low_soc_watts,
+        get_solis_grid_charge_at_low_soc_min_watts,
+        get_solis_grid_charge_at_low_soc_pv_threshold_w,
+        get_solis_grid_charge_at_low_soc_pv_max_w,
         get_solis_curtail_when_both_full,
         get_solis_grid_charge_when_solark_full,
         get_solis_tou_charge_start_h,
@@ -219,7 +223,13 @@ except Exception as e:
     def get_solis_grid_charge_at_low_soc_restore_pct():
         return 20.0
     def get_solis_grid_charge_at_low_soc_watts():
-        return 5000.0
+        return 2000.0
+    def get_solis_grid_charge_at_low_soc_min_watts():
+        return 500.0
+    def get_solis_grid_charge_at_low_soc_pv_threshold_w():
+        return 500.0
+    def get_solis_grid_charge_at_low_soc_pv_max_w():
+        return 3000.0
     def get_solis_curtail_when_both_full():
         return True
     def get_solis_grid_charge_when_solark_full():
@@ -243,9 +253,9 @@ except Exception as e:
     def get_solis_tou_charge_ramp_enabled():
         return True
     def get_solis_tou_charge_amps_min():
-        return 10.0
+        return 1.0
     def get_solis_tou_charge_amps_max():
-        return 52.0
+        return 50.0
     def get_solis_tou_charge_ramp_pv_threshold_w():
         return 1000.0
     def get_solis_tou_charge_ramp_pv_max_w():
@@ -1035,8 +1045,8 @@ def _check_solark_connectivity_sync() -> bool | None:
         return False
 
 
-def _run_solis_low_soc_grid_charge(solis_data: dict) -> bool:
-    """When Solis SOC < 15%, enable grid charge to protect battery. Solark supplies house load."""
+def _run_solis_low_soc_grid_charge(solis_data: dict, solark_data: dict) -> bool:
+    """When Solis SOC < 15%, enable grid charge to protect battery. Rate scales with Solark PV."""
     global _solis_power_control_state, _solis_low_soc_grid_charge_active
     if not _modbus_available:
         return False
@@ -1049,9 +1059,23 @@ def _run_solis_low_soc_grid_charge(solis_data: dict) -> bool:
 
     if solis_soc_pct < threshold:
         _solis_low_soc_grid_charge_active = True
-        watts = int(get_solis_grid_charge_at_low_soc_watts())
+        pv_w = _solark_available_pv_w(solark_data)
+        watts_min = int(get_solis_grid_charge_at_low_soc_min_watts())
+        watts_max = int(get_solis_grid_charge_at_low_soc_watts())
+        pv_thresh = get_solis_grid_charge_at_low_soc_pv_threshold_w()
+        pv_max = get_solis_grid_charge_at_low_soc_pv_max_w()
+        if pv_w <= pv_thresh:
+            watts = watts_min
+        elif pv_max <= pv_thresh or pv_w >= pv_max:
+            watts = watts_max
+        else:
+            frac = (pv_w - pv_thresh) / (pv_max - pv_thresh)
+            frac = max(0.0, min(1.0, frac))
+            watts = int(watts_min + (watts_max - watts_min) * frac)
+        watts = max(100, min(11400, watts))
+        max_amps = max(1.0, min(70.0, math.ceil(watts / 360.0)))  # ~360V nominal → 5000W ≈ 14A
         _save_power_control({"mode": "import", "watts": watts})
-        result = set_grid_charge_limits(import_watts=watts, charge_limit_watts=watts, max_amps=70)
+        result = set_grid_charge_limits(import_watts=watts, charge_limit_watts=watts, max_amps=max_amps)
         _solis_power_control_state = "low_soc_grid_charge"
         if result.get("ok"):
             logger.info(
@@ -1086,7 +1110,7 @@ def _run_solis_power_controls_automation(solis_data: dict, solark_data: dict) ->
     if _run_solis_high_soc_curtailment(solark_data, solis_data=solis_data, enabled=True, source="coordinator"):
         _solis_power_control_state = "auto_high_soc_curtailment"
         return
-    if _run_solis_low_soc_grid_charge(solis_data):
+    if _run_solis_low_soc_grid_charge(solis_data, solark_data):
         return
     decision = _evaluate_solis_power_control_decision(solis_data, solark_data)
     if decision.get("owner") == "manual_hold":
@@ -1111,6 +1135,18 @@ def _run_solis_power_controls_automation(solis_data: dict, solark_data: dict) ->
     now = time.time()
     if now - _last_solis_auto_switch_ts < _AUTO_SWITCH_COOLDOWN_SEC:
         _solis_power_control_state = decision.get("owner") or "cooldown"
+        # Still update charge/discharge amps during cooldown so PV ramp corrects every poll
+        current_state = str(decision.get("current_state") or "unknown")
+        if current_state == "tou_charge":
+            try:
+                set_tou_charge_amps(_compute_tou_charge_amps_ramp(solis_data, solark_data))
+            except Exception as e:
+                logger.debug("tou charge ramp during cooldown: %s", e)
+        elif current_state == "self_use" and _is_in_tou_discharge_window():
+            try:
+                set_tou_discharge_amps(_compute_tou_discharge_amps(solis_data, solark_data))
+            except Exception as e:
+                logger.debug("tou discharge ramp during cooldown: %s", e)
         return
     desired_state = str(decision.get("desired_state") or "self_use")
     current_state = str(decision.get("current_state") or "unknown")
@@ -3146,8 +3182,8 @@ def _validate_settings(form=None, *, overrides: dict | None = None) -> dict:
         "solis_tou_discharge_end_h": int(_validate_float(overrides["solis_tou_discharge_end_h"], "TOU discharge end hour", default=6, min_val=0, max_val=23)),
         "solis_tou_discharge_end_m": int(_validate_float(overrides["solis_tou_discharge_end_m"], "TOU discharge end minute", default=0, min_val=0, max_val=59)),
         "solis_tou_charge_ramp_enabled": overrides["solis_tou_charge_ramp_enabled"],
-        "solis_tou_charge_amps_min": _validate_float(overrides["solis_tou_charge_amps_min"], "TOU charge amps min", default=10.0, min_val=0.0, max_val=70.0),
-        "solis_tou_charge_amps_max": _validate_float(overrides["solis_tou_charge_amps_max"], "TOU charge amps max", default=52.0, min_val=0.0, max_val=70.0),
+        "solis_tou_charge_amps_min": _validate_float(overrides["solis_tou_charge_amps_min"], "TOU charge amps min", default=1.0, min_val=0.0, max_val=70.0),
+        "solis_tou_charge_amps_max": _validate_float(overrides["solis_tou_charge_amps_max"], "TOU charge amps max", default=50.0, min_val=0.0, max_val=70.0),
         "solis_tou_charge_ramp_pv_threshold_w": _validate_float(overrides["solis_tou_charge_ramp_pv_threshold_w"], "Charge ramp PV threshold (W)", default=1000.0, min_val=0.0, max_val=100000.0),
         "solis_tou_charge_ramp_pv_max_w": _validate_float(overrides["solis_tou_charge_ramp_pv_max_w"], "Charge ramp PV max (W)", default=8000.0, min_val=0.0, max_val=100000.0),
         "safe_window_start_h": int(_validate_float(overrides["safe_window_start_h"], "Safe window start hour", default=7, min_val=0, max_val=23)),

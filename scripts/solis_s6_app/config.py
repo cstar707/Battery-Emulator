@@ -443,10 +443,34 @@ def get_solis_grid_charge_at_low_soc_restore_pct() -> float:
 
 
 def get_solis_grid_charge_at_low_soc_watts() -> float:
-    """Import watts when charging Solis from grid at low SOC. Default 5000W."""
+    """Import watts when charging Solis from grid at low SOC (max when PV high). Default 2000W."""
     return _get_float_with_legacy(
-        "solis_grid_charge_at_low_soc_watts", "SOLIS_GRID_CHARGE_AT_LOW_SOC_WATTS", 5000.0,
+        "solis_grid_charge_at_low_soc_watts", "SOLIS_GRID_CHARGE_AT_LOW_SOC_WATTS", 2000.0,
         min_val=500.0, max_val=11400.0,
+    )
+
+
+def get_solis_grid_charge_at_low_soc_min_watts() -> float:
+    """Min import when Solark PV is low/none. Ramps up with PV. Default 500W (~10A)."""
+    return _get_float_with_legacy(
+        "solis_grid_charge_at_low_soc_min_watts", "SOLIS_GRID_CHARGE_AT_LOW_SOC_MIN_WATTS", 500.0,
+        min_val=100.0, max_val=5000.0,
+    )
+
+
+def get_solis_grid_charge_at_low_soc_pv_threshold_w() -> float:
+    """Below this Solark PV, use min watts. Default 500W."""
+    return _get_float_with_legacy(
+        "solis_grid_charge_at_low_soc_pv_threshold_w", "SOLIS_GRID_CHARGE_AT_LOW_SOC_PV_THRESHOLD_W", 500.0,
+        min_val=0.0, max_val=10000.0,
+    )
+
+
+def get_solis_grid_charge_at_low_soc_pv_max_w() -> float:
+    """At or above this Solark PV, use full watts. Default 3000W."""
+    return _get_float_with_legacy(
+        "solis_grid_charge_at_low_soc_pv_max_w", "SOLIS_GRID_CHARGE_AT_LOW_SOC_PV_MAX_W", 3000.0,
+        min_val=0.0, max_val=50000.0,
     )
 
 
@@ -516,14 +540,14 @@ def get_solis_tou_charge_ramp_enabled() -> bool:
 
 def get_solis_tou_charge_amps_min() -> float:
     return _get_float_with_legacy(
-        "solis_tou_charge_amps_min", "SOLIS_TOU_CHARGE_AMPS_MIN", 10.0,
+        "solis_tou_charge_amps_min", "SOLIS_TOU_CHARGE_AMPS_MIN", 1.0,
         min_val=0.0, max_val=70.0,
     )
 
 
 def get_solis_tou_charge_amps_max() -> float:
     return _get_float_with_legacy(
-        "solis_tou_charge_amps_max", "SOLIS_TOU_CHARGE_AMPS_MAX", 52.0,
+        "solis_tou_charge_amps_max", "SOLIS_TOU_CHARGE_AMPS_MAX", 50.0,
         min_val=0.0, max_val=70.0,
     )
 
