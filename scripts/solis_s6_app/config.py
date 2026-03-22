@@ -202,7 +202,7 @@ SOLARK_SOC_FEEDIN_BELOW_PCT = int(os.environ.get("SOLARK_SOC_FEEDIN_BELOW_PCT", 
 
 
 def get_solark_soc_automation_enabled() -> bool:
-    """Whether to run the legacy Solis PV-curtailment protection path from Settings or API."""
+    """Whether to run the legacy Solis PV-curtailment protection path. Default: on."""
     return _get_bool("solark_soc_automation_enabled", "SOLARK_SOC_AUTOMATION_ENABLED", True)
 
 
@@ -391,6 +391,62 @@ def get_solis_full_soc_pct() -> float:
     return _get_float_with_legacy(
         "solis_full_soc_pct", "SOLIS_FULL_SOC_PCT", 95.0,
         min_val=0.0, max_val=100.0,
+    )
+
+
+def get_solis_min_discharge_soc_pct() -> float:
+    """Solis overdischarge SOC / reserve (%): inverter stops discharging below this. Modbus 43011."""
+    return _get_float_with_legacy(
+        "solis_min_discharge_soc_pct", "SOLIS_MIN_DISCHARGE_SOC_PCT", 20.0,
+        min_val=0.0, max_val=100.0,
+    )
+
+
+def get_solis_low_soc_discharge_buffer_pct() -> float:
+    """Buffer above min_discharge: when Solis SOC <= min + buffer, stop discharge early. Default 5% → cutoff at 25%."""
+    return _get_float_with_legacy(
+        "solis_low_soc_discharge_buffer_pct", "SOLIS_LOW_SOC_DISCHARGE_BUFFER_PCT", 5.0,
+        min_val=0.0, max_val=50.0,
+    )
+
+
+def get_solis_low_soc_discharge_ramp_threshold_pct() -> float:
+    """When Solis SOC <= this, start ramping discharge down. Default 30%."""
+    return _get_float_with_legacy(
+        "solis_low_soc_discharge_ramp_threshold_pct", "SOLIS_LOW_SOC_DISCHARGE_RAMP_THRESHOLD_PCT", 30.0,
+        min_val=0.0, max_val=100.0,
+    )
+
+
+def get_solis_low_soc_discharge_ramp_floor_amps() -> float:
+    """Floor amps when Solis SOC is in the ramp zone (25–30%). Default 1A."""
+    return _get_float_with_legacy(
+        "solis_low_soc_discharge_ramp_floor_amps", "SOLIS_LOW_SOC_DISCHARGE_RAMP_FLOOR_AMPS", 1.0,
+        min_val=0.0, max_val=70.0,
+    )
+
+
+def get_solis_grid_charge_at_low_soc_threshold_pct() -> float:
+    """When Solis SOC < this, enable grid charge to protect battery. Default 15%."""
+    return _get_float_with_legacy(
+        "solis_grid_charge_at_low_soc_threshold_pct", "SOLIS_GRID_CHARGE_AT_LOW_SOC_THRESHOLD_PCT", 15.0,
+        min_val=0.0, max_val=50.0,
+    )
+
+
+def get_solis_grid_charge_at_low_soc_restore_pct() -> float:
+    """Turn off low-SOC grid charge when Solis SOC rises above this. Default 20%."""
+    return _get_float_with_legacy(
+        "solis_grid_charge_at_low_soc_restore_pct", "SOLIS_GRID_CHARGE_AT_LOW_SOC_RESTORE_PCT", 20.0,
+        min_val=0.0, max_val=50.0,
+    )
+
+
+def get_solis_grid_charge_at_low_soc_watts() -> float:
+    """Import watts when charging Solis from grid at low SOC. Default 5000W."""
+    return _get_float_with_legacy(
+        "solis_grid_charge_at_low_soc_watts", "SOLIS_GRID_CHARGE_AT_LOW_SOC_WATTS", 5000.0,
+        min_val=500.0, max_val=11400.0,
     )
 
 

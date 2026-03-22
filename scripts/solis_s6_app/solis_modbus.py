@@ -94,6 +94,8 @@ _REG_TOU_CHARGE_CURRENT = 43141
 _REG_TOU_DISCHARGE_CURRENT = 43142
 _REG_TOU_SLOT1_BASE = 43143
 _TOU_SLOT_REG_COUNT = 8
+# Solis holding 43011 = Overdischarge SOC (minimum discharge %). Inverter stops discharging below this.
+_REG_OVERDISCHARGE_SOC = 43011
 
 
 def _input_addr(solis_reg: int) -> int:
@@ -788,6 +790,40 @@ def get_tou_config() -> dict:
         except Exception as e:
             logger.exception("get_tou_config: %s", e)
             return {"ok": False, "error": str(e)}
+
+
+def get_overdischarge_soc_pct() -> float | None:
+    """Read Solis overdischarge SOC (min discharge %) from register 43011. Returns None on read failure."""
+    with _modbus_lock:
+        client = _get_client()
+        try:
+            if not client.connect():
+                return None
+            reg = _read_holding(client, _REG_OVERDISCHARGE_SOC, 1)
+            client.close()
+            return float(reg[0]) if reg else None
+        except Exception as e:
+            logger.warning("get_overdischarge_soc_pct: %s", e)
+            return None
+
+
+def set_overdischarge_soc_pct(pct: float) -> bool:
+    """Write Solis overdischarge SOC (min discharge %) to register 43011. 0–100%."""
+    pct = max(0.0, min(100.0, float(pct)))
+    val = int(round(pct))
+    with _modbus_lock:
+        client = _get_client()
+        try:
+            if not client.connect():
+                return False
+            ok = _write_holding(client, _REG_OVERDISCHARGE_SOC, val)
+            client.close()
+            if ok:
+                logger.info("set_overdischarge_soc_pct: 43011=%s (%.0f%%)", val, pct)
+            return ok
+        except Exception as e:
+            logger.warning("set_overdischarge_soc_pct: %s", e)
+            return False
 
 
 def _clamp_tou_amps(amps: float) -> float:

@@ -132,7 +132,22 @@ The app cares most about:
 Example:
 - “Use all solar” preset clears `allow_export` (loads are prioritized; surplus should not be exported to grid)
 
-### 3.3 PV curtailment (export curtailment): `43070` + `43052`
+### 3.3 Overdischarge SOC (minimum discharge): `43011`
+
+Register:
+- `43011` = Overdischarge SOC (Solis docs: "Solis Overdischarge SOC") — percentage (0–100)
+
+The inverter stops discharging when battery SOC reaches this value, preserving reserve for emergencies or grid-outage backup.
+
+App API:
+- `get_overdischarge_soc_pct()` — read current value
+- `set_overdischarge_soc_pct(pct)` — write new value
+
+Config:
+- `get_solis_min_discharge_soc_pct()` (default 20%) from config; override via `SOLIS_MIN_DISCHARGE_SOC_PCT` or `solis_min_discharge_soc_pct` in settings.json
+- On app startup, the app writes the configured value to the inverter
+
+### 3.4 PV curtailment (export curtailment): `43070` + `43052`
 
 Register pair:
 - `43070` = power limit switch
@@ -150,7 +165,7 @@ Main automation uses it:
 - When Solark SOC is high, app sets `limit_pct=0` (PV output limited to 0%)
 - When SOC is safe again, app sets `limit_pct=100` to restore full output
 
-### 3.4 Grid charge capability + limits: `43110`, `43117`, `43130`, `43027`, plus remote control `43132/43128`
+### 3.5 Grid charge capability + limits: `43110`, `43117`, `43130`, `43027`, plus remote control `43132/43128`
 
 Grid charge is implemented in two steps in `solis_modbus.py`:
 
@@ -172,7 +187,7 @@ Grid charge is implemented in two steps in `solis_modbus.py`:
 App behavior:
 - The app normally refreshes remote import periodically (dead-man) so the inverter continues obeying the remote command.
 
-### 3.5 TOU currents + slot 1 schedule: `43141`, `43142`, `43143..43150`
+### 3.6 TOU currents + slot 1 schedule: `43141`, `43142`, `43143..43150`
 
 These registers are now read directly by the app for status display and can be written by the app for Solis power-control coordination.
 
@@ -201,7 +216,7 @@ Current app usage:
   - `43141` = configured TOU charge amps
   - `43142` = configured TOU discharge amps
 
-### 3.6 Remote export command: `43110` + `43074` + `43132/43128`
+### 3.7 Remote export command: `43110` + `43074` + `43132/43128`
 
 Export is implemented via:
 - `set_export_target(export_watts)`

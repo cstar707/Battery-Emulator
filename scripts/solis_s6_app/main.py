@@ -67,6 +67,13 @@ try:
         get_solis_tou_discharge_amps,
         get_solark_full_soc_pct,
         get_solis_full_soc_pct,
+        get_solis_min_discharge_soc_pct,
+        get_solis_low_soc_discharge_buffer_pct,
+        get_solis_low_soc_discharge_ramp_threshold_pct,
+        get_solis_low_soc_discharge_ramp_floor_amps,
+        get_solis_grid_charge_at_low_soc_threshold_pct,
+        get_solis_grid_charge_at_low_soc_restore_pct,
+        get_solis_grid_charge_at_low_soc_watts,
         get_solis_curtail_when_both_full,
         get_solis_grid_charge_when_solark_full,
         get_solis_tou_charge_start_h,
@@ -199,6 +206,20 @@ except Exception as e:
         return 98.0
     def get_solis_full_soc_pct():
         return 95.0
+    def get_solis_min_discharge_soc_pct():
+        return 20.0
+    def get_solis_low_soc_discharge_buffer_pct():
+        return 5.0
+    def get_solis_low_soc_discharge_ramp_threshold_pct():
+        return 30.0
+    def get_solis_low_soc_discharge_ramp_floor_amps():
+        return 1.0
+    def get_solis_grid_charge_at_low_soc_threshold_pct():
+        return 15.0
+    def get_solis_grid_charge_at_low_soc_restore_pct():
+        return 20.0
+    def get_solis_grid_charge_at_low_soc_watts():
+        return 5000.0
     def get_solis_curtail_when_both_full():
         return True
     def get_solis_grid_charge_when_solark_full():
@@ -398,6 +419,7 @@ try:
         set_tou_charge_amps,
         set_tou_discharge_amps,
         set_tou_slot1,
+        set_overdischarge_soc_pct,
     )
     _STORAGE_BIT_NAMES, _HYBRID_BIT_NAMES = _SM, _HM
     _modbus_available = True
@@ -422,6 +444,7 @@ except Exception as e:
     def set_tou_charge_amps(*a, **kw): return {"ok": False, "message": "Modbus unavailable", "writes": []}
     def set_tou_discharge_amps(*a, **kw): return {"ok": False, "message": "Modbus unavailable", "writes": []}
     def set_tou_slot1(*a, **kw): return {"ok": False, "message": "Modbus unavailable", "writes": []}
+    def set_overdischarge_soc_pct(*a, **kw): return False
     get_storage_control_bits = _modbus_stub_return_dict_bits
     get_hybrid_control_bits = _modbus_stub_return_hybrid_bits
     def get_active_power_limit(): return {"ok": False, "enabled": False, "limit_pct": 100.0}
@@ -514,6 +537,7 @@ _ha_batt_draw_hold_since: float | None = None
 # once the Solark battery indicates “drawing” (battery_total_power_W <= threshold) for a hold time.
 _solis_pv_restore_batt_draw_hold_since: float | None = None
 _solis_power_control_state: str = "startup_safe"
+_solis_low_soc_grid_charge_active: bool = False
 
 # LLM automation state: last run timestamps + last results for each automation type.
 _llm_automation_state: dict = {
@@ -1011,6 +1035,48 @@ def _check_solark_connectivity_sync() -> bool | None:
         return False
 
 
+def _run_solis_low_soc_grid_charge(solis_data: dict) -> bool:
+    """When Solis SOC < 15%, enable grid charge to protect battery. Solark supplies house load."""
+    global _solis_power_control_state, _solis_low_soc_grid_charge_active
+    if not _modbus_available:
+        return False
+    solis_soc_raw = solis_data.get("battery_soc_pct") if solis_data else None
+    if solis_soc_raw is None or not isinstance(solis_soc_raw, (int, float)):
+        return False
+    solis_soc_pct = float(solis_soc_raw)
+    threshold = get_solis_grid_charge_at_low_soc_threshold_pct()
+    restore = get_solis_grid_charge_at_low_soc_restore_pct()
+
+    if solis_soc_pct < threshold:
+        _solis_low_soc_grid_charge_active = True
+        watts = int(get_solis_grid_charge_at_low_soc_watts())
+        _save_power_control({"mode": "import", "watts": watts})
+        result = set_grid_charge_limits(import_watts=watts, charge_limit_watts=watts, max_amps=70)
+        _solis_power_control_state = "low_soc_grid_charge"
+        if result.get("ok"):
+            logger.info(
+                "Solis low-SOC grid charge: SOC %.1f%% < %.0f%%, charging from grid at %d W (Solark supplies house)",
+                solis_soc_pct, threshold, watts,
+            )
+        return True
+    if solis_soc_pct >= restore and _solis_low_soc_grid_charge_active:
+        _solis_low_soc_grid_charge_active = False
+        _save_power_control({"mode": "off", "watts": 0})
+        try:
+            set_power_control_off()
+        except Exception as e:
+            logger.warning("Solis low-SOC grid charge release: %s", e)
+        logger.info(
+            "Solis low-SOC grid charge: SOC recovered to %.1f%% >= %.0f%%, released to normal operation",
+            solis_soc_pct, restore,
+        )
+        return False
+    if _solis_low_soc_grid_charge_active and threshold <= solis_soc_pct < restore:
+        _solis_power_control_state = "low_soc_grid_charge"
+        return True
+    return False
+
+
 def _run_solis_power_controls_automation(solis_data: dict, solark_data: dict) -> None:
     """Coordinate Solis off-grid / TOU-charge / self-use states from config."""
     global _solis_power_control_state, _last_solis_auto_switch_ts
@@ -1019,6 +1085,8 @@ def _run_solis_power_controls_automation(solis_data: dict, solark_data: dict) ->
     _sync_tou_schedule_from_config()
     if _run_solis_high_soc_curtailment(solark_data, solis_data=solis_data, enabled=True, source="coordinator"):
         _solis_power_control_state = "auto_high_soc_curtailment"
+        return
+    if _run_solis_low_soc_grid_charge(solis_data):
         return
     decision = _evaluate_solis_power_control_decision(solis_data, solark_data)
     if decision.get("owner") == "manual_hold":
@@ -1628,6 +1696,15 @@ def _enforce_startup_safe_state() -> None:
     else:
         logger.error("STARTUP SAFE STATE: Modbus not available — cannot enforce Solis 0%% limit!")
 
+    # 3. Set Solis min discharge SOC (43011) to default — inverter stops discharging below this
+    if _modbus_available:
+        try:
+            pct = get_solis_min_discharge_soc_pct()
+            if set_overdischarge_soc_pct(pct):
+                logger.info("STARTUP: Solis min discharge SOC set to %.0f%% (43011)", pct)
+        except Exception as exc:
+            logger.warning("STARTUP: failed to set Solis min discharge SOC — %s", exc)
+
     logger.warning(
         "STARTUP SAFE STATE: complete. Generation locked OFF until Solark SOC < %d%% (SOLARK_SOC_FEEDIN_BELOW_PCT).",
         SOLARK_SOC_FEEDIN_BELOW_PCT,
@@ -2054,9 +2131,28 @@ def _build_solis_inverters() -> list[dict]:
     return out
 
 
+def _sanitize_dashboard_data(data: dict) -> dict:
+    """Coerce None to 0 for numeric fields to avoid template format() errors."""
+    if not data:
+        return data
+    out = dict(data)
+    numeric_keys = (
+        "pv_power_W", "pv_voltage_1_V", "pv_current_1_A", "pv_voltage_2_V", "pv_current_2_A",
+        "grid_power_W", "load_power_W", "active_power_W", "ac_voltage_V", "grid_freq_Hz",
+        "inverter_temp_C", "battery_soc_pct", "battery_remaining_kWh", "battery_power_W",
+        "battery_voltage_V", "battery_current_A", "energy_today_pv_kWh", "total_pv_energy_kWh",
+        "energy_today_load_kWh", "energy_today_grid_import_kWh", "energy_today_grid_export_kWh",
+        "energy_today_bat_charge_kWh", "energy_today_bat_discharge_kWh",
+    )
+    for k in numeric_keys:
+        if k in out and out[k] is None:
+            out[k] = 0
+    return out
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    data = _solis_cache_first().get("data", {}) or {}
+    data = _sanitize_dashboard_data(_solis_cache_first().get("data", {}) or {})
     storage_bits = _merge_bits({n: False for n in _STORAGE_BIT_NAMES}, data.get("storage_bits"))
     ts = _solis_cache_first().get("ts", 0) or 0
     last_updated = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%H:%M:%S UTC") if ts else "—"
@@ -2399,13 +2495,32 @@ def _is_in_tou_discharge_window() -> bool:
 
 def _compute_tou_discharge_amps(solis_data: dict, solark_data: dict) -> float:
     """Compute TOU discharge amps: SOC-based ramp or load-subsidy from Solark battery draw."""
-    # Prioritize discharging the battery with higher SOC: when Solark > Solis, minimize Solis discharge.
+    min_discharge = get_solis_min_discharge_soc_pct()
+    buffer = get_solis_low_soc_discharge_buffer_pct()
+    cutoff_pct = min_discharge + buffer
+    ramp_thresh = get_solis_low_soc_discharge_ramp_threshold_pct()
+    ramp_floor_a = get_solis_low_soc_discharge_ramp_floor_amps()
+    amin = get_solis_tou_discharge_amps_min()
+    amax = get_solis_tou_discharge_amps_max()
+
+    solis_soc_raw = solis_data.get("battery_soc_pct") if solis_data else None
+    solis_soc_pct = float(solis_soc_raw) if solis_soc_raw is not None and isinstance(solis_soc_raw, (int, float)) else None
+
+    # Early stop: when Solis SOC approaches reserve (min_discharge + buffer), stop discharge
+    if solis_soc_pct is not None and solis_soc_pct <= cutoff_pct:
+        logger.info(
+            "Solis low-SOC early stop: %.1f%% <= %.1f%% (min %.0f%% + buffer %.0f%%), discharge amps=0",
+            solis_soc_pct, cutoff_pct, min_discharge, buffer,
+        )
+        return 0.0
+
+    # Prioritize discharging the battery with higher SOC: when Solark > Solis, minimize Solis discharge
     if get_solis_discharge_prioritize_higher_soc():
         _raw, solark_soc_pptt = _solark_soc_calibrated_pptt(solark_data)
-        solis_soc_raw = solis_data.get("battery_soc_pct") if solis_data else None
         solis_soc_pptt = int(solis_soc_raw * 100) if solis_soc_raw is not None and isinstance(solis_soc_raw, (int, float)) else None
         if solark_soc_pptt is not None and solis_soc_pptt is not None and solark_soc_pptt > solis_soc_pptt:
             return 0.0
+
     if get_solis_discharge_load_subsidy_enabled():
         batt_w = solark_data.get("battery_total_power_W") or solark_data.get("battery_power_W")
         if batt_w is not None and isinstance(batt_w, (int, float)) and batt_w < 0:
@@ -2417,28 +2532,44 @@ def _compute_tou_discharge_amps(solis_data: dict, solark_data: dict) -> float:
                 batt_v = 50.0
             eff = 0.95
             target_amps = target_w / (float(batt_v) * eff) if batt_v * eff > 0 else 0.0
-            amin = get_solis_tou_discharge_amps_min()
-            amax = get_solis_tou_discharge_amps_max()
-            return round(max(amin, min(amax, target_amps)), 1)
-    if not get_solis_discharge_ramp_enabled():
-        return get_solis_tou_discharge_amps()
-    _raw, soc_pptt = _solark_soc_calibrated_pptt(solark_data)
-    if soc_pptt is None:
-        return get_solis_tou_discharge_amps()
-    soc_pct = soc_pptt / 100.0
-    thresh = get_solark_soc_discharge_ramp_threshold_pct()
-    floor = get_solark_soc_discharge_ramp_floor_pct()
-    amin = get_solis_tou_discharge_amps_min()
-    amax = get_solis_tou_discharge_amps_max()
-    if soc_pct > thresh:
-        return amin
-    if soc_pct <= floor:
-        return amax
-    if thresh <= floor:
-        return amax
-    frac = (thresh - soc_pct) / (thresh - floor)
-    frac = max(0.0, min(1.0, frac))
-    return round(amin + (amax - amin) * frac, 1)
+            amps = max(amin, min(amax, target_amps))
+        else:
+            amps = get_solis_tou_discharge_amps()
+    elif not get_solis_discharge_ramp_enabled():
+        amps = get_solis_tou_discharge_amps()
+    else:
+        _raw, soc_pptt = _solark_soc_calibrated_pptt(solark_data)
+        if soc_pptt is None:
+            amps = get_solis_tou_discharge_amps()
+        else:
+            soc_pct = soc_pptt / 100.0
+            thresh = get_solark_soc_discharge_ramp_threshold_pct()
+            floor = get_solark_soc_discharge_ramp_floor_pct()
+            if soc_pct > thresh:
+                amps = amin
+            elif soc_pct <= floor:
+                amps = amax
+            elif thresh <= floor:
+                amps = amax
+            else:
+                frac = (thresh - soc_pct) / (thresh - floor)
+                frac = max(0.0, min(1.0, frac))
+                amps = amin + (amax - amin) * frac
+
+    # Solis low-SOC ramp: when 25% < Solis SOC <= 30%, cap discharge to ramp from 1A at 25% up to full at 30%
+    if solis_soc_pct is not None and cutoff_pct < solis_soc_pct <= ramp_thresh:
+        span = ramp_thresh - cutoff_pct
+        if span > 0:
+            frac = (solis_soc_pct - cutoff_pct) / span
+            cap = ramp_floor_a + frac * (amax - ramp_floor_a)
+            if amps > cap:
+                logger.info(
+                    "Solis low-SOC ramp: %.1f%% in [%.0f–%.0f]%%, capping discharge %.1fA → %.1fA",
+                    solis_soc_pct, cutoff_pct, ramp_thresh, amps, cap,
+                )
+                amps = cap
+
+    return round(amps, 1)
 
 
 def _detect_solis_power_control_state(storage_bits: dict) -> str:
