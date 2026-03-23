@@ -4,24 +4,28 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="theme-color" content="#0f1419">
-  <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-  <link rel="manifest" href="/static/manifest.json">
+  <script>window.SOLIS_BASE="{{ base_url | default('') }}";</script>
+  <link rel="icon" type="image/svg+xml" href="{{ base_url }}/static/favicon.svg">
+  <link rel="manifest" href="{{ base_url }}/static/manifest.json">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <title>{% block title %}Solis / Solark{% endblock %} | 10.10.53.92</title>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <title>{% block title %}Solar Monitor{% endblock %} | 10.10.53.92</title>
   <style>
     :root, [data-theme="dark"] {
-      --bg: #0f1419;
-      --card: #1a2332;
-      --text: #e6edf3;
-      --muted: #8b949e;
-      --accent: #58a6ff;
-      --green: #3fb950;
-      --orange: #d29922;
-      --red: #f85149;
+      --bg: #0c0e12;
+      --card: #151920;
+      --header-bg: #0a0b0f;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --accent-dim: rgba(56, 189, 248, 0.15);
+      --green: #4ade80;
+      --orange: #fbbf24;
+      --red: #f87171;
       --pv-accent: #f59e0b;
       --battery-accent: #22d3ee;
+      --live-dot: #38bdf8;
     }
     [data-theme="light"] {
       --bg: #f6f8fa;
@@ -41,7 +45,7 @@
     }
     * { box-sizing: border-box; }
     body {
-      font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
+      font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
       background: var(--bg);
       color: var(--text);
       margin: 0;
@@ -52,17 +56,50 @@
     .kpi .val, .live-card .val, [data-numeric] { font-family: 'JetBrains Mono', ui-monospace, monospace; }
     a { color: var(--accent); text-decoration: none; }
     a:hover { text-decoration: underline; }
-    .nav { position: sticky; top: 0; z-index: 100; background: var(--card); padding: 0.75rem 1.5rem; display: flex; flex-wrap: wrap; gap: 0.5rem 1.5rem; align-items: center; border-bottom: 1px solid #30363d; overflow-x: auto; overflow-y: visible; }
-    .nav a {
-      color: var(--text);
-      padding: 0.4rem 0.5rem;
+    .app-header {
+      position: sticky; top: 0; z-index: 100;
+      background: var(--header-bg);
+      padding: 0.6rem 1.25rem;
+      display: flex; align-items: center; justify-content: space-between; gap: 1.5rem;
+      border-bottom: 1px solid rgba(56, 189, 248, 0.12);
+      min-height: 3rem;
+    }
+    .app-header__brand { display: flex; align-items: center; gap: 0.5rem; flex-shrink: 0; }
+    .app-header__brand-icon { font-size: 1.25rem; color: var(--accent); }
+    .app-header__brand-text { font-size: 1rem; font-weight: 600; letter-spacing: 0.02em; color: var(--text); }
+    .app-header__brand-text strong { font-weight: 700; color: var(--accent); }
+    .app-header__nav {
+      display: flex; align-items: center; gap: 4px; flex-wrap: wrap;
+      flex: 1; justify-content: center; overflow-x: auto;
+      padding: 0 0.5rem; scrollbar-width: thin;
+    }
+    .app-header__nav a {
+      color: var(--muted);
+      padding: 0.45rem 0.9rem;
       border-radius: 6px;
-      transition: color 0.2s, background 0.2s;
+      font-size: 0.78rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      transition: color 0.2s, border-color 0.2s, background 0.2s;
       flex-shrink: 0;
+      border: 1px solid transparent;
       white-space: nowrap;
     }
-    .nav a:hover { background: rgba(88, 166, 255, 0.1); }
-    .nav a.active { color: var(--accent); font-weight: 600; box-shadow: inset 0 -2px 0 var(--accent); }
+    .app-header__nav a:hover { color: var(--text); border-color: var(--border); background: rgba(255,255,255,0.04); }
+    .app-header__nav a.active { color: var(--accent); border-color: rgba(56,189,248,0.4); background: var(--accent-dim); }
+    .app-header__status { display: flex; align-items: center; gap: 0.75rem; flex-shrink: 0; }
+    .live-badge {
+      display: inline-flex; align-items: center; gap: 0.4rem;
+      padding: 0.25rem 0.6rem;
+      border-radius: 999px;
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+      font-size: 0.7rem; font-weight: 700; letter-spacing: 0.1em; color: var(--accent);
+    }
+    .live-badge__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--live-dot); box-shadow: 0 0 8px var(--live-dot); animation: live-pulse 2s ease-in-out infinite; }
+    @keyframes live-pulse { 0%,100%{ opacity:1 } 50%{ opacity:0.5 } }
+    .app-header__clock { font-family: 'JetBrains Mono', monospace; font-size: 0.85rem; color: var(--muted); }
     .container { max-width: 960px; margin: 0 auto; padding: 1.5rem; }
     .card {
       background: var(--card);
@@ -215,9 +252,14 @@
     .settings-row label { min-width: 10rem; margin: 0; }
     .settings-row input, .settings-row select { flex: 1; min-width: 10rem; max-width: 20rem; }
     @media (max-width: 900px) {
-      .nav { flex-wrap: wrap; }
+      .app-header { flex-wrap: wrap; }
+      .app-header__nav { flex: 1 1 100%; order: 3; padding-top: 0.5rem; border-top: 1px solid rgba(56,189,248,0.12); }
       .service-shell { padding: 0.9rem 1rem; }
       .service-shell__chips { justify-content: flex-start; }
+    }
+    @media (max-width: 600px) {
+      .app-header__nav a { padding: 0.35rem 0.6rem; font-size: 0.7rem; }
+      .app-header__status { flex-wrap: wrap; }
     }
     .theme-toggle {
       background: transparent;
@@ -243,39 +285,55 @@
   {% block head %}{% endblock %}
 </head>
 <body>
+  <header class="app-header">
+    <div class="app-header__brand">
+      <span class="app-header__brand-icon">⚡</span>
+      <span class="app-header__brand-text"><strong>Solis</strong> + Solark</span>
+    </div>
+    <nav class="app-header__nav">
+      <a href="{{ base_url }}/" class="{% if request.url.path == '/' %}active{% endif %}">Home</a>
+      <a href="{{ base_url }}/data" class="{% if request.url.path == '/data' %}active{% endif %}" title="Browse InfluxDB data and charts">Data</a>
+      <a href="{{ base_url }}/control" class="{% if request.url.path == '/control' %}active{% endif %}" title="All inverter controls and buttons">Controls</a>
+      <a href="{{ base_url }}/settings" class="{% if request.url.path == '/settings' or request.url.path == '/settings/automations' %}active{% endif %}">Settings</a>
+      <a href="{{ base_url }}/envoys" class="{% if request.url.path == '/envoys' %}active{% endif %}" title="Enphase micro-inverter live data">Envoy</a>
+      <a href="{{ base_url }}/curtailment" class="{% if request.url.path == '/curtailment' %}active{% endif %}">Curtailment</a>
+      <a href="{{ base_url }}/grid-status" class="{% if request.url.path == '/grid-status' %}active{% endif %}">Grid</a>
+      <a href="{{ base_url }}/forecast" class="nav-tab {% if request.url.path == '/forecast' %}active{% endif %}">Forecast</a>
+      <a href="{{ base_url }}/debug" class="{% if request.url.path == '/debug' %}active{% endif %}">Debug</a>
+      <a href="{{ base_url }}/ai-debug" class="{% if request.url.path == '/ai-debug' %}active{% endif %}">AI</a>
+    </nav>
+    <div class="app-header__status">
+      <div class="live-badge"><span class="live-badge__dot"></span>LIVE</div>
+      <span class="app-header__clock" id="headerClock">—</span>
+      <button type="button" id="themeToggle" class="theme-toggle" title="Toggle dark/light" aria-label="Toggle theme">🌙</button>
+      <span class="muted" style="font-size:0.7rem;">{{ inverter_label }} · v{{ app_version | default('?') }}</span>
+    </div>
+  </header>
+
   <section class="service-shell">
     <div class="service-shell__row">
       <div class="service-shell__identity">
-        <span class="service-shell__eyebrow">Consolidated dashboard shell · admin owner</span>
-        <span class="service-shell__title">Controls, settings, curtailment, and debug stay on :3007</span>
-        <span class="service-shell__desc">Keep <strong>:3008</strong> as the status/read-only surface. Retained support services stay separate and clearly labeled while port 80 remains the current main entry owner.</span>
+        <span class="service-shell__eyebrow">Quick links · port 80</span>
+        <span class="service-shell__desc">Overview, Grafana, Envoy, SolarK, Legacy — all on one site.</span>
       </div>
       <div class="service-shell__chips">
-        <a href="http://10.10.53.92:3008/" class="service-chip service-chip--primary">Status &amp; Overview · :3008</a>
-        <a href="/data" class="service-chip service-chip--primary">Data · Charts</a>
-        <a href="http://10.10.53.92:3000/" class="service-chip service-chip--support" target="_blank" rel="noopener noreferrer">Grafana · :3000</a>
-        <a href="http://10.10.53.92:3004/" class="service-chip service-chip--support" target="_blank" rel="noopener noreferrer">Envoy Diagnostics · :3004</a>
-        <a href="http://10.10.53.92:3002/" class="service-chip service-chip--support" target="_blank" rel="noopener noreferrer">SolarK Support · :3002</a>
-        <a href="http://10.10.53.92:3001/" class="service-chip service-chip--legacy" target="_blank" rel="noopener noreferrer">Legacy Dashboard · :3001</a>
-        <a href="http://10.10.53.92/" class="service-chip service-chip--neutral" target="_blank" rel="noopener noreferrer">Port 80 Current Entry</a>
+        <a href="/" class="service-chip service-chip--primary">Overview</a>
+        <a href="{{ base_url }}/data" class="service-chip service-chip--primary">Data</a>
+        <a href="http://10.10.53.92:3000/" class="service-chip service-chip--support" target="_blank" rel="noopener noreferrer">Grafana</a>
+        <a href="http://10.10.53.92:3004/" class="service-chip service-chip--support" target="_blank" rel="noopener noreferrer">Envoy</a>
+        <a href="http://10.10.53.92:3002/" class="service-chip service-chip--support" target="_blank" rel="noopener noreferrer">SolarK</a>
+        <a href="{{ base_url }}/legacy/" class="service-chip service-chip--legacy" target="_blank" rel="noopener noreferrer">Legacy</a>
+        <a href="{{ base_url }}/battery-dashboard/" class="service-chip service-chip--primary" target="_blank" rel="noopener noreferrer" title="Status &amp; Overview, Grid, Envoys, Cell Monitor">Battery Dashboard</a>
+        <a href="{{ be1_webui_url | default('http://10.10.53.90/') }}" class="service-chip service-chip--support" target="_blank" rel="noopener noreferrer">BE 1</a>
+        {% if be2_webui_url %}
+        <a href="{{ be2_webui_url }}" class="service-chip service-chip--support" target="_blank" rel="noopener noreferrer">BE 2</a>
+        {% endif %}
+        {% if battery_monitor_webui_url %}
+        <a href="{{ battery_monitor_webui_url }}" class="service-chip service-chip--support" target="_blank" rel="noopener noreferrer">Battery</a>
+        {% endif %}
       </div>
     </div>
   </section>
-  <nav class="nav">
-    <a href="/" class="{% if request.url.path == '/' %}active{% endif %}">Admin Home</a>
-    <a href="/data" class="{% if request.url.path == '/data' %}active{% endif %}" title="Browse InfluxDB data and charts">Data</a>
-    <a href="/control" class="{% if request.url.path == '/control' %}active{% endif %}" title="All inverter controls and buttons">Controls</a>
-    <a href="/settings" class="{% if request.url.path == '/settings' or request.url.path == '/settings/automations' %}active{% endif %}">Settings</a>
-    <a href="/envoys" class="{% if request.url.path == '/envoys' %}active{% endif %}" title="Enphase micro-inverter live data">Envoy Summary</a>
-    <a href="/curtailment" class="{% if request.url.path == '/curtailment' %}active{% endif %}" title="Curtailment switch control">Curtailment</a>
-    <a href="/grid-status" class="{% if request.url.path == '/grid-status' %}active{% endif %}" title="Generation today + battery remaining/runtime">Grid status</a>
-    <a href="/forecast" class="{% if request.url.path == '/forecast' %}active{% endif %}" title="Solar forecast (Forecast.Solar)">Solar Forecast</a>
-    <a href="/debug" class="{% if request.url.path == '/debug' %}active{% endif %}" title="Modbus debug stream">Debug</a>
-    <a href="/ai-debug" class="{% if request.url.path == '/ai-debug' %}active{% endif %}" title="AI / LLM decisions and intents">AI Debug</a>
-    <button type="button" id="themeToggle" class="theme-toggle" title="Toggle dark/light" aria-label="Toggle theme">🌙</button>
-    <span class="muted" style="margin-left: auto;">{{ inverter_label }}</span>
-    <span class="muted" style="margin-left: 0.5rem;" title="UI version">v{{ app_version | default('?') }}</span>
-  </nav>
   <main class="container">
     {% block content %}{% endblock %}
   </main>
@@ -286,7 +344,10 @@
     <div id="chatPanel" class="chat-panel chat-panel--closed">
       <div class="chat-panel__header">
         <span>Assistant</span>
-        <button type="button" id="chatClose" class="chat-close" aria-label="Close">×</button>
+        <div style="display:flex;gap:0.25rem;align-items:center;">
+          <button type="button" id="chatClear" class="chat-clear" title="Clear history" aria-label="Clear">Clear</button>
+          <button type="button" id="chatClose" class="chat-close" aria-label="Close">×</button>
+        </div>
       </div>
       <div id="chatMessages" class="chat-messages"></div>
       <div class="chat-input-wrap">
@@ -299,14 +360,16 @@
     .chat-shell { position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 1000; }
     .chat-toggle { width: 3rem; height: 3rem; border-radius: 50%; background: var(--accent); color: #fff; border: none; cursor: pointer; font-size: 1.25rem; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
     .chat-toggle:hover { filter: brightness(1.1); }
-    .chat-panel { position: absolute; bottom: 4rem; right: 0; width: 360px; max-height: 420px; background: var(--card); border: 1px solid var(--border, #30363d); border-radius: 10px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); display: flex; flex-direction: column; overflow: hidden; backdrop-filter: blur(8px); }
+    .chat-panel { position: absolute; bottom: 4rem; right: 0; width: 420px; max-height: 520px; background: var(--card); border: 1px solid var(--border, #30363d); border-radius: 10px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); display: flex; flex-direction: column; overflow: hidden; backdrop-filter: blur(8px); }
     .chat-panel--closed { display: none; }
     .chat-panel__header { padding: 0.6rem 1rem; border-bottom: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center; background: var(--bg); }
     .chat-panel__header span { font-weight: 600; }
     .chat-close { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 1.5rem; line-height: 1; padding: 0 0.25rem; }
     .chat-close:hover { color: var(--text); }
-    .chat-messages { flex: 1; overflow-y: auto; padding: 1rem; min-height: 160px; max-height: 280px; }
-    .chat-msg { margin-bottom: 0.75rem; padding: 0.5rem 0.75rem; border-radius: 6px; font-size: 0.9rem; }
+    .chat-clear { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 0.75rem; padding: 0.15rem 0.4rem; }
+    .chat-clear:hover { color: var(--text); }
+    .chat-messages { flex: 1; overflow-y: auto; padding: 1rem; min-height: 180px; max-height: 340px; }
+    .chat-msg { margin-bottom: 0.75rem; padding: 0.5rem 0.75rem; border-radius: 6px; font-size: 0.9rem; white-space: pre-wrap; word-break: break-word; }
     .chat-msg--user { background: rgba(88, 166, 255, 0.15); margin-left: 1.5rem; }
     .chat-msg--assistant { background: #21262d; margin-right: 1.5rem; }
     .chat-input-wrap { padding: 0.75rem; border-top: 1px solid #30363d; display: flex; gap: 0.5rem; }
@@ -315,25 +378,48 @@
   </style>
   <script>
   (function(){
-    var toggle=document.getElementById('chatToggle'); var panel=document.getElementById('chatPanel'); var close=document.getElementById('chatClose');
+    var CHAT_STORAGE_KEY='solar-assistant-chat', MAX_MESSAGES=50;
+    var toggle=document.getElementById('chatToggle'); var panel=document.getElementById('chatPanel');
+    var close=document.getElementById('chatClose'); var clearBtn=document.getElementById('chatClear');
     var msgs=document.getElementById('chatMessages'); var input=document.getElementById('chatInput'); var send=document.getElementById('chatSend');
     if(!toggle||!panel) return;
+    function loadHistory(){
+      try{
+        var raw=localStorage.getItem(CHAT_STORAGE_KEY);
+        if(raw){ var arr=JSON.parse(raw); for(var i=0;i<arr.length;i++){ if(arr[i]&&arr[i].role&&arr[i].text){ addMsg(arr[i].role,arr[i].text,false); } } }
+      }catch(e){}
+    }
+    function saveHistory(){
+      var arr=[]; var nodes=msgs.querySelectorAll('.chat-msg:not(#chatTyping)');
+      for(var i=0;i<nodes.length&&arr.length<MAX_MESSAGES;i++){
+        var n=nodes[i]; var role=n.className.indexOf('chat-msg--user')>=0?'user':'assistant'; arr.push({role:role,text:n.textContent||''});
+      }
+      try{ localStorage.setItem(CHAT_STORAGE_KEY,JSON.stringify(arr)); }catch(e){}
+    }
     function open(){ panel.classList.remove('chat-panel--closed'); panel.style.display='flex'; }
     function closePanel(){ panel.classList.add('chat-panel--closed'); panel.style.display='none'; }
     toggle.onclick=open; close.onclick=closePanel;
-    function addMsg(role,text){
+    if(clearBtn) clearBtn.onclick=function(){ msgs.innerHTML=''; saveHistory(); };
+    function addMsg(role,text,persist){
       var div=document.createElement('div'); div.className='chat-msg chat-msg--'+role; div.textContent=text; msgs.appendChild(div);
       msgs.scrollTop=msgs.scrollHeight;
+      if(persist!==false) saveHistory();
     }
+    loadHistory();
     function appendTyping(){ var el=document.createElement('div'); el.className='chat-msg chat-msg--assistant'; el.id='chatTyping'; el.textContent='…'; msgs.appendChild(el); msgs.scrollTop=msgs.scrollHeight; return el; }
     function removeTyping(){ var el=document.getElementById('chatTyping'); if(el) el.remove(); }
     function doSend(){
       var q=input.value.trim(); if(!q) return;
       addMsg('user',q); input.value='';
       var typing=appendTyping();
-      fetch('/api/assistant/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q})})
+      fetch((window.SOLIS_BASE||'')+'/api/assistant/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q})})
         .then(function(r){ return r.json(); })
-        .then(function(data){ removeTyping(); addMsg('assistant', data.ok ? (data.answer||'') : (data.error||'Error')); })
+        .then(function(data){
+          removeTyping();
+          var text = data.ok ? (data.answer||'') : (data.error||'Error');
+          if (typeof text === 'object' && text !== null) text = (text.issue_summary || text.notes || text.recommended_action || '').toString() || 'Response format error';
+          addMsg('assistant', String(text||''));
+        })
         .catch(function(e){ removeTyping(); addMsg('assistant','Request failed'); });
     }
     send.onclick=doSend;
@@ -357,6 +443,8 @@
         btn.textContent=theme==='light'?'🌙':'☀️';
       };
     }
+    var clock=document.getElementById('headerClock');
+    if(clock){ setInterval(function(){ clock.textContent=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'}); },1000); clock.textContent=new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit',second:'2-digit'}); }
   })();
   </script>
 </body>

@@ -28,24 +28,56 @@
 {% if error %}
 <div class="card flash flash-err">{{ error }}</div>
 {% endif %}
+{% if not envoy_has_data and not error %}
+<div class="card flash" style="border-left:4px solid var(--orange); background:rgba(251,191,36,0.08);">
+  Envoy data not yet loaded. First fetch takes ~15s. <button type="button" class="btn" style="background:var(--orange); padding:0.35rem 0.75rem; font-size:0.85rem;" onclick="var b=this; b.disabled=true; b.textContent='Refreshing…'; fetch('{{ base_url }}/api/envoy/refresh', {method:'POST'}).then(function(){ setTimeout(function(){ location.reload(); }, 18000); b.textContent='Reloading in 18s…'; });">Refresh now</button> or wait for auto-reload.
+</div>
+{% endif %}
 
 <div class="card" style="margin-bottom:1rem;">
   <div style="display:flex; gap:2rem; align-items:center; flex-wrap:wrap;">
     <div>
-      <div class="muted" style="margin-bottom:0.2rem;">Total Production</div>
-      <div class="summary-total" id="total-watts">{{ total_watts }} W</div>
+      <div class="muted" style="margin-bottom:0.2rem;">Total Live</div>
+      <div class="summary-total" id="total-watts">{% if envoy_has_data %}{{ envoy_summary.total_live | default(total_watts) }} W{% else %}—{% endif %}</div>
+    </div>
+    <div>
+      <div class="muted" style="margin-bottom:0.2rem;">Total Today</div>
+      <div style="font-size:1.8rem; font-weight:700; color:var(--green);">{% if envoy_has_data %}{{ "%.2f" | format((envoy_summary.total_today | default(0)) | float) }} kWh{% else %}—{% endif %}</div>
     </div>
     <div>
       <div class="muted">Active Inverters</div>
-      <div style="font-size:1.5rem; font-weight:600; color:var(--green);" id="total-active">{{ total_active }} / {{ total_count }}</div>
+      <div style="font-size:1.5rem; font-weight:600; color:var(--green);" id="total-active">{% if envoy_has_data %}{{ total_active }} / {{ total_count }}{% else %}—{% endif %}</div>
     </div>
     <div>
       <div class="muted">Offline</div>
-      <div style="font-size:1.5rem; font-weight:600; color:{% if total_offline > 0 %}var(--red){% else %}var(--muted){% endif %};" id="total-offline">{{ total_offline }}</div>
+      <div style="font-size:1.5rem; font-weight:600; color:{% if total_offline > 0 %}var(--red){% else %}var(--muted){% endif %};" id="total-offline">{% if envoy_has_data %}{{ total_offline }}{% else %}—{% endif %}</div>
     </div>
     <div style="margin-left:auto;" class="ts">Updated: {{ timestamp }}</div>
   </div>
 </div>
+
+{% if envoy_summary %}
+<div class="card" style="margin-bottom:1rem;">
+  <div class="muted" style="margin-bottom:0.75rem; font-size:0.9rem;">Sum per location (inverters combined)</div>
+  <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap:1.25rem;">
+    <div>
+      <div class="muted" style="font-size:0.8rem;">House</div>
+      <div style="font-size:1.2rem; font-weight:600; color:var(--green);">{% if envoy_has_data %}{{ envoy_summary.house_live | default(0) }} W{% else %}—{% endif %}</div>
+      <div class="muted" style="font-size:0.85rem;">{% if envoy_has_data %}{{ "%.2f" | format((envoy_summary.house_today | default(0)) | float) }} kWh today{% else %}—{% endif %}</div>
+    </div>
+    <div>
+      <div class="muted" style="font-size:0.8rem;">Shed (m-series)</div>
+      <div style="font-size:1.2rem; font-weight:600; color:var(--green);">{% if envoy_has_data %}{{ envoy_summary.shed_live | default(0) }} W{% else %}—{% endif %}</div>
+      <div class="muted" style="font-size:0.85rem;">{% if envoy_has_data %}{{ "%.2f" | format((envoy_summary.shed_today | default(0)) | float) }} kWh today{% else %}—{% endif %}</div>
+    </div>
+    <div>
+      <div class="muted" style="font-size:0.8rem;">Trailer</div>
+      <div style="font-size:1.2rem; font-weight:600; color:var(--green);">{% if envoy_has_data %}{{ envoy_summary.trailer_live | default(0) }} W{% else %}—{% endif %}</div>
+      <div class="muted" style="font-size:0.85rem;">{% if envoy_has_data %}{{ "%.2f" | format((envoy_summary.trailer_today | default(0)) | float) }} kWh today{% else %}—{% endif %}</div>
+    </div>
+  </div>
+</div>
+{% endif %}
 
 <div class="envoy-grid">
 {% for eid, env in envoys.items() %}
