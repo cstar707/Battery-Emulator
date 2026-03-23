@@ -12,6 +12,7 @@ from typing import Any
 import paho.mqtt.client as mqtt
 
 from config import (
+    get_be_mqtt_topic,
     MQTT_CLIENT_ID,
     MQTT_HOST,
     MQTT_PASSWORD,
@@ -150,8 +151,22 @@ def publish_solark_status(online: bool) -> None:
         logger.warning("MQTT publish Solark status failed: %s", e)
 
 
-def publish_envoy_sensors(data: dict[str, Any]) -> None:
-    """Publish Envoy data to solar/envoy/status. data = raw response from 3004 /api/envoy/debug."""
+def _envoy_total_production_from_data(data: dict[str, Any]) -> int:
+    """Compute total Envoy production (W) from raw 3004 response. Same logic as main._envoy_total_production_w."""
+    envoys = {k: v for k, v in data.items() if k.startswith("envoy") and isinstance(v, dict)}
+    total = sum(int(v.get("production") or 0) for v in envoys.values())
+    return max(0, min(11400, total))
+
+
+def publish_envoy_sensors(
+    data: dict[str, Any],
+    *,
+    summary: dict[str, int | float] | None = None,
+) -> None:
+    """Publish Envoy data to solar/envoy/status. data = raw response from 3004 /api/envoy/debug.
+    Includes total_production_W (sum of envoy1.production + envoy2.production).
+    If summary is provided, merges total_live, total_today, house_*, shed_*, trailer_* for clients
+    that prefer a single JSON message (e.g. Waveshare)."""
     if not MQTT_HOST:
         return
     try:
@@ -160,7 +175,73 @@ def publish_envoy_sensors(data: dict[str, Any]) -> None:
             client.username_pw_set(MQTT_USER, MQTT_PASSWORD or "")
         client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
         payload = _serializable_payload(data)
+        payload["total_production_W"] = _envoy_total_production_from_data(data)
+        if summary:
+            for k in (
+                "total_live", "total_today", "house_today", "shed_today", "trailer_today",
+                "house_live", "shed_live", "trailer_live",
+            ):
+                if k in summary and summary[k] is not None:
+                    payload[k] = summary[k]
         client.publish(ENVOY_TOPIC, json.dumps(payload), qos=0, retain=False)
         client.disconnect()
     except Exception as e:
         logger.warning("MQTT publish Envoy failed: %s", e)
+
+
+ENVOY_SUMMARY_TOPIC_PREFIX = "solar/envoy/summary"
+
+
+def publish_envoy_summary(summary: dict[str, int | float]) -> None:
+    """Publish computed Envoy summary to solar/envoy/summary/<key>.
+    Display subscribes to solar/envoy/summary/# and uses values directly — single source of truth.
+    summary keys: total_live, total_today, house_today, shed_today, trailer_today,
+                  house_live, shed_live, trailer_live."""
+    if not MQTT_HOST:
+        return
+    keys = (
+        "total_live", "total_today", "house_today", "shed_today", "trailer_today",
+        "house_live", "shed_live", "trailer_live",
+    )
+    try:
+        client = mqtt.Client(client_id=f"{MQTT_CLIENT_ID}-envoy-summary", protocol=mqtt.MQTTv311)
+        if MQTT_USER:
+            client.username_pw_set(MQTT_USER, MQTT_PASSWORD or "")
+        client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
+        for k in keys:
+            if k in summary and summary[k] is not None:
+                client.publish(
+                    f"{ENVOY_SUMMARY_TOPIC_PREFIX}/{k}",
+                    str(summary[k]),
+                    qos=0,
+                    retain=False,
+                )
+        client.disconnect()
+    except Exception as e:
+        logger.warning("MQTT publish Envoy summary failed: %s", e)
+
+
+def publish_be_command(command: str, *, topic_prefix: str | None = None) -> bool:
+    """Publish a command to the Battery Emulator via MQTT.
+    command: STOP (open contactors), RESUME (close contactors + resume from pause), PAUSE (limit power to zero), BMSRESET (reset BMS), RESTART (reboot board).
+    Returns True if published, False on error or no MQTT broker.
+    """
+    if not MQTT_HOST:
+        return False
+    cmd = (command or "").strip().upper()
+    if cmd not in ("STOP", "RESUME", "PAUSE", "BMSRESET", "RESTART"):
+        return False
+    topic_base = (topic_prefix or get_be_mqtt_topic()).strip() or "BE"
+    topic = f"{topic_base}/command/{cmd}"
+    try:
+        client = mqtt.Client(client_id=f"{MQTT_CLIENT_ID}-be-cmd", protocol=mqtt.MQTTv311)
+        if MQTT_USER:
+            client.username_pw_set(MQTT_USER, MQTT_PASSWORD or "")
+        client.connect(MQTT_HOST, MQTT_PORT, keepalive=60)
+        client.publish(topic, "", qos=0, retain=False)
+        client.disconnect()
+        logger.info("Published BE command %s to %s", cmd, topic)
+        return True
+    except Exception as e:
+        logger.warning("MQTT publish BE command %s failed: %s", cmd, e)
+        return False

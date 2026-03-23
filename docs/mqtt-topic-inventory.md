@@ -32,20 +32,34 @@ Broker: 10.10.53.92:1883 (MQTT_HOST). Credentials: api/test12345.
 
 ---
 
-### Envoy (To Be Added)
+### Envoy (solis-s6-app)
 
-| Topic Pattern | Publisher | Format | Key Fields |
-|---------------|-----------|--------|------------|
-| `solar/envoy/status` | solis-s6-app (to add) | JSON | envoy1, envoy2, inverters, timestamp |
+**Single source**: All Envoy data is computed on the server (from 3004) and published to MQTT. The display and other consumers should **subscribe only** — no HTTP polling to 3004/3008.
 
----
+| Topic | Publisher | Format |
+|-------|-----------|--------|
+| `solar/envoy/status` | solis-s6-app | Full JSON: 3004 debug data + `total_production_W` + summary (`total_live`, `total_today`, `house_*`, `shed_*`, `trailer_*`). Use for single-message clients. |
+| `solar/envoy/summary/total_live` | solis-s6-app | Scalar (W) |
+| `solar/envoy/summary/total_today` | solis-s6-app | Scalar (kWh) |
+| `solar/envoy/summary/house_today` | solis-s6-app | Scalar (kWh) |
+| `solar/envoy/summary/house_live` | solis-s6-app | Scalar (W) |
+| `solar/envoy/summary/shed_today` | solis-s6-app | Scalar (kWh) |
+| `solar/envoy/summary/shed_live` | solis-s6-app | Scalar (W) |
+| `solar/envoy/summary/trailer_today` | solis-s6-app | Scalar (kWh) |
+| `solar/envoy/summary/trailer_live` | solis-s6-app | Scalar (W) |
+
+**Mapping**: House = envoy1 (3 serials). Shed = envoy1 remaining (m-series). Trailer = all envoy2.
+
+**Display**: Either subscribe to `solar/envoy/summary/#` (individual topics) or `solar/envoy/status` (full JSON). Remove HTTP envoy polling.
+
+**API**: Same values available at `GET /api/envoy/summary` for debug or alternative consumers.
 
 ### Battery Emulator (ESP32)
 
 | Topic Pattern | Publisher | Format |
 |---------------|-----------|--------|
 | `BE/status` | ESP32 | "online" |
-| `BE/info` | ESP32 | JSON |
+| `BE/info` | ESP32 | JSON. Contactor status requires `equipment_stop_active` (true=open). Pause does not open contactors. |
 | `BE/spec_data` | ESP32 | JSON |
 | `BE/events` | ESP32 | JSON |
 
@@ -64,4 +78,7 @@ mosquitto_sub -h 10.10.53.92 -p 1883 -u api -P test12345 -t 'solar/solis/#' -v
 
 # Solark only
 mosquitto_sub -h 10.10.53.92 -p 1883 -u api -P test12345 -t 'solar/solark' -t 'solar/solark/sensors/#' -v
+
+# Envoy summary (single-source)
+mosquitto_sub -h 10.10.53.92 -p 1883 -u api -P test12345 -t 'solar/envoy/summary/#' -v
 ```
