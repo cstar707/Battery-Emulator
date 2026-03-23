@@ -9,7 +9,7 @@
   <link rel="manifest" href="{{ base_url }}/static/manifest.json">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@300;400;600;700&family=JetBrains+Mono:wght@300;400;500;700&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <title>{% block title %}Solar Monitor{% endblock %} | 10.10.53.92</title>
   <style>
     :root, [data-theme="dark"] {
@@ -240,10 +240,6 @@
       color: #86efac;
       border-color: rgba(63,185,80,0.28);
     }
-    .service-chip--legacy {
-      color: #fcd34d;
-      border-color: rgba(210,153,34,0.28);
-    }
     .service-chip--neutral {
       color: #cbd5e1;
       border-color: rgba(139,148,158,0.28);
@@ -273,6 +269,19 @@
     }
     .theme-toggle:hover { color: var(--text); border-color: var(--muted); }
     [data-theme="light"] .theme-toggle { color: var(--muted); }
+    /* Unified header (port 80 style) */
+    .app-header--unified { flex-wrap: wrap; }
+    .app-header--unified .header-left { flex-shrink: 0; }
+    .app-header--unified .logo { display: flex; align-items: center; gap: 0.5rem; text-decoration: none; color: var(--text); }
+    .app-header--unified .logo:hover { text-decoration: none; color: var(--text); }
+    .app-header--unified .logo-icon { font-size: 1.25rem; color: var(--accent); }
+    .app-header--unified .logo-text { font-family: 'Chakra Petch', sans-serif; font-size: 1rem; font-weight: 600; letter-spacing: 0.05em; }
+    .app-header--unified .logo-accent { color: var(--accent); font-weight: 700; }
+    .app-header--unified .header-nav { flex: 1; display: flex; align-items: center; justify-content: center; gap: 0.25rem; flex-wrap: wrap; padding: 0 0.5rem; }
+    .app-header--unified .nav-link { color: rgba(255,255,255,0.5); padding: 0.5rem 0.9rem; border-radius: 6px; font-family: 'Chakra Petch', sans-serif; font-size: 0.78rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; transition: all 0.2s; }
+    .app-header--unified .nav-link:hover { color: rgba(255,255,255,0.9); background: rgba(255,255,255,0.06); text-decoration: none; }
+    .app-header--unified .nav-link.active { color: #fff; background: rgba(56,189,248,0.15); border: 1px solid rgba(56,189,248,0.3); }
+    .app-header--unified .header-right { display: flex; align-items: center; gap: 0.75rem; flex-shrink: 0; }
     @media (max-width: 640px) {
       .service-chip {
         flex: 1 1 calc(50% - 0.5rem);
@@ -285,24 +294,22 @@
   {% block head %}{% endblock %}
 </head>
 <body>
-  <header class="app-header">
-    <div class="app-header__brand">
-      <span class="app-header__brand-icon">⚡</span>
-      <span class="app-header__brand-text"><strong>Solis</strong> + Solark</span>
+  <header class="app-header app-header--unified">
+    <div class="header-left">
+      <a href="{{ nav_root }}/" class="logo">
+        <span class="logo-icon">⚡</span>
+        <span class="logo-text">BATTERY<span class="logo-accent">MONITOR</span></span>
+      </a>
     </div>
-    <nav class="app-header__nav">
-      <a href="{{ base_url }}/" class="{% if request.url.path == '/' %}active{% endif %}">Home</a>
-      <a href="{{ base_url }}/data" class="{% if request.url.path == '/data' %}active{% endif %}" title="Browse InfluxDB data and charts">Data</a>
-      <a href="{{ base_url }}/control" class="{% if request.url.path == '/control' %}active{% endif %}" title="All inverter controls and buttons">Controls</a>
-      <a href="{{ base_url }}/settings" class="{% if request.url.path == '/settings' or request.url.path == '/settings/automations' %}active{% endif %}">Settings</a>
-      <a href="{{ base_url }}/envoys" class="{% if request.url.path == '/envoys' %}active{% endif %}" title="Enphase micro-inverter live data">Envoy</a>
-      <a href="{{ base_url }}/curtailment" class="{% if request.url.path == '/curtailment' %}active{% endif %}">Curtailment</a>
-      <a href="{{ base_url }}/grid-status" class="{% if request.url.path == '/grid-status' %}active{% endif %}">Grid</a>
-      <a href="{{ base_url }}/forecast" class="nav-tab {% if request.url.path == '/forecast' %}active{% endif %}">Forecast</a>
-      <a href="{{ base_url }}/debug" class="{% if request.url.path == '/debug' %}active{% endif %}">Debug</a>
-      <a href="{{ base_url }}/ai-debug" class="{% if request.url.path == '/ai-debug' %}active{% endif %}">AI</a>
+    <nav class="header-nav">
+      <a href="{{ nav_root }}/" class="nav-link">Overview</a>
+      <a href="{{ nav_root }}/grid-status.html" class="nav-link {% if request.url.path == '/grid-status' %}active{% endif %}">Grid</a>
+      <a href="{{ nav_root }}{{ solis_prefix }}/envoys" class="nav-link {% if request.url.path == '/envoys' %}active{% endif %}">Solar Output</a>
+      <a href="{{ nav_root }}/cells.html" class="nav-link">Cells</a>
+      <a href="{{ nav_root }}{{ solis_prefix }}/control" class="nav-link {% if request.url.path == '/control' %}active{% endif %}">Controls</a>
+      <a href="{{ nav_root }}/battery-dashboard/" class="nav-link">Battery Dashboard</a>
     </nav>
-    <div class="app-header__status">
+    <div class="header-right">
       <div class="live-badge"><span class="live-badge__dot"></span>LIVE</div>
       <span class="app-header__clock" id="headerClock">—</span>
       <button type="button" id="themeToggle" class="theme-toggle" title="Toggle dark/light" aria-label="Toggle theme">🌙</button>
@@ -313,17 +320,22 @@
   <section class="service-shell">
     <div class="service-shell__row">
       <div class="service-shell__identity">
-        <span class="service-shell__eyebrow">Quick links · port 80</span>
-        <span class="service-shell__desc">Overview, Grafana, Envoy, SolarK, Legacy — all on one site.</span>
+        <span class="service-shell__eyebrow">Unified dashboard · everything on port 80</span>
+        <span class="service-shell__title">Live status, controls, settings — one site</span>
+        <span class="service-shell__desc">All links use port 80. No direct backend ports needed.</span>
       </div>
       <div class="service-shell__chips">
-        <a href="/" class="service-chip service-chip--primary">Overview</a>
-        <a href="{{ base_url }}/data" class="service-chip service-chip--primary">Data</a>
+        <a href="{{ nav_root }}/" class="service-chip service-chip--primary">Overview</a>
+        <a href="{{ nav_root }}{{ solis_prefix }}/control" class="service-chip service-chip--primary">Controls &amp; Settings</a>
+        <a href="{{ nav_root }}{{ solis_prefix }}/data" class="service-chip service-chip--primary">Data</a>
+        <a href="{{ nav_root }}{{ solis_prefix }}/envoys" class="service-chip service-chip--primary">Envoy</a>
+        <a href="{{ nav_root }}{{ solis_prefix }}/settings" class="service-chip service-chip--primary">Settings</a>
+        <a href="{{ nav_root }}{{ solis_prefix }}/curtailment" class="service-chip service-chip--primary">Curtailment</a>
+        <a href="{{ nav_root }}{{ solis_prefix }}/forecast" class="service-chip service-chip--primary">Forecast</a>
+        <a href="{{ nav_root }}/battery-dashboard/" class="service-chip service-chip--primary">Battery Dashboard</a>
         <a href="http://10.10.53.92:3000/" class="service-chip service-chip--support" target="_blank" rel="noopener noreferrer">Grafana</a>
-        <a href="http://10.10.53.92:3004/" class="service-chip service-chip--support" target="_blank" rel="noopener noreferrer">Envoy</a>
+        <a href="http://10.10.53.92:3004/" class="service-chip service-chip--support" target="_blank" rel="noopener noreferrer">Envoy Diagnostics</a>
         <a href="http://10.10.53.92:3002/" class="service-chip service-chip--support" target="_blank" rel="noopener noreferrer">SolarK</a>
-        <a href="{{ base_url }}/legacy/" class="service-chip service-chip--legacy" target="_blank" rel="noopener noreferrer">Legacy</a>
-        <a href="{{ base_url }}/battery-dashboard/" class="service-chip service-chip--primary" target="_blank" rel="noopener noreferrer" title="Status &amp; Overview, Grid, Envoys, Cell Monitor">Battery Dashboard</a>
         <a href="{{ be1_webui_url | default('http://10.10.53.90/') }}" class="service-chip service-chip--support" target="_blank" rel="noopener noreferrer">BE 1</a>
         {% if be2_webui_url %}
         <a href="{{ be2_webui_url }}" class="service-chip service-chip--support" target="_blank" rel="noopener noreferrer">BE 2</a>

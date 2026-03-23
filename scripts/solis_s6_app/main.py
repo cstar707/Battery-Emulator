@@ -134,6 +134,7 @@ try:
         get_be1_webui_url,
         get_be2_webui_url,
         get_battery_monitor_webui_url,
+        get_main_dashboard_base_url,
         MQTT_CLIENT_ID,
         MQTT_HOST,
         MQTT_PASSWORD,
@@ -2047,8 +2048,13 @@ def _template_ctx() -> dict:
 
 def _page_ctx(request: Request, **kwargs) -> dict:
     ctx = _template_ctx()
+    base = _base_url(request)
     ctx["request"] = request
-    ctx["base_url"] = _base_url(request)
+    ctx["base_url"] = base
+    # For unified nav: when under port 80 (base=/solis), use relative paths. Else use main dashboard URL.
+    ctx["nav_root"] = "" if base else get_main_dashboard_base_url()
+    # solis_prefix: for links to solis pages. When under proxy, base_url. When direct on 3007, /solis (port 80 path).
+    ctx["solis_prefix"] = base if base else "/solis"
     ctx.update(kwargs)
     return ctx
 
@@ -2116,10 +2122,9 @@ def _build_solis_inverters() -> list[dict]:
 
 
 def _sanitize_dashboard_data(data: dict) -> dict:
-    """Coerce None to 0 for numeric fields to avoid template format() errors."""
-    if not data:
-        return data
-    out = dict(data)
+    """Coerce None to 0 for numeric fields to avoid template format() errors.
+    Ensure battery_runtime_hours and battery_runtime_direction exist for template (avoids UndefinedError when cache empty)."""
+    out = dict(data) if data else {}
     numeric_keys = (
         "pv_power_W", "pv_voltage_1_V", "pv_current_1_A", "pv_voltage_2_V", "pv_current_2_A",
         "grid_power_W", "load_power_W", "active_power_W", "ac_voltage_V", "grid_freq_Hz",
@@ -2131,23 +2136,28 @@ def _sanitize_dashboard_data(data: dict) -> dict:
     for k in numeric_keys:
         if k in out and out[k] is None:
             out[k] = 0
+    # Template expects these; ensure they exist (cache may be empty at startup or on poll fail).
+    # Keys used with "is not none" in template need to exist or Jinja2 raises UndefinedError.
+    for key in ("battery_runtime_hours", "battery_runtime_direction", "battery_power_W"):
+        if key not in out:
+            out[key] = None
     return out
 
 
-@app.get("/legacy", include_in_schema=False)
-@app.get("/legacy/", include_in_schema=False)
-async def redirect_legacy(request: Request):
-    """Redirect /legacy to main dashboard's Legacy page (port 80 → 3001). When accessed via 3007 directly, redirect to port 80."""
-    host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or "10.10.53.92").split(":")[0]
-    return RedirectResponse(url=f"http://{host}/legacy/", status_code=302)
+def _redirect_base_url(request: Request) -> str:
+    """Base URL for redirects to port 80. Use configured server IP when Host is 127.0.0.1/localhost."""
+    host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or "").split(":")[0].lower()
+    if host in ("127.0.0.1", "localhost", ""):
+        return get_main_dashboard_base_url()
+    return f"http://{host}"
 
 
 @app.get("/battery-dashboard", include_in_schema=False)
 @app.get("/battery-dashboard/", include_in_schema=False)
 async def redirect_battery_dashboard(request: Request):
     """Redirect /battery-dashboard to main dashboard's Battery Dashboard page (port 80 → 3008). When accessed via 3007 directly, redirect to port 80."""
-    host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or "10.10.53.92").split(":")[0]
-    return RedirectResponse(url=f"http://{host}/battery-dashboard/", status_code=302)
+    base = _redirect_base_url(request)
+    return RedirectResponse(url=f"{base}/battery-dashboard/", status_code=302)
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -2230,7 +2240,7 @@ async def index_toggle_redirect(request: Request):
 @app.get("/grid-status", response_class=HTMLResponse)
 async def grid_status_page(request: Request):
     """Dedicated grid-status page: generation today (all sources) and battery remaining/runtime."""
-    data = _solis_cache_first().get("data", {}) or {}
+    data = _sanitize_dashboard_data(_solis_cache_first().get("data", {}) or {})
     grid_status = _compute_total_today_pv()
     ctx = _page_ctx(request, data=data, ok=_solis_cache_first().get("ok", False), grid_status=grid_status)
     return templates.TemplateResponse("grid-status.html", ctx)

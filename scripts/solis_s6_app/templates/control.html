@@ -89,6 +89,57 @@
   </div>
 
   <div class="card">
+    <h2>Envoy follow import</h2>
+    <p class="muted">Route live Envoy (Enphase) production into Solis battery. When enabled and Envoy producing, Solis import follows Envoy W until Solis reaches max SOC.</p>
+    <p id="envoy-follow-current" class="muted" style="margin-bottom: 1rem; font-size: 0.85rem;">Current: {% if envoy_follow_enabled %}<span class="status-ok">Enabled</span>{% else %}<span class="muted">Disabled</span>{% endif %}</p>
+    <div style="display:flex; flex-wrap:wrap; gap:1rem; align-items:center;">
+      <button id="btn-envoy-follow-on" class="btn envoy-follow-btn" data-enabled="true" style="background:{% if envoy_follow_enabled %}var(--green){% else %}#30363d{% endif %};">Enable</button>
+      <button id="btn-envoy-follow-off" class="btn envoy-follow-btn" data-enabled="false" style="background:{% if not envoy_follow_enabled %}var(--green){% else %}#30363d{% endif %};">Disable</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Manual grid charge (power-control)</h2>
+    <p class="muted">Set fixed grid import power to charge the battery. Takes precedence over TOU/automation when Envoy follow is disabled. Requires &quot;Allow grid to charge battery&quot; to be enabled above.</p>
+    <p id="power-control-current" class="muted" style="margin-bottom: 1rem; font-size: 0.85rem;">Current: {% if envoy_follow_active and envoy_follow_watts is not none %}<span class="status-ok">{{ envoy_follow_watts }} W import</span> <span class="muted">(Envoy follow — live total)</span>{% elif power_control.mode == 'import' and power_control.watts %}<span class="status-ok">{{ power_control.watts }} W import</span>{% elif power_control.mode == 'export' %}<span class="status-ok">{{ power_control.watts }} W export</span>{% else %}<span class="muted">Off</span>{% endif %}</p>
+    <div style="display:flex; flex-wrap:wrap; gap:1rem; align-items:center;">
+      <button id="btn-power-5k" class="btn power-control-btn" data-watts="5000" data-mode="import" style="background:var(--green);">5 kW grid charge</button>
+      <button id="btn-power-3k" class="btn power-control-btn" data-watts="3000" data-mode="import" style="background:var(--accent);">3 kW grid charge</button>
+      <button id="btn-power-1k" class="btn power-control-btn" data-watts="1000" data-mode="import" style="background:var(--accent);">1 kW grid charge</button>
+      <input type="number" id="power-control-watts" placeholder="Custom W" min="0" max="11400" step="100" style="width:100px; padding:0.5rem; border-radius:6px; border:1px solid var(--border); background:var(--bg); color:var(--text);" />
+      <button id="btn-power-custom" class="btn power-control-btn" data-custom="true">Set custom</button>
+      <button id="btn-power-off" class="btn power-control-btn" data-watts="0" data-mode="off" style="background:#30363d;">Turn off</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Battery Emulator (BE) control</h2>
+    <p class="muted">Remote control of the Battery Emulator via MQTT. Select which BE board to control (one per Solis inverter). Open contactors = physically open; Pause = limit power to zero (contactors stay closed); Resume/Close clears both. BMS reset requires remote_bms_reset in BE settings.</p>
+    <div style="display:flex; flex-wrap:wrap; gap:1rem; align-items:center; margin-bottom: 1rem;">
+      <label for="be-inverter-select" style="font-weight:600;">BE board:</label>
+      <select id="be-inverter-select" style="padding:0.4rem 0.6rem; border-radius:6px; border:1px solid var(--border); background:var(--bg); color:var(--text); min-width:140px;">
+        {% for inv in solis_inverters | default([]) %}
+        <option value="{{ inv.topic_id }}" data-mqtt="{{ inv.be_mqtt_topic }}">{{ inv.label }} ({{ inv.be_mqtt_topic }})</option>
+        {% endfor %}
+        {% if not solis_inverters | default([]) %}
+        <option value="s6-inv-1">Solis1</option>
+        {% endif %}
+      </select>
+    </div>
+    <p id="be-contactor-status" class="muted" style="margin-bottom: 1rem; font-size: 0.95rem; display: flex; align-items: center; gap: 0.5rem;">
+      <span id="be-status-led" style="display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #606060;"></span>
+      <span id="be-status-text">Contactor status: —</span>
+    </p>
+    <div style="display:flex; flex-wrap:wrap; gap:1rem; align-items:center;">
+      <button id="btn-be-open" class="btn be-command-btn" data-command="STOP" style="background:var(--red);">Open contactors</button>
+      <button id="btn-be-close" class="btn be-command-btn" data-command="RESUME" style="background:var(--green);">Close / Resume</button>
+      <button id="btn-be-pause" class="btn be-command-btn" data-command="PAUSE" style="background:var(--orange);">Pause</button>
+      <button id="btn-be-reset" class="btn be-command-btn" data-command="BMSRESET" style="background:#8b6914;">Reset BMS</button>
+      <button id="btn-be-reboot" class="btn be-command-btn" data-command="RESTART" style="background:#5a4d6a;">Reboot board</button>
+    </div>
+  </div>
+
+  <div class="card">
     <h2>Solis storage mode (register 43110)</h2>
     <p class="muted">Toggle one bit at a time. Read → modify bit → write back so other modes are preserved.</p>
     <table style="width:100%; border-collapse: collapse;">
@@ -171,7 +222,7 @@
 
     function refreshState(btn, register, bit, turnedOn) {
       // After a successful write, re-read the dashboard and update all state spans + buttons
-      fetch('/api/dashboard').then(function(r){ return r.json(); }).then(function(d) {
+      fetch((window.SOLIS_BASE||'')+'/api/dashboard').then(function(r){ return r.json(); }).then(function(d) {
         var solis = d.solis || {};
         var data = solis.data || {};
         var sbits = (data.storage_bits) || {};
@@ -248,7 +299,7 @@
     function doControl(btn, payload) {
       var origText = btn.textContent;
       setBtnState(btn, 'sending', '⏳ Sending…');
-      fetch('/api/control', {
+      fetch((window.SOLIS_BASE||'')+'/api/control', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify(payload)
@@ -289,7 +340,7 @@
         var preset = btn.dataset.preset;
         var origText = btn.textContent;
         setBtnState(btn, 'sending', '⏳ Sending…');
-        fetch('/api/control', {
+        fetch((window.SOLIS_BASE||'')+'/api/control', {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({preset: preset})
@@ -307,6 +358,155 @@
           setBtnState(btn, 'err', '✗ Error');
           setTimeout(function() { setBtnState(btn, 'idle', origText); }, 3000);
         });
+      });
+    });
+
+    // Manual power-control buttons (grid charge / off)
+    function doPowerControl(btn, mode, watts) {
+      var origText = btn.textContent;
+      setBtnState(btn, 'sending', '⏳ Sending…');
+      fetch((window.SOLIS_BASE||'')+'/api/power-control', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({mode: mode, watts: watts})
+      }).then(function(r){ return r.json(); }).then(function(res) {
+        if (res.ok) {
+          showToast('✓ ' + (mode === 'off' ? 'Power control off' : watts + ' W ' + mode), '#27ae60');
+          // Refresh the current-state line by reloading or fetching power-control
+          fetch((window.SOLIS_BASE||'')+'/api/power-control').then(function(r){ return r.json(); }).then(function(pc) {
+            var p = document.getElementById('power-control-current');
+            if (p && pc) {
+              if (pc.mode === 'import' && pc.watts) p.innerHTML = 'Current: <span class="status-ok">' + pc.watts + ' W import</span>';
+              else if (pc.mode === 'export') p.innerHTML = 'Current: <span class="status-ok">' + pc.watts + ' W export</span>';
+              else p.innerHTML = 'Current: <span class="muted">Off</span>';
+            }
+          });
+          setBtnState(btn, 'idle', origText);
+        } else {
+          showToast('✗ ' + (res.error || 'Failed'), '#c0392b');
+          setBtnState(btn, 'err', '✗ Failed');
+          setTimeout(function() { setBtnState(btn, 'idle', origText); }, 3000);
+        }
+      }).catch(function() {
+        showToast('✗ Network error', '#c0392b');
+        setBtnState(btn, 'err', '✗ Error');
+        setTimeout(function() { setBtnState(btn, 'idle', origText); }, 3000);
+      });
+    }
+    // Envoy follow Enable/Disable
+    function doEnvoyFollow(enabled) {
+      var btnOn = document.getElementById('btn-envoy-follow-on');
+      var btnOff = document.getElementById('btn-envoy-follow-off');
+      [btnOn, btnOff].forEach(function(b){ if(b) setBtnState(b, 'sending', '⏳'); });
+      fetch((window.SOLIS_BASE||'')+'/api/envoy-follow', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({enabled: enabled})
+      }).then(function(r){ return r.json(); }).then(function(res) {
+        if (res.ok) {
+          showToast('✓ Envoy follow ' + (res.enabled ? 'enabled' : 'disabled'), '#27ae60');
+          var p = document.getElementById('envoy-follow-current');
+          if (p) p.innerHTML = 'Current: ' + (res.enabled ? '<span class="status-ok">Enabled</span>' : '<span class="muted">Disabled</span>');
+          if (btnOn) btnOn.style.background = res.enabled ? 'var(--green)' : '#30363d';
+          if (btnOff) btnOff.style.background = !res.enabled ? 'var(--green)' : '#30363d';
+        } else {
+          showToast('✗ ' + (res.error || 'Failed'), '#c0392b');
+        }
+        [btnOn, btnOff].forEach(function(b){ if(b) setBtnState(b, 'idle', b.dataset.enabled==='true' ? 'Enable' : 'Disable'); });
+      }).catch(function() {
+        showToast('✗ Network error', '#c0392b');
+        [btnOn, btnOff].forEach(function(b){ if(b) setBtnState(b, 'idle', b.dataset.enabled==='true' ? 'Enable' : 'Disable'); });
+      });
+    }
+    document.querySelectorAll('.envoy-follow-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        doEnvoyFollow(btn.dataset.enabled === 'true');
+      });
+    });
+
+    document.querySelectorAll('.power-control-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        if (btn.dataset.custom === 'true') {
+          var inp = document.getElementById('power-control-watts');
+          var w = parseInt(inp && inp.value ? inp.value : 0, 10);
+          w = Math.max(0, Math.min(11400, w));
+          if (w <= 0) { showToast('Enter watts (0–11400)', '#f0ad4e'); return; }
+          doPowerControl(btn, 'import', w);
+        } else {
+          var mode = btn.dataset.mode || 'off';
+          var watts = parseInt(btn.dataset.watts || '0', 10);
+          doPowerControl(btn, mode, watts);
+        }
+      });
+    });
+
+    // BE contactor status (poll /api/be-status and update LED + text)
+    function getSelectedTopicId() {
+      var sel = document.getElementById('be-inverter-select');
+      return sel ? sel.value : 's6-inv-1';
+    }
+    function refreshBeStatus() {
+      var topicId = getSelectedTopicId();
+      fetch((window.SOLIS_BASE||'')+'/api/be-status?topic_id=' + encodeURIComponent(topicId)).then(function(r){ return r.json(); }).then(function(res) {
+        var led = document.getElementById('be-status-led');
+        var text = document.getElementById('be-status-text');
+        if (!led || !text) return;
+        if (res.ok && res.contactors_open !== undefined && res.contactors_open !== null) {
+          led.style.background = res.contactors_open ? 'var(--red, #c0392b)' : 'var(--green, #27ae60)';
+          led.title = res.contactors_open ? 'Contactors open' : 'Contactors closed';
+          text.textContent = res.contactors_open ? 'Contactors open' : 'Contactors closed';
+        } else {
+          led.style.background = '#606060';
+          led.title = 'No status from BE';
+          text.textContent = 'Contactor status: — (no MQTT data yet)';
+        }
+      }).catch(function() {
+        var led = document.getElementById('be-status-led');
+        var text = document.getElementById('be-status-text');
+        if (led) led.style.background = '#606060';
+        if (text) text.textContent = 'Contactor status: — (unavailable)';
+      });
+    }
+    refreshBeStatus();
+    setInterval(refreshBeStatus, 10000);
+    var beSel = document.getElementById('be-inverter-select');
+    if (beSel) beSel.addEventListener('change', refreshBeStatus);
+
+    // BE (Battery Emulator) command buttons
+    function doBECommand(btn, cmd) {
+      var labels = { STOP: 'Open contactors', RESUME: 'Close / Resume', PAUSE: 'Pause', BMSRESET: 'Reset BMS', RESTART: 'Reboot' };
+      var origText = btn.textContent;
+      var topicId = getSelectedTopicId();
+      setBtnState(btn, 'sending', '⏳ Sending…');
+      fetch((window.SOLIS_BASE||'')+'/api/be-command', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({command: cmd, topic_id: topicId})
+      }).then(function(r){ return r.json();       }).then(function(res) {
+        if (res.ok) {
+          showToast('✓ ' + (labels[cmd] || cmd) + ' sent', '#27ae60');
+          setBtnState(btn, 'idle', origText);
+          setTimeout(refreshBeStatus, 1500);  // Refresh status after BE processes the command
+        } else {
+          showToast('✗ ' + (res.error || 'Failed'), '#c0392b');
+          setBtnState(btn, 'err', '✗ Failed');
+          setTimeout(function() { setBtnState(btn, 'idle', origText); }, 3000);
+        }
+      }).catch(function() {
+        showToast('✗ Network error', '#c0392b');
+        setBtnState(btn, 'err', '✗ Error');
+        setTimeout(function() { setBtnState(btn, 'idle', origText); }, 3000);
+      });
+    }
+    document.querySelectorAll('.be-command-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        var cmd = btn.dataset.command || '';
+        if (cmd === 'BMSRESET' && !confirm('Reset BMS? This will briefly disconnect the battery. Continue?')) return;
+        if (cmd === 'STOP' && !confirm('Open contactors? Power flow will stop. Continue?')) return;
+        if (cmd === 'RESUME' && !confirm('Close contactors / Resume? Power flow will resume. Continue?')) return;
+        if (cmd === 'PAUSE' && !confirm('Pause? This will limit power to zero (contactors stay closed). Continue?')) return;
+        if (cmd === 'RESTART' && !confirm('Reboot BE board? It will go offline for ~30 seconds. Continue?')) return;
+        doBECommand(btn, cmd);
       });
     });
   })();

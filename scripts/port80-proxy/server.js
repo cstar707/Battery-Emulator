@@ -19,6 +19,17 @@ require('./services/influxwriter');
 
 const app = express();
 
+// Redirect 127.0.0.1/localhost to full server IP so links work from other machines
+const MAIN_DASHBOARD_HOST = process.env.MAIN_DASHBOARD_HOST || '10.10.53.92';
+app.use((req, res, next) => {
+  const host = (req.headers.host || '').split(':')[0].toLowerCase();
+  if (host === '127.0.0.1' || host === 'localhost') {
+    const url = `http://${MAIN_DASHBOARD_HOST}${req.originalUrl || req.url}`;
+    return res.redirect(302, url);
+  }
+  next();
+});
+
 // ── Proxy helper: forward /prefix/* → targetPort (strip prefix)
 function proxyTo(prefix, targetPort, req, res) {
   const chunks = [];
@@ -75,11 +86,10 @@ app.use('/solis', (req, res) => {
   });
 });
 
-// Grafana, Envoy, SolarK, Legacy — proxy so everything works on port 80
+// Grafana, Envoy, SolarK — proxy so everything works on port 80
 app.use('/grafana', (req, res) => proxyTo('/grafana', 3000, req, res));
 app.use('/envoy-debug', (req, res) => proxyTo('/envoy-debug', 3004, req, res));
 app.use('/solark-support', (req, res) => proxyTo('/solark-support', 3002, req, res));
-app.use('/legacy', (req, res) => proxyTo('/legacy', 3001, req, res));
 app.use('/battery-dashboard', (req, res) => proxyTo('/battery-dashboard', 3008, req, res));
 
 app.use(cors());
@@ -128,6 +138,6 @@ app.listen(config.server.port, '0.0.0.0', () => {
   console.log(`  Battery Dashboard`);
   console.log(`  http://0.0.0.0:${config.server.port}`);
   console.log(`  /solis/* → 3007 | /grafana/* → 3000 | /envoy-debug/* → 3004`);
-  console.log(`  /solark-support/* → 3002 | /legacy/* → 3001 | /battery-dashboard/* → 3008`);
+  console.log(`  /solark-support/* → 3002 | /battery-dashboard/* → 3008`);
   console.log(`────────────────────────────────────────`);
 });

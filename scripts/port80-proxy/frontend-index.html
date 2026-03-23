@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Battery Dashboard – Streets Ridge Solar</title>
+  <script>window.SOLIS_BASE="/solis";</script>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;700&family=Chakra+Petch:wght@300;400;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="css/style.css" />
@@ -59,9 +60,8 @@
     .mini-cells-card { padding:16px 18px; border-color:rgba(59,130,246,0.18); background:linear-gradient(180deg, rgba(17,24,39,0.92), rgba(11,18,32,0.96)); }
     .service-shell__chips { gap:10px; }
     .service-shell__utility-label { display:inline-flex; align-items:center; font-family:'JetBrains Mono',monospace; font-size:0.66rem; letter-spacing:0.12em; text-transform:uppercase; color:rgba(148,163,184,0.72); }
-    .service-chip--support, .service-chip--legacy { opacity:0.74; }
-    .service-chip--support:hover, .service-chip--legacy:hover { opacity:1; }
-    .service-chip--legacy { border-style:dashed; }
+    .service-chip--support { opacity:0.74; }
+    .service-chip--support:hover { opacity:1; }
     @media (max-width: 900px) { .page-intro { grid-template-columns:1fr; } }
     @media (max-width: 600px) {
       .page-intro__card, .page-intro__aside, .dashboard-section { padding:16px; }
@@ -83,8 +83,10 @@
     <nav class="header-nav">
       <a href="/"           class="nav-link active">Overview</a>
       <a href="/grid-status.html" class="nav-link">Grid</a>
-      <a href="/envoys.html" class="nav-link">Solar Output</a>
+      <a href="/solis/envoys" class="nav-link">Solar Output</a>
       <a href="/cells.html" class="nav-link">Cells</a>
+      <a href="/solis/control" class="nav-link">Controls</a>
+      <a href="/battery-dashboard/" class="nav-link">Battery Dashboard</a>
     </nav>
     <div class="header-right">
       <div id="live-indicator" class="live-indicator">
@@ -109,7 +111,6 @@
         <a href="http://10.10.53.92:3000/" class="service-chip service-chip--support" target="_blank" rel="noopener noreferrer">Grafana</a>
         <a href="http://10.10.53.92:3004/" class="service-chip service-chip--support" target="_blank" rel="noopener noreferrer">Envoy Diagnostics</a>
         <a href="http://10.10.53.92:3002/" class="service-chip service-chip--support" target="_blank" rel="noopener noreferrer">SolarK Support</a>
-        <a href="/legacy/" class="service-chip service-chip--legacy" target="_blank" rel="noopener noreferrer">Legacy Dashboard</a>
         <a href="/battery-dashboard/" class="service-chip service-chip--primary" target="_blank" rel="noopener noreferrer">Battery Dashboard</a>
       </div>
     </div>
@@ -240,6 +241,96 @@
     </div>
 
   </main>
+
+  <!-- LLM chat assistant (same as Solis control pages) -->
+  <div id="chatShell" class="chat-shell">
+    <button type="button" id="chatToggle" class="chat-toggle" title="Assistant" aria-label="Open assistant">💬</button>
+    <div id="chatPanel" class="chat-panel chat-panel--closed">
+      <div class="chat-panel__header">
+        <span>Assistant</span>
+        <div style="display:flex;gap:0.25rem;align-items:center;">
+          <button type="button" id="chatClear" class="chat-clear" title="Clear history" aria-label="Clear">Clear</button>
+          <button type="button" id="chatClose" class="chat-close" aria-label="Close">×</button>
+        </div>
+      </div>
+      <div id="chatMessages" class="chat-messages"></div>
+      <div class="chat-input-wrap">
+        <input type="text" id="chatInput" class="chat-input" placeholder="Ask about solar, battery, TOU..." />
+        <button type="button" id="chatSend" class="btn chat-send">Send</button>
+      </div>
+    </div>
+  </div>
+  <style>
+    .chat-shell { position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 1000; }
+    .chat-toggle { width: 3rem; height: 3rem; border-radius: 50%; background: var(--accent,#38bdf8); color: #fff; border: none; cursor: pointer; font-size: 1.25rem; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
+    .chat-toggle:hover { filter: brightness(1.1); }
+    .chat-panel { position: absolute; bottom: 4rem; right: 0; width: 420px; max-height: 520px; background: var(--card,#151920); border: 1px solid #30363d; border-radius: 10px; box-shadow: 0 8px 32px rgba(0,0,0,0.3); display: flex; flex-direction: column; overflow: hidden; backdrop-filter: blur(8px); }
+    .chat-panel--closed { display: none; }
+    .chat-panel__header { padding: 0.6rem 1rem; border-bottom: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center; background: #0c0e12; }
+    .chat-panel__header span { font-weight: 600; }
+    .chat-close { background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 1.5rem; line-height: 1; padding: 0 0.25rem; }
+    .chat-close:hover { color: #e2e8f0; }
+    .chat-clear { background: none; border: none; color: #94a3b8; cursor: pointer; font-size: 0.75rem; padding: 0.15rem 0.4rem; }
+    .chat-clear:hover { color: #e2e8f0; }
+    .chat-messages { flex: 1; overflow-y: auto; padding: 1rem; min-height: 180px; max-height: 340px; }
+    .chat-msg { margin-bottom: 0.75rem; padding: 0.5rem 0.75rem; border-radius: 6px; font-size: 0.9rem; white-space: pre-wrap; word-break: break-word; }
+    .chat-msg--user { background: rgba(88, 166, 255, 0.15); margin-left: 1.5rem; }
+    .chat-msg--assistant { background: #21262d; margin-right: 1.5rem; }
+    .chat-input-wrap { padding: 0.75rem; border-top: 1px solid #30363d; display: flex; gap: 0.5rem; }
+    .chat-input { flex: 1; min-width: 0; padding: 0.5rem; border-radius: 6px; border: 1px solid #30363d; background: #0c0e12; color: #e2e8f0; }
+    .chat-send { flex-shrink: 0; padding: 0.5rem 1rem; border-radius: 6px; border: none; background: var(--accent,#38bdf8); color: #fff; cursor: pointer; }
+    .chat-send:hover { filter: brightness(1.1); }
+  </style>
+  <script>
+  (function(){
+    var CHAT_STORAGE_KEY='solar-assistant-chat', MAX_MESSAGES=50;
+    var toggle=document.getElementById('chatToggle'); var panel=document.getElementById('chatPanel');
+    var close=document.getElementById('chatClose'); var clearBtn=document.getElementById('chatClear');
+    var msgs=document.getElementById('chatMessages'); var input=document.getElementById('chatInput'); var send=document.getElementById('chatSend');
+    if(!toggle||!panel) return;
+    function loadHistory(){
+      try{
+        var raw=localStorage.getItem(CHAT_STORAGE_KEY);
+        if(raw){ var arr=JSON.parse(raw); for(var i=0;i<arr.length;i++){ if(arr[i]&&arr[i].role&&arr[i].text){ addMsg(arr[i].role,arr[i].text,false); } } }
+      }catch(e){}
+    }
+    function saveHistory(){
+      var arr=[]; var nodes=msgs.querySelectorAll('.chat-msg:not(#chatTyping)');
+      for(var i=0;i<nodes.length&&arr.length<MAX_MESSAGES;i++){
+        var n=nodes[i]; var role=n.className.indexOf('chat-msg--user')>=0?'user':'assistant'; arr.push({role:role,text:n.textContent||''});
+      }
+      try{ localStorage.setItem(CHAT_STORAGE_KEY,JSON.stringify(arr)); }catch(e){}
+    }
+    function open(){ panel.classList.remove('chat-panel--closed'); panel.style.display='flex'; }
+    function closePanel(){ panel.classList.add('chat-panel--closed'); panel.style.display='none'; }
+    toggle.onclick=open; close.onclick=closePanel;
+    if(clearBtn) clearBtn.onclick=function(){ msgs.innerHTML=''; saveHistory(); };
+    function addMsg(role,text,persist){
+      var div=document.createElement('div'); div.className='chat-msg chat-msg--'+role; div.textContent=text; msgs.appendChild(div);
+      msgs.scrollTop=msgs.scrollHeight;
+      if(persist!==false) saveHistory();
+    }
+    loadHistory();
+    function appendTyping(){ var el=document.createElement('div'); el.className='chat-msg chat-msg--assistant'; el.id='chatTyping'; el.textContent='…'; msgs.appendChild(el); msgs.scrollTop=msgs.scrollHeight; return el; }
+    function removeTyping(){ var el=document.getElementById('chatTyping'); if(el) el.remove(); }
+    function doSend(){
+      var q=input.value.trim(); if(!q) return;
+      addMsg('user',q); input.value='';
+      var typing=appendTyping();
+      fetch((window.SOLIS_BASE||'/solis')+'/api/assistant/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({question:q})})
+        .then(function(r){ return r.json(); })
+        .then(function(data){
+          removeTyping();
+          var text = data.ok ? (data.answer||'') : (data.error==='llm_automations_disabled' ? 'Assistant is disabled. Enable it in Settings → Automations.' : (data.error||'Error'));
+          if (typeof text === 'object' && text !== null) text = (text.issue_summary || text.notes || text.recommended_action || '').toString() || 'Response format error';
+          addMsg('assistant', String(text||''));
+        })
+        .catch(function(e){ removeTyping(); addMsg('assistant','Request failed'); });
+    }
+    send.onclick=doSend;
+    input.onkeydown=function(e){ if(e.key==='Enter'){ e.preventDefault(); doSend(); } };
+  })();
+  </script>
 
   <script src="js/config.js"></script>
   <script src="js/api.js"></script>
