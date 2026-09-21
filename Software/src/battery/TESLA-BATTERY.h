@@ -102,7 +102,11 @@ class TeslaBattery : public CanBattery {
   // Guarded automatic ECU recovery state. It is only used when the explicit
   // AUTOBMSREC setting is enabled; default operation is telemetry-only.
   static constexpr uint32_t AUTO_BMS_RECOVERY_CONFIRM_MS = 90UL * 1000UL;
-  static constexpr uint32_t AUTO_BMS_RECOVERY_COOLDOWN_MS = 30UL * 60UL * 1000UL;
+  // This battery has demonstrated a recurrence interval of roughly two minutes.
+  // Five minutes permits a bounded recovery attempt without leaving the shared
+  // battery bus unavailable for half an hour; the 3-per-24-hour cap below
+  // remains the hard protection against a reset loop.
+  static constexpr uint32_t AUTO_BMS_RECOVERY_COOLDOWN_MS = 5UL * 60UL * 1000UL;
   static constexpr uint32_t AUTO_BMS_RECOVERY_WINDOW_MS = 24UL * 60UL * 60UL * 1000UL;
   static constexpr uint32_t AUTO_BMS_RECOVERY_MAX_ATTEMPTS = 3;
   uint32_t auto_bms_recovery_candidate_since_ms = 0;
