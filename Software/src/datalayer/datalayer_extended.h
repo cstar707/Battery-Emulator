@@ -575,6 +575,20 @@ struct DATALAYER_INFO_TESLA {
   uint16_t HVP_info_subUsageId = 0;
 
   uint8_t hvil_status = 0;
+  // Tesla BMS alert bits needed for fault correlation. The data layer never
+  // clears a fault or moves a contactor; recovery remains separately opt-in.
+  bool BMS_a035_SW_Isolation = false;
+  bool BMS_a151_SW_external_isolation = false;
+  bool BMS_a180_SW_ECU_reset_blocked = false;
+  bool bms_ecu_reset_permitted = false;
+  bool automatic_bms_recovery_enabled = false;
+  bool automatic_bms_recovery_armed = false;
+  bool automatic_bms_recovery_candidate = false;
+  bool automatic_bms_recovery_locked_out = false;
+  uint32_t automatic_bms_recovery_candidate_since_ms = 0;
+  uint32_t automatic_bms_recovery_last_attempt_ms = 0;
+  uint32_t automatic_bms_recovery_attempt_count = 0;
+  uint32_t automatic_bms_recovery_episode_count = 0;
   uint8_t packContNegativeState = 0;
   uint8_t packContPositiveState = 0;
   uint8_t packContactorSetState = 0;

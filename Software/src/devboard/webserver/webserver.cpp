@@ -395,7 +395,7 @@ void init_webserver() {
 
   const char* boolSettingNames[] = {
       "DBLBTR",        "CNTCTRL",      "CNTCTRLDBL",  "PWMCNTCTRL",   "PERBMSRESET",  "SDLOGENABLED", "STATICIP",
-      "REMBMSRESET",   "EXTPRECHARGE", "USBENABLED",  "CANLOGUSB",    "WEBENABLED",   "CANFDASCAN",   "CANLOGSD",
+      "REMBMSRESET",   "AUTOBMSREC",   "EXTPRECHARGE", "USBENABLED",  "CANLOGUSB",    "WEBENABLED",   "CANFDASCAN",   "CANLOGSD",
       "WIFIAPENABLED", "MQTTENABLED",  "NOINVDISC",   "HADISC",       "MQTTTOPICS",   "MQTTCELLV",    "INVICNT",
       "GTWRHD",        "DIGITALHVIL",  "PERFPROFILE", "INTERLOCKREQ", "SOCESTIMATED", "PYLONOFFSET",  "PYLONORDER",
       "DEYEBYD",       "NCCONTACTOR",  "TRIBTR",      "CNTCTRLTRI",
@@ -498,6 +498,9 @@ void init_webserver() {
                 const bool value = p != nullptr && p->value() == "on";
                 if (settings.getBool(boolSetting, default_value) != value) {
                   settings.saveBool(boolSetting, value);
+                }
+                if (std::string(boolSetting) == std::string("AUTOBMSREC")) {
+                  datalayer.battery.settings.user_enable_tesla_bms_auto_recovery = value;
                 }
               }
 

@@ -146,6 +146,7 @@ void init_stored_settings() {
   pwm_hold_duty = settings.getUInt("PWMHOLD", 250);
   periodic_bms_reset = settings.getBool("PERBMSRESET", false);
   remote_bms_reset = settings.getBool("REMBMSRESET", false);
+  datalayer.battery.settings.user_enable_tesla_bms_auto_recovery = settings.getBool("AUTOBMSREC", false);
   use_canfd_as_can = settings.getBool("CANFDASCAN", false);
 #ifdef HW_LILYGO2CAN
   user_selected_gpioopt1 = (GPIOOPT1)settings.getUInt("GPIOOPT1", 0);

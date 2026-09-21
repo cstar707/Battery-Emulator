@@ -195,6 +195,8 @@ struct DATALAYER_BATTERY_SETTINGS_TYPE {
   bool user_requests_tesla_isolation_clear = false;
   bool user_requests_tesla_bms_reset = false;
   bool user_requests_tesla_soc_reset = false;
+  /** Opt-in only: permit the Tesla-specific guarded BMS ECU recovery supervisor. */
+  bool user_enable_tesla_bms_auto_recovery = false;
 };
 
 typedef struct {

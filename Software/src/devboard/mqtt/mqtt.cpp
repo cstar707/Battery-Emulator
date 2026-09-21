@@ -7,6 +7,7 @@
 #include "../../battery/BATTERIES.h"
 #include "../../communication/contactorcontrol/comm_contactorcontrol.h"
 #include "../../datalayer/datalayer.h"
+#include "../../datalayer/datalayer_extended.h"
 #include "../../devboard/hal/hal.h"
 #include "../../devboard/safety/safety.h"
 #include "../../lib/bblanchon-ArduinoJson/ArduinoJson.h"
@@ -58,6 +59,7 @@ static String device_name = "";
 static String device_id = "";
 
 static bool publish_common_info(void);
+static bool publish_health_snapshot(void);
 static bool publish_cell_voltages(void);
 static bool publish_cell_balancing(void);
 static bool publish_events(void);
@@ -74,6 +76,10 @@ static void publish_values(void) {
   }
 
   if (publish_common_info() == false) {
+    return;
+  }
+
+  if (publish_health_snapshot() == false) {
     return;
   }
 
@@ -312,6 +318,10 @@ static bool publish_common_info(void) {
   } else {
     doc["bms_status"] = getBMSStatus(datalayer.battery.status.bms_status);
     doc["pause_status"] = get_emulator_pause_status();
+    // Existing .92 consumers use this flag to distinguish an operator stop
+    // from an electrically unavailable pack. Keep it in the compatibility
+    // topic; diagnostics belong in the separate compact /health payload.
+    doc["equipment_stop_active"] = datalayer.system.info.equipment_stop_active;
 
     //only publish these values if BMS is active and we are comunication  with the battery (can send CAN messages to the battery)
     if (datalayer.battery.status.CAN_battery_still_alive && allowed_to_send_CAN && esp32hal->system_booted_up()) {
@@ -335,6 +345,113 @@ static bool publish_common_info(void) {
     }
     doc.clear();
   }
+  return true;
+}
+
+// Publish a bounded Tesla diagnostic snapshot.  It deliberately contains no
+// raw CAN frames or cell arrays: those are too large for this ESP32's normal
+// MQTT buffer and are not needed for a five-second correlation timeline.
+static bool publish_health_snapshot(void) {
+  if (user_selected_battery_type != BatteryType::TeslaModel3Y) {
+    return true;
+  }
+
+  static JsonDocument doc;
+  static String state_topic = topic_name + "/health";
+  static String electrical_topic = topic_name + "/health/electrical";
+  static String recovery_topic = topic_name + "/health/recovery";
+  const auto& tesla = datalayer_extended.tesla;
+  const uint32_t uptime_ms = static_cast<uint32_t>(millis());
+  const bool recovery_candidate =
+      (tesla.BMS_a035_SW_Isolation || tesla.BMS_a151_SW_external_isolation) &&
+      tesla.BMS_contactorState == 1 && !datalayer.system.info.equipment_stop_active;
+
+  doc["schema_version"] = 1;
+  doc["uptime_ms"] = uptime_ms;
+  doc["can_battery_alive"] = datalayer.battery.status.CAN_battery_still_alive;
+  doc["equipment_stop_active"] = datalayer.system.info.equipment_stop_active;
+  doc["inverter_allows_contactor_closing"] = datalayer.system.status.inverter_allows_contactor_closing;
+  doc["bms_reset_state"] = static_cast<uint8_t>(datalayer.system.status.bms_reset_status);
+  doc["bms_status_code"] = static_cast<uint8_t>(datalayer.battery.status.bms_status);
+  doc["pack_voltage_V"] = static_cast<float>(datalayer.battery.status.voltage_dV) / 10.0f;
+  doc["pack_current_A"] = static_cast<float>(datalayer.battery.status.current_dA) / 10.0f;
+  doc["pack_power_W"] = static_cast<int32_t>(datalayer.battery.status.active_power_W);
+  doc["max_charge_power_W"] = datalayer.battery.status.max_charge_power_W;
+  doc["max_discharge_power_W"] = datalayer.battery.status.max_discharge_power_W;
+
+  doc["bms_state"] = tesla.BMS_state;
+  doc["bms_hv_state"] = tesla.BMS_hvState;
+  doc["bms_contactor_state"] = tesla.BMS_contactorState;
+  const size_t serialized = serializeJson(doc, mqtt_msg, sizeof(mqtt_msg));
+  if (serialized == 0 || serialized >= sizeof(mqtt_msg)) {
+    logging.println("BMS health MQTT payload exceeded buffer");
+    doc.clear();
+    return false;
+  }
+  if (!mqtt_publish(state_topic.c_str(), mqtt_msg, false)) {
+    logging.println("BMS health MQTT msg could not be sent");
+    doc.clear();
+    return false;
+  }
+  doc.clear();
+
+  // Keep the electrical payload distinct from operational health so every
+  // frame stays below the ESP32's established MQTT buffer budget.
+  doc["schema_version"] = 1;
+  doc["uptime_ms"] = uptime_ms;
+  doc["negative_contactor_state"] = tesla.packContNegativeState;
+  doc["positive_contactor_state"] = tesla.packContPositiveState;
+  doc["hvil_status"] = tesla.hvil_status;
+  doc["hvp_battery_12V_V"] = static_cast<float>(tesla.HVP_battery12V) / 10.0f;
+  doc["hvp_dc_link_voltage_V"] = static_cast<float>(tesla.HVP_dcLinkVoltage) / 10.0f;
+  doc["hvp_pack_voltage_V"] = static_cast<float>(tesla.HVP_packVoltage) / 10.0f;
+  doc["dcdc_lv_bus_raw"] = tesla.battery_dcdcLvBusVolt;
+  doc["dcdc_hv_bus_raw"] = tesla.battery_dcdcHvBusVolt;
+  doc["isolation_resistance_raw"] = tesla.BMS_isolationResistance;
+  doc["isolation_resistance_kohm"] = static_cast<uint32_t>(tesla.BMS_isolationResistance) * 10U;
+  const size_t electrical_serialized = serializeJson(doc, mqtt_msg, sizeof(mqtt_msg));
+  if (electrical_serialized == 0 || electrical_serialized >= sizeof(mqtt_msg)) {
+    logging.println("BMS electrical MQTT payload exceeded buffer");
+    doc.clear();
+    return false;
+  }
+  if (!mqtt_publish(electrical_topic.c_str(), mqtt_msg, false)) {
+    logging.println("BMS electrical MQTT msg could not be sent");
+    doc.clear();
+    return false;
+  }
+  doc.clear();
+
+  doc["schema_version"] = 1;
+  doc["uptime_ms"] = uptime_ms;
+  doc["alert_a035_isolation"] = tesla.BMS_a035_SW_Isolation;
+  doc["alert_a151_external_isolation"] = tesla.BMS_a151_SW_external_isolation;
+  doc["alert_a180_ecu_reset_blocked"] = tesla.BMS_a180_SW_ECU_reset_blocked;
+  doc["bms_ecu_reset_permitted"] = tesla.bms_ecu_reset_permitted;
+  doc["recovery_mode"] = tesla.automatic_bms_recovery_enabled ? "guarded_auto" : "observe";
+  doc["automatic_recovery_armed"] = tesla.automatic_bms_recovery_armed;
+  doc["recovery_candidate"] = recovery_candidate;
+  doc["automatic_recovery_candidate"] = tesla.automatic_bms_recovery_candidate;
+  doc["automatic_recovery_candidate_duration_s"] =
+      tesla.automatic_bms_recovery_candidate_since_ms == 0
+          ? 0
+          : (uptime_ms - tesla.automatic_bms_recovery_candidate_since_ms) / 1000U;
+  doc["automatic_recovery_attempt_count"] = tesla.automatic_bms_recovery_attempt_count;
+  doc["automatic_recovery_last_attempt_uptime_ms"] = tesla.automatic_bms_recovery_last_attempt_ms;
+  doc["automatic_recovery_locked_out"] = tesla.automatic_bms_recovery_locked_out;
+  doc["automatic_recovery_episode_count"] = tesla.automatic_bms_recovery_episode_count;
+  const size_t recovery_serialized = serializeJson(doc, mqtt_msg, sizeof(mqtt_msg));
+  if (recovery_serialized == 0 || recovery_serialized >= sizeof(mqtt_msg)) {
+    logging.println("BMS recovery MQTT payload exceeded buffer");
+    doc.clear();
+    return false;
+  }
+  if (!mqtt_publish(recovery_topic.c_str(), mqtt_msg, false)) {
+    logging.println("BMS recovery MQTT msg could not be sent");
+    doc.clear();
+    return false;
+  }
+  doc.clear();
   return true;
 }
 

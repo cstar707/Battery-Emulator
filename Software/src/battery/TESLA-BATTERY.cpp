@@ -1,4 +1,5 @@
 #include "TESLA-BATTERY.h"
+#include <Arduino.h>
 #include <cstring>  //For unit test
 #include "../communication/can/comm_can.h"
 #include "../datalayer/datalayer.h"
@@ -577,6 +578,53 @@ void TeslaBattery::
     stateMachineClearIsolationFault = 0;  //Start the isolation fault statemachine
     datalayer.battery.settings.user_requests_tesla_isolation_clear = false;
   }
+
+  // Observe the exact condition that precedes the recurring outage: the BMS
+  // reports a035/a151 while its own contactor state is OPEN. The automatic
+  // path is intentionally narrow: it never clears an isolation fault, never
+  // commands a contactor, requires the BMS ECU to permit a reset, and can only
+  // request the same ECU reset that the authenticated manual button uses.
+  const uint32_t now_ms = millis();
+  if (battery_contactor == 4 && !datalayer.system.info.equipment_stop_active) {
+    auto_bms_recovery_observed_closed = true;
+  }
+  const bool automatic_recovery_candidate =
+      auto_bms_recovery_observed_closed && datalayer.battery.status.CAN_battery_still_alive &&
+      (BMS_a035_SW_Isolation || BMS_a151_SW_external_isolation) && battery_contactor == 1 &&
+      !BMS_a180_SW_ECU_reset_blocked && !datalayer.system.info.equipment_stop_active;
+
+  if (automatic_recovery_candidate) {
+    if (auto_bms_recovery_candidate_since_ms == 0) {
+      auto_bms_recovery_candidate_since_ms = now_ms;
+      ++auto_bms_recovery_episode_count;
+    }
+  } else {
+    auto_bms_recovery_candidate_since_ms = 0;
+  }
+
+  if (auto_bms_recovery_window_started_ms == 0 ||
+      now_ms - auto_bms_recovery_window_started_ms >= AUTO_BMS_RECOVERY_WINDOW_MS) {
+    auto_bms_recovery_window_started_ms = now_ms;
+    auto_bms_recovery_attempt_count = 0;
+  }
+
+  const bool automatic_recovery_locked_out =
+      auto_bms_recovery_attempt_count >= AUTO_BMS_RECOVERY_MAX_ATTEMPTS;
+  const bool automatic_recovery_confirmed =
+      auto_bms_recovery_candidate_since_ms != 0 &&
+      now_ms - auto_bms_recovery_candidate_since_ms >= AUTO_BMS_RECOVERY_CONFIRM_MS;
+  const bool automatic_recovery_cooled_down =
+      auto_bms_recovery_last_attempt_ms == 0 ||
+      now_ms - auto_bms_recovery_last_attempt_ms >= AUTO_BMS_RECOVERY_COOLDOWN_MS;
+
+  if (datalayer.battery.settings.user_enable_tesla_bms_auto_recovery && automatic_recovery_confirmed &&
+      automatic_recovery_cooled_down && !automatic_recovery_locked_out) {
+    datalayer.battery.settings.user_requests_tesla_bms_reset = true;
+    auto_bms_recovery_last_attempt_ms = now_ms;
+    ++auto_bms_recovery_attempt_count;
+    logging.println("INFO: Guarded Tesla BMS auto-recovery requested");
+  }
+
   if (datalayer.battery.settings.user_requests_tesla_bms_reset) {
     if (battery_contactor == 1 && BMS_a180_SW_ECU_reset_blocked == false) {
       //Start the BMS ECU reset statemachine, only if contactors are OPEN and BMS ECU allows it
@@ -689,6 +737,21 @@ void TeslaBattery::
   datalayer_extended.tesla.battery_BrickModelTMin = battery_BrickModelTMin;
   //0x212
   datalayer_extended.tesla.BMS_isolationResistance = BMS_isolationResistance;
+  datalayer_extended.tesla.BMS_a035_SW_Isolation = BMS_a035_SW_Isolation;
+  datalayer_extended.tesla.BMS_a151_SW_external_isolation = BMS_a151_SW_external_isolation;
+  datalayer_extended.tesla.BMS_a180_SW_ECU_reset_blocked = BMS_a180_SW_ECU_reset_blocked;
+  datalayer_extended.tesla.bms_ecu_reset_permitted = battery_contactor == 1 && !BMS_a180_SW_ECU_reset_blocked;
+  datalayer_extended.tesla.automatic_bms_recovery_enabled =
+      datalayer.battery.settings.user_enable_tesla_bms_auto_recovery;
+  datalayer_extended.tesla.automatic_bms_recovery_armed = auto_bms_recovery_observed_closed;
+  datalayer_extended.tesla.automatic_bms_recovery_candidate =
+      auto_bms_recovery_candidate_since_ms != 0;
+  datalayer_extended.tesla.automatic_bms_recovery_locked_out =
+      auto_bms_recovery_attempt_count >= AUTO_BMS_RECOVERY_MAX_ATTEMPTS;
+  datalayer_extended.tesla.automatic_bms_recovery_candidate_since_ms = auto_bms_recovery_candidate_since_ms;
+  datalayer_extended.tesla.automatic_bms_recovery_last_attempt_ms = auto_bms_recovery_last_attempt_ms;
+  datalayer_extended.tesla.automatic_bms_recovery_attempt_count = auto_bms_recovery_attempt_count;
+  datalayer_extended.tesla.automatic_bms_recovery_episode_count = auto_bms_recovery_episode_count;
   datalayer_extended.tesla.BMS_contactorState = BMS_contactorState;
   datalayer_extended.tesla.BMS_state = BMS_state;
   datalayer_extended.tesla.BMS_hvState = BMS_hvState;

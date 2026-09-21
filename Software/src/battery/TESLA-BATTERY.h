@@ -99,6 +99,19 @@ class TeslaBattery : public CanBattery {
   //Max percentage charge tracker
   uint16_t previous_max_percentage = datalayer.battery.settings.max_percentage;
 
+  // Guarded automatic ECU recovery state. It is only used when the explicit
+  // AUTOBMSREC setting is enabled; default operation is telemetry-only.
+  static constexpr uint32_t AUTO_BMS_RECOVERY_CONFIRM_MS = 90UL * 1000UL;
+  static constexpr uint32_t AUTO_BMS_RECOVERY_COOLDOWN_MS = 30UL * 60UL * 1000UL;
+  static constexpr uint32_t AUTO_BMS_RECOVERY_WINDOW_MS = 24UL * 60UL * 60UL * 1000UL;
+  static constexpr uint32_t AUTO_BMS_RECOVERY_MAX_ATTEMPTS = 3;
+  uint32_t auto_bms_recovery_candidate_since_ms = 0;
+  uint32_t auto_bms_recovery_last_attempt_ms = 0;
+  uint32_t auto_bms_recovery_window_started_ms = 0;
+  uint32_t auto_bms_recovery_attempt_count = 0;
+  uint32_t auto_bms_recovery_episode_count = 0;
+  bool auto_bms_recovery_observed_closed = false;
+
   //0x082 UI_tripPlanning: "cycle_time" 1000ms
   static constexpr CAN_frame TESLA_082 = {.FD = false,
                                           .ext_ID = false,

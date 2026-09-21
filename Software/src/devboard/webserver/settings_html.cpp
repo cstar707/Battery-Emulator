@@ -396,6 +396,10 @@ String raw_settings_processor(const String& var, BatteryEmulatorSettingsStore& s
     return settings.getBool("REMBMSRESET") ? "checked" : "";
   }
 
+  if (var == "AUTOBMSREC") {
+    return settings.getBool("AUTOBMSREC") ? "checked" : "";
+  }
+
   if (var == "EXTPRECHARGE") {
     return settings.getBool("EXTPRECHARGE") ? "checked" : "";
   }
@@ -1465,6 +1469,10 @@ const char* getCANInterfaceName(CAN_Interface interface) {
 
         <label>Periodic BMS reset every 24h: </label>
         <input type='checkbox' name='PERBMSRESET' value='on' %PERBMSRESET% /> 
+
+        <label>Guarded Tesla BMS auto-recovery: </label>
+        <input type='checkbox' name='AUTOBMSREC' value='on' %AUTOBMSREC%
+        title="Disabled by default. Only requests a Tesla BMS ECU restart after this session has observed the contactors closed, then an isolation-alert/open-contactor episode lasts 90 seconds; it never clears an isolation fault or drives contactors." />
 
         <label>External precharge via HIA4V1: </label>
         <input type='checkbox' name='EXTPRECHARGE' value='on' %EXTPRECHARGE% />
